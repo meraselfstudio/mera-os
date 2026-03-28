@@ -1,0 +1,134 @@
+.landing {
+    min-height: 100dvh;
+    background: #f1ede8;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+}
+
+.heroContent {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 14svh 1.5rem 6vh;
+}
+
+.brand {
+    width: 150px;
+    height: auto;
+    display: block;
+    margin: 0 auto 1.2rem;
+}
+
+.title {
+    margin: 0 0 0.9rem;
+    font-size: clamp(2.4rem, 9vw, 4rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+    font-family: 'Times New Roman Condensed', 'Times New Roman', Times, serif;
+    font-style: italic;
+    color: #2e1b1f;
+}
+
+.tagline {
+    margin: 0;
+    font-size: 0.87rem;
+    color: #4a3438;
+    letter-spacing: 0.01em;
+}
+
+.subTagline {
+    margin: 0.25rem 0 1.4rem;
+    font-size: 0.82rem;
+    color: #4a3438;
+    opacity: 0.8;
+}
+
+.cta {
+    display: inline-block;
+    background: #6f1f2b;
+    color: #fff;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    padding: 0.8rem 1.8rem;
+    border-radius: 999px;
+    text-decoration: none;
+    box-shadow: 0 10px 28px rgba(111, 31, 43, 0.40);
+    transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.cta:hover,
+.cta:focus-visible {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 32px rgba(111, 31, 43, 0.50);
+}
+
+.stripSection {
+    flex-shrink: 0;
+}
+
+.photoRow {
+    overflow: hidden;
+    padding-bottom: 12px;
+}
+
+.photoTrack {
+    display: flex;
+    align-items: flex-end;
+    width: max-content;
+    will-change: transform;
+}
+
+.photoItem {
+    flex: 0 0 auto;
+    margin-left: -16px;
+}
+
+.photoItem:first-child {
+    margin-left: 0;
+}
+
+.photoImage {
+    display: block;
+    width: 120px;
+    height: 160px;
+    object-fit: cover;
+    border-radius: 2px;
+}
+
+.scallop {
+    display: block;
+    width: 100%;
+    height: 56px;
+    margin-top: -36px;
+    position: relative;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.maroonBand {
+    height: 60px;
+    background: #6f1f2b;
+    margin-top: -2px;
+}
+
+@media (min-width: 768px) {
+    .heroContent { padding: 16svh 2rem 8vh; }
+    .brand { width: 180px; }
+    .photoImage { width: 150px; height: 200px; }
+    .photoItem { margin-left: -20px; }
+    .scallop { height: 72px; margin-top: -48px; }
+    .maroonBand { height: 72px; }
+    .photoTrack { animation-duration: 20s; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .photoTrack { animation: none; }
+}
+

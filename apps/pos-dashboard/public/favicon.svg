@@ -1,0 +1,17 @@
+<!-- Méra OS — POS Dashboard Favicon SVG -->
+<!-- Distinct from customer portal: maroon accent to signal internal tool -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="#1D1D1F"/>
+  <!-- Maroon accent strip (top 4px) — visual signal this is internal/OS -->
+  <rect width="32" height="4" rx="2" fill="#8B1A1A"/>
+  <text
+    x="16"
+    y="22"
+    font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif"
+    font-size="13"
+    font-weight="700"
+    letter-spacing="-0.3"
+    text-anchor="middle"
+    fill="#FFFFFF"
+  >OS</text>
+</svg>

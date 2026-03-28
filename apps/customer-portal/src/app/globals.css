@@ -1,0 +1,248 @@
+/* Customer Portal — App-level global styles */
+/* Base styles + design tokens loaded from @mera/ui/styles */
+
+:root {
+    /* Colors (Dark Mode) */
+    --mera-bg: #000000;
+    --mera-surface: #1C1C1E;
+    --mera-surface-raised: #2C2C2E;
+    --mera-border: rgba(255, 255, 255, 0.1);
+    --mera-border-strong: rgba(255, 255, 255, 0.2);
+
+    --mera-text-primary: #FFFFFF;
+    --mera-text-secondary: #A1A1AA;
+    --mera-text-tertiary: #71717A;
+    --mera-text-inverse: #1C1C1E;
+
+    --mera-accent: #8B1A1A;
+    --mera-accent-hover: #721515;
+    --mera-accent-light: rgba(139, 26, 26, 0.15);
+
+    --mera-success: #30D158;
+    --mera-success-bg: rgba(48, 209, 88, 0.15);
+    --mera-warning: #FF9F0A;
+    --mera-warning-bg: rgba(255, 159, 10, 0.15);
+    --mera-error: #FF453A;
+    --mera-error-bg: rgba(255, 69, 58, 0.15);
+    --mera-info: #0A84FF;
+    --mera-info-bg: rgba(10, 132, 255, 0.15);
+
+    --mera-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+    --mera-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.3);
+    --mera-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
+    --mera-shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
+
+    --mera-radius-sm: 8px;
+    --mera-radius-md: 12px;
+    --mera-radius-lg: 16px;
+    --mera-radius-xl: 20px;
+    --mera-radius-full: 9999px;
+
+    --mera-font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    --mera-ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    --mera-duration: 200ms;
+}
+
+/* ── Layout ─────────────────────────────────────────────── */
+body {
+    font-family: var(--mera-font);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+}
+
+/* Carousel scroll containers — hide scrollbars cross-browser */
+.mera-carousel-track {
+    scrollbar-width: none;
+    /* Firefox */
+    -ms-overflow-style: none;
+    /* IE/Edge */
+}
+
+.mera-carousel-track::-webkit-scrollbar {
+    display: none;
+    /* Chrome/Safari */
+}
+
+@keyframes mera-photo-slide {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+}
+
+
+.page-container {
+    min-height: 100vh;
+    background: var(--mera-bg);
+}
+
+/* ── Typography Scale ────────────────────────────────────── */
+.heading-hero {
+    font-size: clamp(2.5rem, 6vw, 5rem);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    color: var(--mera-text-primary);
+}
+
+.heading-xl {
+    font-size: clamp(1.75rem, 4vw, 2.75rem);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+}
+
+.heading-lg {
+    font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+.body-lg {
+    font-size: 1.125rem;
+    line-height: 1.7;
+}
+
+.body-md {
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+.body-sm {
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+/* ── Section Padding ─────────────────────────────────────── */
+.section {
+    padding: 80px 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.section-hero {
+    padding: 120px 24px 80px;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.section-sm {
+    padding: 48px 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.nav-container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 14px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* ── Grid ────────────────────────────────────────────────── */
+.grid-products {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+}
+
+/* ── Input / Form ────────────────────────────────────────── */
+.mera-input {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1px solid var(--mera-border-strong);
+    border-radius: var(--mera-radius-md);
+    font-family: var(--mera-font);
+    font-size: 15px;
+    color: var(--mera-text-primary);
+    background: var(--mera-surface);
+    outline: none;
+    transition: border-color var(--mera-duration) var(--mera-ease), box-shadow var(--mera-duration) var(--mera-ease);
+}
+
+.mera-input:focus {
+    border-color: var(--mera-accent);
+    box-shadow: 0 0 0 3px rgba(29, 29, 31, 0.08);
+}
+
+.mera-input::placeholder {
+    color: var(--mera-text-tertiary);
+}
+
+.mera-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--mera-text-secondary);
+    margin-bottom: 6px;
+    letter-spacing: 0.01em;
+}
+
+.mera-field {
+    margin-bottom: 16px;
+}
+
+/* ── Animations ──────────────────────────────────────────── */
+@keyframes fade-in-up {
+    from {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-in {
+    animation: fade-in-up 0.6s var(--mera-ease) both;
+}
+
+.delay-1 {
+    animation-delay: 0.1s;
+}
+
+.delay-2 {
+    animation-delay: 0.2s;
+}
+
+.delay-3 {
+    animation-delay: 0.3s;
+}
+
+/* ── Booking Form Layout ─────────────────────────────────── */
+/* Desktop: form left, compact summary right */
+.form-layout {
+    grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+@media (max-width: 768px) {
+    .section {
+        padding: 48px 16px;
+    }
+
+    .section-hero {
+        padding: 100px 16px 48px;
+    }
+
+    .nav-container {
+        padding: 12px 16px;
+    }
+
+    .grid-products {
+        grid-template-columns: 1fr;
+    }
+
+    /* On mobile: form first, then summary below */
+    .form-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .form-layout>div:last-child {
+        order: 2;
+        /* summary goes after form on mobile */
+    }
+}

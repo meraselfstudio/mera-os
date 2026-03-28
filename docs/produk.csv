@@ -1,0 +1,12 @@
+id,nama,kategori,tipe_harga,harga,tier_1,tier_2,tier_3,tier_lebih
+1,Self Photo Session,Basic Studio,normal,50000,,,,
+2,Party Photo Session,Basic Studio,normal,135000,,,,
+3,Thematic Basic,Thematic Studio,normal,15000,,,,
+4,Thematic Package,Thematic Studio,normal,50000,,,,
+5,Pas Photo Basic,Basic Studio,normal,80000,,,,
+6,Pas Photo Package,Basic Studio,normal,100000,,,,
+7,Edited + Colored Photo,Add Ons,normal,20000,,,,
+8,Add Person,Add Ons,normal,25000,,,,
+9,Add Print,Add Ons,bertingkat,,15000,30000,35000,13000
+10,Special Frame,Add Ons,bertingkat,,25000,40000,50000,15000
+11,Add Time (5m),Add Ons,normal,15000,,,,

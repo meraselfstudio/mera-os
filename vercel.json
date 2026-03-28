@@ -1,0 +1,6 @@
+{
+    "buildCommand": "cd apps/customer-portal && pnpm run build",
+    "outputDirectory": "apps/customer-portal/.next",
+    "installCommand": "pnpm install",
+    "framework": "nextjs"
+}
