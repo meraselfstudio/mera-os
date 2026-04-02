@@ -50,8 +50,8 @@ function CheckinContent() {
         }
 
         // Mark check-in
-        const { error: updateError } = await (supabase
-            .from('registrations') as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: updateError } = await (supabase.from('registrations') as any)
             .update({ checked_in_at: new Date().toISOString() })
             .eq('session_id', sid)
 
@@ -72,6 +72,7 @@ function CheckinContent() {
         'Majestic Studio': '👑',
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const room = (reg?.addons as any)?.room ?? '—'
     const checkinTime = reg?.checked_in_at
         ? new Date(reg.checked_in_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })

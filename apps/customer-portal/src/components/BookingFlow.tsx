@@ -348,8 +348,8 @@ export default function BookingFlow() {
     const handleReschedule = async () => {
         if (!state.registrationId || !rescDate || !rescTime) return
         setRescLoading(true)
-        const { error } = await (supabase
-            .from('registrations') as any)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error } = await (supabase.from('registrations') as any)
             .update({ preferred_date: rescDate, preferred_time: rescTime })
             .eq('id', state.registrationId)
         setRescLoading(false)
@@ -425,6 +425,7 @@ export default function BookingFlow() {
                 }
             }
             // @ts-expect-error - addons shape includes pax and computed_price for local state
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const result: any = await supabase.from('registrations').insert(payload).select('id').single()
 
             if (!result.error && result.data) {
