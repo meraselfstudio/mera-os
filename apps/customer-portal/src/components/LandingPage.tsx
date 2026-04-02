@@ -39,7 +39,7 @@ export default function LandingPage({ photos, fontClassName }: LandingPageProps)
                 </h1>
                 <p className={styles.tagline}>Finest Self Photo Studio in Town</p>
                 <p className={styles.subTagline}>Give You a Space to Be Real You!</p>
-                <Link href="/booking" className={styles.cta}>BOOK NOW!</Link>
+                <Link href="/booking" className={styles.cta}>Book now!</Link>
             </div>
 
             <div className={styles.stripSection}>

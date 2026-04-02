@@ -1,6 +1,6 @@
 .landing {
     min-height: 100dvh;
-    background: #f1ede8;
+    background: hsl(33, 24%, 93%);
     display: flex;
     flex-direction: column;
     overflow-x: hidden;
@@ -25,9 +25,9 @@
 
 .title {
     margin: 0 0 0.9rem;
-    font-size: clamp(2.4rem, 9vw, 4rem);
+    font-size: var(--mera-step-4);
     line-height: 1;
-    letter-spacing: -0.02em;
+    letter-spacing: var(--mera-track-tight);
     font-weight: 700;
     font-family: 'Times New Roman Condensed', 'Times New Roman', Times, serif;
     font-style: italic;
@@ -36,16 +36,17 @@
 
 .tagline {
     margin: 0;
-    font-size: 0.87rem;
+    font-size: var(--mera-step-0);
     color: #4a3438;
-    letter-spacing: 0.01em;
+    letter-spacing: var(--mera-track-soft);
 }
 
 .subTagline {
     margin: 0.25rem 0 1.4rem;
-    font-size: 0.82rem;
+    font-size: var(--mera-step--1);
     color: #4a3438;
     opacity: 0.8;
+    letter-spacing: var(--mera-track-soft);
 }
 
 .cta {
@@ -53,9 +54,8 @@
     background: #6f1f2b;
     color: #fff;
     font-weight: 800;
-    letter-spacing: 0.06em;
-    font-size: 0.78rem;
-    text-transform: uppercase;
+    letter-spacing: var(--mera-track-wide);
+    font-size: var(--mera-step--1);
     padding: 0.8rem 1.8rem;
     border-radius: 999px;
     text-decoration: none;
@@ -93,6 +93,13 @@
 .photoItem:first-child {
     margin-left: 0;
 }
+
+.photoItem:nth-child(6n + 1) { transform: rotate(-8deg) translateY(6px); }
+.photoItem:nth-child(6n + 2) { transform: rotate(5deg)  translateY(8px); }
+.photoItem:nth-child(6n + 3) { transform: rotate(-4deg) translateY(3px); }
+.photoItem:nth-child(6n + 4) { transform: rotate(7deg)  translateY(7px); }
+.photoItem:nth-child(6n + 5) { transform: rotate(-5deg) translateY(5px); }
+.photoItem:nth-child(6n + 6) { transform: rotate(3deg)  translateY(9px); }
 
 .photoImage {
     display: block;

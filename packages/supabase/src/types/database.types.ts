@@ -81,7 +81,7 @@ export function hitungHargaBertingkat(product: Product, jumlahOrang: number): nu
 }
 
 // ── Registrations ─────────────────────────────────────────────
-export type BookingType = 'ONLINE_QRIS' | 'ONLINE_KEEPSLOT' | 'OTS'
+export type BookingType = 'ONLINE_QRIS' | 'ONLINE_KEEPSLOT'
 export type RegistrationStatus = 'PENDING' | 'VERIFIED' | 'PROCESSED' | 'EXPIRED'
 
 export interface Registration {
@@ -99,6 +99,7 @@ export interface Registration {
         selected_addons: string[] // e.g. ['EDITED_COLORED']
     } | null
     expires_at: string | null  // Non-null only for ONLINE_KEEPSLOT (now + 6h)
+    checked_in_at: string | null  // Set when customer self-check-in via QR at studio
     created_at: string
 }
 

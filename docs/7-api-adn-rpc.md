@@ -13,5 +13,5 @@ Agar Kolom 1 (Lobby) bergerak tanpa perlu *refresh* (F5):
 - React merender kartu nama baru di Kolom 1 dalam waktu kurang dari 500ms.
 
 ## 6.3 Perlindungan API & Edge Functions
-- **Auto-Expire Trigger:** Menjalankan `purge_expired_slots()` secara periodik (30 menit untuk OTS, 6 jam untuk Online) untuk membuang antrean yang tidak valid.
+- **Auto-Expire Trigger:** Menjalankan `purge_expired_slots()` secara periodik (6 jam untuk Online) untuk membuang antrean yang tidak valid.
 - **Row Level Security (RLS):** Kru hanya bisa melihat riwayat gajinya sendiri di modul absensi. Data gaji Umar tidak bisa dilihat oleh Satria.

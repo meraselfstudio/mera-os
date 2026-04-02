@@ -228,23 +228,23 @@ export default function PhotoboothPage() {
 
                 {/* Header */}
                 <div style={{ marginBottom: 24 }}>
-                    <Link href="/" style={{ fontSize: 14, color: 'var(--mera-text-secondary)', fontWeight: 600 }}>← Home</Link>
+                    <Link href="/" style={{ fontSize: 'var(--mera-step-0)', color: 'var(--mera-text-secondary)', fontWeight: 600, letterSpacing: 'var(--mera-track-soft)' }}>← Home</Link>
                 </div>
-                <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 4 }}>Free Photobooth 📸</h1>
-                <p style={{ fontSize: 14, color: 'var(--mera-text-secondary)', marginBottom: 24 }}>
+                <h1 style={{ fontSize: 'var(--mera-step-3)', fontWeight: 700, letterSpacing: 'var(--mera-track-tight)', marginBottom: 4 }}>Free Photobooth 📸</h1>
+                <p style={{ fontSize: 'var(--mera-step-0)', color: 'var(--mera-text-secondary)', letterSpacing: 'var(--mera-track-soft)', marginBottom: 24 }}>
                     4 foto otomatis · filter · kolase · gratis · tanpa upload
                 </p>
 
                 {/* Privacy disclaimer */}
                 <div style={{
                     background: 'var(--mera-info-bg)', border: '1px solid var(--mera-info-border)', borderRadius: 'var(--mera-radius-md)',
-                    padding: '12px 14px', marginBottom: 24, fontSize: 13, color: 'var(--mera-info)',
+                    padding: '12px 14px', marginBottom: 24, fontSize: 'var(--mera-step--1)', letterSpacing: 'var(--mera-track-soft)', color: 'var(--mera-info)',
                 }}>
                     🔒 <strong>100% Privat.</strong> Foto kamu tidak pernah dikirim ke server manapun. Semua pemrosesan dilakukan langsung di browser kamu.
                 </div>
 
                 {error && (
-                    <div style={{ background: 'var(--mera-error-bg)', border: '1px solid var(--mera-error-border)', borderRadius: 'var(--mera-radius-md)', padding: '12px 14px', marginBottom: 16, fontSize: 14, color: 'var(--mera-error)' }}>
+                    <div style={{ background: 'var(--mera-error-bg)', border: '1px solid var(--mera-error-border)', borderRadius: 'var(--mera-radius-md)', padding: '12px 14px', marginBottom: 16, fontSize: 'var(--mera-step-0)', letterSpacing: 'var(--mera-track-soft)', color: 'var(--mera-error)' }}>
                         {error}
                     </div>
                 )}
@@ -252,13 +252,13 @@ export default function PhotoboothPage() {
                 {/* ── State: Idle ─────────────────────────────────── */}
                 {appState === 'idle' && (
                     <div style={{ textAlign: 'center', padding: '48px 0' }}>
-                        <div style={{ fontSize: 80, marginBottom: 24 }}>📷</div>
+                            <div style={{ fontSize: 'var(--mera-step-5)', marginBottom: 24 }}>📷</div>
                         <button
                             onClick={startCamera}
                             style={{
                                 padding: '14px 40px', background: 'var(--mera-accent)', color: '#fff',
                                 border: 'none', borderRadius: 'var(--mera-radius-md)', fontWeight: 700,
-                                fontSize: 17, cursor: 'pointer', boxShadow: 'var(--mera-shadow-md)',
+                                fontSize: 'var(--mera-step-1)', letterSpacing: 'var(--mera-track-soft)', cursor: 'pointer', boxShadow: 'var(--mera-shadow-md)',
                             }}
                         >
                             Mulai Photobooth
@@ -276,7 +276,7 @@ export default function PhotoboothPage() {
                                     key={f}
                                     onClick={() => setFilter(f)}
                                     style={{
-                                        padding: '6px 16px', borderRadius: 'var(--mera-radius-full)', fontSize: 13, fontWeight: 500, border: '1px solid',
+                                        padding: '6px 16px', borderRadius: 'var(--mera-radius-full)', fontSize: 'var(--mera-step--1)', fontWeight: 500, letterSpacing: 'var(--mera-track-soft)', border: '1px solid',
                                         borderColor: filter === f ? 'var(--mera-accent)' : 'var(--mera-border)',
                                         background: filter === f ? 'var(--mera-accent)' : 'transparent',
                                         color: filter === f ? '#fff' : 'var(--mera-text-secondary)', cursor: 'pointer',
@@ -304,10 +304,10 @@ export default function PhotoboothPage() {
                                     alignItems: 'center', justifyContent: 'center',
                                     background: 'rgba(0,0,0,0.4)',
                                 }}>
-                                    <div style={{ fontSize: 80, fontWeight: 900, color: '#fff', lineHeight: 1, animation: 'fade-in-up 0.5s both' }}>
+                                    <div style={{ fontSize: 'var(--mera-step-5)', fontWeight: 900, color: '#fff', lineHeight: 1, animation: 'fade-in-up 0.5s both' }}>
                                         {countdown}
                                     </div>
-                                    <p style={{ color: '#fff', fontSize: 14, marginTop: 8 }}>Foto {currentShot} dari {PHOTO_COUNT}</p>
+                                    <p style={{ color: '#fff', fontSize: 'var(--mera-step-0)', letterSpacing: 'var(--mera-track-soft)', marginTop: 8 }}>Foto {currentShot} dari {PHOTO_COUNT}</p>
                                 </div>
                             )}
 
@@ -339,12 +339,12 @@ export default function PhotoboothPage() {
                                     style={{
                                         flex: 1, padding: '13px', background: 'var(--mera-accent)', color: '#fff',
                                         border: 'none', borderRadius: 'var(--mera-radius-md)', fontWeight: 700,
-                                        fontSize: 16, cursor: 'pointer',
+                                        fontSize: 'var(--mera-step-1)', letterSpacing: 'var(--mera-track-soft)', cursor: 'pointer',
                                     }}
                                 >
                                     📸 Mulai Ambil {PHOTO_COUNT} Foto
                                 </button>
-                                <button onClick={reset} style={{ padding: '13px 16px', border: '1px solid var(--mera-border)', borderRadius: 'var(--mera-radius-md)', background: 'var(--mera-surface)', cursor: 'pointer', fontSize: 16 }}>
+                                <button onClick={reset} style={{ padding: '13px 16px', border: '1px solid var(--mera-border)', borderRadius: 'var(--mera-radius-md)', background: 'var(--mera-surface)', cursor: 'pointer', fontSize: 'var(--mera-step-1)', letterSpacing: 'var(--mera-track-soft)' }}>
                                     ✕
                                 </button>
                             </div>
@@ -355,7 +355,7 @@ export default function PhotoboothPage() {
                 {/* ── State: Preview ──────────────────────────────── */}
                 {appState === 'preview' && stripUrl && (
                     <div style={{ textAlign: 'center' }}>
-                        <p style={{ fontSize: 14, color: 'var(--mera-text-secondary)', marginBottom: 16 }}>Kolase siap! 🎉</p>
+                        <p style={{ fontSize: 'var(--mera-step-0)', color: 'var(--mera-text-secondary)', letterSpacing: 'var(--mera-track-soft)', marginBottom: 16 }}>Kolase siap! 🎉</p>
                         <img
                             src={stripUrl}
                             alt="Photo strip"
@@ -366,7 +366,7 @@ export default function PhotoboothPage() {
                                 onClick={downloadStrip}
                                 style={{
                                     padding: '12px 28px', background: 'var(--mera-accent)', color: '#fff',
-                                    border: 'none', borderRadius: 'var(--mera-radius-md)', fontWeight: 600, fontSize: 15, cursor: 'pointer',
+                                    border: 'none', borderRadius: 'var(--mera-radius-md)', fontWeight: 600, fontSize: 'var(--mera-step-0)', letterSpacing: 'var(--mera-track-soft)', cursor: 'pointer',
                                 }}
                             >
                                 ⬇ Download Foto
@@ -375,7 +375,7 @@ export default function PhotoboothPage() {
                                 onClick={reset}
                                 style={{
                                     padding: '12px 20px', background: 'var(--mera-surface)', color: 'var(--mera-text-secondary)',
-                                    border: '1px solid var(--mera-border)', borderRadius: 'var(--mera-radius-md)', fontWeight: 500, fontSize: 15, cursor: 'pointer',
+                                    border: '1px solid var(--mera-border)', borderRadius: 'var(--mera-radius-md)', fontWeight: 500, fontSize: 'var(--mera-step-0)', letterSpacing: 'var(--mera-track-soft)', cursor: 'pointer',
                                 }}
                             >
                                 Ulangi
@@ -384,11 +384,11 @@ export default function PhotoboothPage() {
 
                         {/* Booking CTA */}
                         <div style={{ marginTop: 32, padding: 20, background: 'var(--mera-surface)', borderRadius: 'var(--mera-radius-lg)', border: '1px solid var(--mera-border)' }}>
-                            <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Suka hasilnya? Rasakan pengalaman penuh di studio kami!</p>
+                            <p style={{ fontSize: 'var(--mera-step-0)', fontWeight: 600, letterSpacing: 'var(--mera-track-soft)', marginBottom: 8 }}>Suka hasilnya? Rasakan pengalaman penuh di studio kami!</p>
                             <a
                                 href="/booking"
                                 style={{
-                                    display: 'inline-block', padding: '10px 24px', fontSize: 14, fontWeight: 600,
+                                    display: 'inline-block', padding: '10px 24px', fontSize: 'var(--mera-step-0)', fontWeight: 600, letterSpacing: 'var(--mera-track-soft)',
                                     background: 'var(--mera-accent)', color: '#fff', borderRadius: 'var(--mera-radius-md)',
                                 }}
                             >

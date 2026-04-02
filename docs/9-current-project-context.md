@@ -41,6 +41,7 @@ Purpose:
 - Brand and package discovery
 - Booking creation
 - Free photobooth experience
+- Booking confirmation handoff via Instagram DM to @mera.selfstudio
 
 Stack:
 
@@ -56,6 +57,11 @@ Current routes:
   - Booking flow
 - `/photobooth`
   - Client-only free photobooth
+
+Current booking behavior:
+
+- `booking_type` is online-only: `ONLINE_KEEPSLOT` or `ONLINE_QRIS`
+- confirmation CTA opens Instagram DM to `@mera.selfstudio`
 
 Main files:
 

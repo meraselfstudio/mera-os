@@ -21,8 +21,6 @@ The source of truth is `packages/supabase/src/types/database.types.ts`.
 
 `Registration.booking_type` can be:
 
-- `OTS`
-  - on-the-spot booking
 - `ONLINE_KEEPSLOT`
   - booking reserves a slot temporarily
 - `ONLINE_QRIS`
@@ -64,7 +62,7 @@ Main steps:
 3. Pax count is set
 4. Date and time are selected from weekday or weekend slot arrays
 5. Customer enters name and Instagram handle
-6. Booking type is selected
+6. Booking type is selected (online-only)
 7. A registration is inserted into Supabase
 
 Important implementation details:
@@ -72,6 +70,7 @@ Important implementation details:
 - `session_id` is generated before insert
 - `addons` stores operational context such as room, variant, selected add-ons, pax, and computed price
 - `ONLINE_KEEPSLOT` adds `expires_at = now + 6 hours`
+- customer confirmation is routed through Instagram DM to `@mera.selfstudio`
 - booking flow stores enough detail for POS to reconstruct the session later
 
 ## 11.4 Booking Management Logic

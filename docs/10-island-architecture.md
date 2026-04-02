@@ -26,7 +26,7 @@ Primary users:
 
 - customers
 - social traffic
-- walk-in users scanning from kiosk or staff handoff
+- returning customers from booking links and social handoff
 
 Routes:
 

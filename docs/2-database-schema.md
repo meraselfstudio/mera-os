@@ -9,7 +9,7 @@ Menampung data mentah dari Pelanggan (Fase 1) sebelum disahkan menjadi Transaksi
 - `instagram_handle` (String, wajib untuk distribusi file)
 - `studio_choice` (String)
 - `background_code` (String, enum: MR, LG, DG, dll)
-- `booking_type` (Enum: 'ONLINE', 'OTS')
+- `booking_type` (Enum: 'ONLINE_KEEPSLOT', 'ONLINE_QRIS')
 - `status` (Enum: 'PENDING', 'KEEPSLOT', 'UNVERIFIED_QRIS', 'PROCESSED', 'EXPIRED')
 - `created_at` (Timestamp)
 
@@ -42,16 +42,10 @@ Menjaga Kolom 1 POS dari "Antrean Hantu".
 CREATE OR REPLACE FUNCTION purge_expired_slots()
 RETURNS void AS $$
 BEGIN
-  -- 1. Expire Online Bookings after 6 hours
+  -- Expire Online Bookings after 6 hours
   UPDATE registrations 
   SET status = 'EXPIRED' 
-  WHERE status = 'KEEPSLOT' AND booking_type = 'ONLINE' 
+  WHERE status = 'KEEPSLOT' AND booking_type IN ('ONLINE_KEEPSLOT', 'ONLINE_QRIS')
   AND created_at < NOW() - INTERVAL '6 hours';
-
-  -- 2. Expire Walk-in/OTS after 30 minutes
-  UPDATE registrations 
-  SET status = 'EXPIRED' 
-  WHERE status = 'KEEPSLOT' AND booking_type = 'OTS' 
-  AND created_at < NOW() - INTERVAL '30 minutes';
 END;
 $$ LANGUAGE plpgsql;

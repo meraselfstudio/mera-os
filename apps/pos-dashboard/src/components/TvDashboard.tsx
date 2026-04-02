@@ -90,7 +90,7 @@ export default function TvDashboard() {
                                 }}>
                                     <div>
                                         <p style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: '8px' }}>
-                                            {(tx as any).registrations?.customer_name || 'Walk-in'}
+                                            {(tx as any).registrations?.customer_name || 'Guest'}
                                         </p>
                                         <p style={{ fontSize: '1.5rem', color: 'var(--mera-text-secondary)', fontFamily: 'monospace' }}>
                                             Sesi: {tx.session_id}
@@ -131,7 +131,7 @@ export default function TvDashboard() {
                                     <div>
                                         <p style={{ fontSize: '1.4rem', fontWeight: 700 }}>{reg.customer_name}</p>
                                         <p style={{ fontSize: '1rem', color: 'var(--mera-text-tertiary)', marginTop: '4px' }}>
-                                            {reg.booking_type === 'ONLINE_KEEPSLOT' ? 'Booking Online' : reg.booking_type === 'ONLINE_QRIS' ? 'Booking Lunas' : 'On The Spot'}
+                                            {reg.booking_type === 'ONLINE_KEEPSLOT' ? 'Booking Online' : 'Booking Lunas'}
                                         </p>
                                     </div>
                                 </div>

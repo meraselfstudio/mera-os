@@ -78,7 +78,6 @@ export const WEEKEND_SLOTS = [
 ]
 
 const BOOKING_TYPE_LABELS: Record<BookingType, { label: string; desc: string; icon: string }> = {
-    OTS: { icon: '🚶', label: 'On The Spot', desc: 'Datang langsung ke studio, bayar di studio' },
     ONLINE_KEEPSLOT: { icon: '📌', label: 'Keep Slot', desc: 'Slot terkunci 6 jam setelah booking.' },
     ONLINE_QRIS: { icon: '💳', label: 'QRIS', desc: 'Bayar sekarang via QRIS — slot terjamin 100%' },
 }
@@ -91,6 +90,25 @@ const DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
 
 const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif"
 const SERIF = "Georgia, 'Times New Roman', serif"
+const INSTAGRAM_DM_TARGET = 'mera.selfstudio'
+const LANDING_BG = 'hsl(33, 24%, 93%)'
+const LANDING_BG_NAV = 'hsla(33, 24%, 93%, 0.9)'
+const TYPE = {
+    micro: 'var(--mera-step--2)',
+    xs: 'var(--mera-step--1)',
+    sm: 'var(--mera-step-0)',
+    md: 'var(--mera-step-1)',
+    lg: 'var(--mera-step-2)',
+    xl: 'var(--mera-step-3)',
+    hero: 'var(--mera-step-4)',
+    display: 'var(--mera-step-5)',
+} as const
+const TRACK = {
+    tight: 'var(--mera-track-tight)',
+    base: 'var(--mera-track-base)',
+    soft: 'var(--mera-track-soft)',
+    wide: 'var(--mera-track-wide)',
+} as const
 
 // ── Types ───────────────────────────────────────────────────────
 type Step = 'studio' | 'packages' | 'datetime' | 'form' | 'confirm'
@@ -119,14 +137,14 @@ const INITIAL: BookingState = {
     preferredTime: '',
     customerName: '',
     instagramHandle: '',
-    bookingType: 'OTS',
+    bookingType: 'ONLINE_KEEPSLOT',
     sessionId: null,
     registrationId: null,
     pax: 1,
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
-function generateSessionId(name: string, room: string | null, variant: string | null): string {
+function generateSessionId(name: string, room: string | null, variant: string | null, attempt = 0): string {
     const dd = new Date().getDate().toString().padStart(2, '0')
     const clean = name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'GUEST'
     let code = 'XXX'
@@ -141,10 +159,20 @@ function generateSessionId(name: string, room: string | null, variant: string | 
     } else {
         code = Math.random().toString(36).slice(2, 6).toUpperCase()
     }
+    if (attempt > 0) {
+        const suffix = Math.random().toString(36).slice(2, 4).toUpperCase()
+        code = `${code}${suffix}`.slice(0, 6)
+    }
     return `${dd}-${clean}-${code}`
 }
 const todayISO = () => new Date().toISOString().split('T')[0]
 const formatIDR = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
+
+function isSessionIdConflict(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false
+    const e = error as { code?: string; message?: string }
+    return e.code === '23505' && (e.message ?? '').includes('registrations_session_id_key')
+}
 
 // ── QRIS Helpers ────────────────────────────────────────────────
 const MOCK_STATIC_QRIS = "00020101021126670016ID.CO.SHOPEE.WWW011893600918000000000002150000000000000000303UMI51440014ID.CO.QRIS.WWW0215ID10200210344580303UMI5204549953033605802ID5914Mera SelfStudio6006Sleman610555581621507119139851416304AE49";
@@ -211,10 +239,11 @@ function useStripedBackground(room: string | null) {
             // Blue stripes
             return 'repeating-linear-gradient(0deg, #2E4B72, #2E4B72 40px, #3A5F8F 40px, #3A5F8F 80px)'
         case 'Elevator Studio':
-        case 'Majestic Studio':
             // Grey stripes
             return 'repeating-linear-gradient(0deg, #9C9B98, #9C9B98 40px, #B2B1AE 40px, #B2B1AE 80px)'
         default:
+            // Brown stripes
+            return 'repeating-linear-gradient(0deg, #471d06d0, #471d06d0 40px, #55241b 40px, #55241b 80px)'
             return '#5D2227'
     }
 }
@@ -228,6 +257,13 @@ export default function BookingFlow() {
     const [addonProducts, setAddonProducts] = useState<Product[]>([])
     const [loading, setLoading] = useState(false)
     const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
+
+    // ── Reschedule modal state ───────────────────────────────────
+    const [showReschedule, setShowReschedule] = useState(false)
+    const [rescDate, setRescDate] = useState('')
+    const [rescTime, setRescTime] = useState('')
+    const [rescCalDate, setRescCalDate] = useState<Date>(() => new Date())
+    const [rescLoading, setRescLoading] = useState(false)
 
     // Fetch all active products
     useEffect(() => {
@@ -294,6 +330,37 @@ export default function BookingFlow() {
         return baseSlots
     }, [state.preferredDate])
 
+    // Reschedule — available slots for new date
+    const rescAvailableSlots = useMemo(() => {
+        if (!rescDate) return []
+        const d = new Date(rescDate)
+        const day = d.getDay()
+        const baseSlots = (day === 0 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS
+        const todayStr = todayISO()
+        if (rescDate === todayStr) {
+            const now = new Date()
+            const cur = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+            return baseSlots.filter(s => s > cur)
+        }
+        return baseSlots
+    }, [rescDate])
+
+    const handleReschedule = async () => {
+        if (!state.registrationId || !rescDate || !rescTime) return
+        setRescLoading(true)
+        const { error } = await (supabase
+            .from('registrations') as any)
+            .update({ preferred_date: rescDate, preferred_time: rescTime })
+            .eq('id', state.registrationId)
+        setRescLoading(false)
+        if (!error) {
+            setState(p => ({ ...p, preferredDate: rescDate, preferredTime: rescTime }))
+            setShowReschedule(false)
+        } else {
+            alert('Gagal reschedule: ' + error.message)
+        }
+    }
+
     // Price calculation — base + add-ons
     const basePrice = state.selectedPackage
         ? (state.selectedPackage.tipe_harga === 'bertingkat'
@@ -330,49 +397,71 @@ export default function BookingFlow() {
 
     const handleSubmit = async () => {
         setLoading(true)
-        const sid = generateSessionId(state.customerName, state.selectedRoom, state.selectedVariant)
         const now = new Date()
         const expiresAt = state.bookingType === 'ONLINE_KEEPSLOT'
             ? new Date(now.getTime() + 6 * 60 * 60 * 1000).toISOString()
             : null
 
-        const payload = {
-            customer_name: state.customerName.trim(),
-            instagram_handle: state.instagramHandle.startsWith('@') ? state.instagramHandle.trim() : `@${state.instagramHandle.trim()}`,
-            booking_type: state.bookingType,
-            preferred_date: state.preferredDate || null,
-            preferred_time: state.preferredTime || null,
-            session_id: sid,
-            expires_at: expiresAt,
-            addons: {
-                room: state.selectedRoom,
-                variant: state.selectedVariant,
-                selected_addons: state.selectedAddons,
-                pax: state.pax,
-                computed_price: displayPrice,
+        let sid = ''
+        let data: { id: string } | null = null
+        let error: { message?: string } | null = null
+
+        for (let attempt = 0; attempt < 6; attempt++) {
+            sid = generateSessionId(state.customerName, state.selectedRoom, state.selectedVariant, attempt)
+            const payload = {
+                customer_name: state.customerName.trim(),
+                instagram_handle: state.instagramHandle.startsWith('@') ? state.instagramHandle.trim() : `@${state.instagramHandle.trim()}`,
+                booking_type: state.bookingType,
+                preferred_date: state.preferredDate || null,
+                preferred_time: state.preferredTime || null,
+                session_id: sid,
+                expires_at: expiresAt,
+                addons: {
+                    room: state.selectedRoom,
+                    variant: state.selectedVariant,
+                    selected_addons: state.selectedAddons,
+                    pax: state.pax,
+                    computed_price: displayPrice,
+                }
             }
+            // @ts-expect-error - addons shape includes pax and computed_price for local state
+            const result: any = await supabase.from('registrations').insert(payload).select('id').single()
+
+            if (!result.error && result.data) {
+                data = result.data as { id: string }
+                error = null
+                break
+            }
+
+            if (isSessionIdConflict(result.error)) {
+                error = { message: 'Session ID bentrok, mencoba ulang...' }
+                continue
+            }
+
+            error = result.error
+            break
         }
-        // @ts-expect-error - addons shape includes pax and computed_price for local state
-        const { data, error } = await supabase.from('registrations').insert(payload).select('id').single()
+
         setLoading(false)
         if (!error && data) {
-            setState(p => ({ ...p, registrationId: (data as { id: string }).id, sessionId: sid }))
+            setState(p => ({ ...p, registrationId: data.id, sessionId: sid }))
             setStep('confirm')
         } else {
-            alert(`Gagal booking: ${error?.message}`)
+            alert(`Gagal booking: ${error?.message || 'Terjadi kendala saat membuat session ID unik'}`)
         }
     }
 
     // Form valid check
     const formValid = state.customerName.trim() !== '' && state.instagramHandle.trim() !== ''
+    const isLightBookingStep = step === 'studio' || step === 'packages'
 
     return (
-        <div style={{ minHeight: '100vh', background: (step === 'studio' || step === 'packages') ? '#F4F1E1' : '#4A1A1A', fontFamily: FONT, color: (step === 'studio' || step === 'packages') ? '#000' : '#FFFFFF', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ minHeight: '100vh', background: isLightBookingStep ? LANDING_BG : '#4A1A1A', fontFamily: FONT, color: isLightBookingStep ? '#000' : '#FFFFFF', display: 'flex', flexDirection: 'column' }}>
             {/* ── Top Nav: [← Kembali] [LOGO] [Booking] */}
             <nav style={{
                 position: 'sticky', top: 0, zIndex: 100,
-                background: (step === 'studio' || step === 'packages') ? 'rgba(244, 241, 225, 0.9)' : 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)',
-                borderBottom: `1px solid ${(step === 'studio' || step === 'packages') ? 'rgba(0,0,0,0.05)' : '#222222'}`,
+                background: isLightBookingStep ? LANDING_BG_NAV : 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)',
+                borderBottom: `1px solid ${isLightBookingStep ? 'rgba(0,0,0,0.05)' : '#222222'}`,
                 padding: '0 16px', height: 56,
                 display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center',
             }}>
@@ -421,48 +510,46 @@ export default function BookingFlow() {
             {/* Shared Styles */}
             {(() => {
                 const backBtnStyle: React.CSSProperties = {
-                    background: 'none', border: 'none', color: '#AAAAAA', fontSize: 13,
+                    background: 'none', border: 'none', color: '#AAAAAA', fontSize: TYPE.xs,
                     fontWeight: 600, cursor: 'pointer', padding: '8px 0',
-                    display: 'inline-block', marginBottom: 24, textTransform: 'uppercase',
-                    letterSpacing: '0.04em'
+                    display: 'inline-block', marginBottom: 24,
+                    letterSpacing: TRACK.soft
                 };
                 const inputStyle: React.CSSProperties = {
-                    width: '100%', padding: '14px 16px', background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid #333333', borderRadius: 12, color: '#FFFFFF',
-                    fontSize: 15, outline: 'none', transition: 'border-color 0.2s',
-                    marginBottom: 16
+                    width: '100%', padding: '12px 14px', background: '#2A2A2C',
+                    border: '1px solid #3C3C3E', borderRadius: 10, color: '#FFFFFF',
+                    fontSize: TYPE.sm, letterSpacing: TRACK.soft, outline: 'none',
+                    boxSizing: 'border-box', fontFamily: FONT,
                 };
                 
                 return (
                     <>
             {/* ── Step 1: Studio Selection ─────────── */}
             {step === 'studio' && (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F4F1E1', padding: '40px 20px 80px', alignItems: 'center' }}>
-                    <div style={{ textAlign: 'center', marginBottom: 40 }}>
-                        <h2 style={{ fontSize: 13, fontWeight: 800, color: '#333', letterSpacing: '0.15em', textTransform: 'uppercase', margin: '0 0 12px' }}>
-                            OUR STUDIO
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: LANDING_BG, padding: '24px 16px 40px', alignItems: 'center' }}>
+                    <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                        <h2 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#333', letterSpacing: TRACK.wide, margin: '0 0 12px' }}>
                         </h2>
-                        <h1 style={{ fontFamily: SERIF, fontSize: 'clamp(32px, 8vw, 48px)', color: '#333', margin: 0, fontStyle: 'italic', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-                            Mau foto<br/>di mana?
+                        <h1 style={{ font: `italic 700 48px/1.05 "Times New Roman Condensed", serif`, color: '#1e1e1e', margin: 0, letterSpacing: TRACK.tight }}>
+                            Choose Studio:
                         </h1>
                     </div>
                     
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 50, width: '100%', maxWidth: 720 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%', maxWidth: 760 }}>
                         {/* Row 1: Basic Studio & Pas Photo */}
                         <div>
-                            <h3 style={{ fontSize: 13, fontWeight: 800, color: '#888', letterSpacing: '0.1em', marginBottom: 20, textAlign: 'center' }}>BASIC STUDIO</h3>
+                            <h3 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', marginBottom: 14, textAlign: 'center', letterSpacing: TRACK.soft }}>Basic Studio Packages:</h3>
                             <div style={{ 
-                                display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: 32, paddingBottom: 16,
-                                msOverflowStyle: 'none', scrollbarWidth: 'none', padding: '0 16px'
+                                display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, width: '100%'
                             }}>
                                 {[STUDIO_ROOMS[0], STUDIO_ROOMS[1]].map(r => (
-                                    <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '0 0 280px', maxWidth: 320 }}>
-                                        <div style={{ width: '100%', position: 'relative', marginBottom: 20, aspectRatio: '4/5' }}>
-                                            <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat`, filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.15))' }} />
+                                    <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifySelf: 'center', width: 'clamp(120px, 42vw, 168px)' }}>
+                                        <div style={{ width: '100%', position: 'relative', marginBottom: 12, aspectRatio: '4/5' }}>
+                                            <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat` }} />
                                         </div>
                                         <button onClick={() => { setState(p => ({ ...p, selectedRoom: r.id, selectedPackage: null, selectedVariant: null, selectedAddons: [] })); setStep('packages'); }}
-                                                style={{ background: '#2D1619', color: '#fff', border: 'none', borderRadius: 999, padding: '14px 28px', fontSize: 14, fontWeight: 800, letterSpacing: '0.05em', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center', transition: 'transform 0.15s ease' }}>
-                                            {r.name.toUpperCase()} <span style={{ opacity: 0.6 }}>→</span>
+                                                style={{ background: '#5D2227', color: '#fff', border: 'none', borderRadius: 999, padding: '11px 14px', width: '100%', minHeight: 44, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', lineHeight: 1.2, textAlign: 'center', transition: 'transform 0.15s ease' }}>
+                                            {r.name} <span style={{ opacity: 0.6 }}>→</span>
                                         </button>
                                     </div>
                                 ))}
@@ -471,19 +558,18 @@ export default function BookingFlow() {
 
                         {/* Row 2: Majestic & Elevator */}
                         <div>
-                            <h3 style={{ fontSize: 13, fontWeight: 800, color: '#888', letterSpacing: '0.1em', marginBottom: 20, textAlign: 'center', marginTop: 16 }}>THEMATIC STUDIO</h3>
+                            <h3 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', marginBottom: 14, textAlign: 'center', marginTop: 6, letterSpacing: TRACK.soft }}>Thematic Studio Packages:</h3>
                             <div style={{ 
-                                display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: 32, paddingBottom: 16,
-                                msOverflowStyle: 'none', scrollbarWidth: 'none', padding: '0 16px'
+                                display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, width: '100%'
                             }}>
                                 {[STUDIO_ROOMS[2], STUDIO_ROOMS[3]].map(r => (
-                                    <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '0 0 280px', maxWidth: 320 }}>
-                                        <div style={{ width: '100%', position: 'relative', marginBottom: 20, aspectRatio: '4/5' }}>
-                                            <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat`, filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.15))' }} />
+                                    <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifySelf: 'center', width: 'clamp(120px, 42vw, 168px)' }}>
+                                        <div style={{ width: '100%', position: 'relative', marginBottom: 12, aspectRatio: '4/5' }}>
+                                            <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat` }} />
                                         </div>
                                         <button onClick={() => { setState(p => ({ ...p, selectedRoom: r.id, selectedPackage: null, selectedVariant: null, selectedAddons: [] })); setStep('packages'); }}
-                                                style={{ background: '#2D1619', color: '#fff', border: 'none', borderRadius: 999, padding: '14px 28px', fontSize: 14, fontWeight: 800, letterSpacing: '0.05em', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center', transition: 'transform 0.15s ease' }}>
-                                            {r.name.toUpperCase()} <span style={{ opacity: 0.6 }}>→</span>
+                                                style={{ background: '#5D2227', color: '#fff', border: 'none', borderRadius: 999, padding: '11px 14px', width: '100%', minHeight: 44, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', lineHeight: 1.2, textAlign: 'center', transition: 'transform 0.15s ease' }}>
+                                            {r.name} <span style={{ opacity: 0.6 }}>→</span>
                                         </button>
                                     </div>
                                 ))}
@@ -497,7 +583,7 @@ export default function BookingFlow() {
             {step === 'packages' && (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                     {/* Wavy Divider Transition to Striped Area */}
-                    <div style={{ background: '#F4F1E1' }}>
+                    <div style={{ background: LANDING_BG }}>
                         <WavyTopDivider fill={baseBgColor} />
                     </div>
 
@@ -513,8 +599,7 @@ export default function BookingFlow() {
                             {/* LEFT: Selected Studio Polaroid */}
                             {state.selectedRoom && (
                                 <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 800, color: '#FFFFFF', letterSpacing: '0.08em', marginLeft: 8 }}>
-                                        STUDIO :
+                                    <div style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft, marginLeft: 8 }}>
                                     </div>
                                     <div style={{
                                         width: 260, position: 'relative', aspectRatio: '4/5'
@@ -522,21 +607,15 @@ export default function BookingFlow() {
                                         <div style={{
                                             width: '100%', height: '100%',
                                             background: `url(${STUDIO_ROOMS.find(r => r.id === state.selectedRoom)?.image || ''}) center/contain no-repeat`,
-                                            filter: 'drop-shadow(0 20px 40px rgba(0,0,0,0.3))'
                                         }} />
-                                    </div>
-                                    <div style={{ padding: '0 8px' }}>
-                                        <span style={{ fontSize: 24, fontWeight: 900, color: '#FFF', letterSpacing: '-0.02em', fontFamily: 'Arial, sans-serif' }}>
-                                            {STUDIO_ROOMS.find(r => r.id === state.selectedRoom)?.name}
-                                        </span>
                                     </div>
                                 </div>
                             )}
 
                             {/* RIGHT: Packages & Options */}
                             <div style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 480 }}>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: '#FFFFFF', letterSpacing: '0.08em', marginLeft: 8 }}>
-                                    Choose Your PACKAGE :
+                                <div style={{ fontSize: TYPE.lg, fontWeight: 800, color: '#FFFFFF', marginLeft: 8, letterSpacing: TRACK.tight }}>
+                                    Choose Package :
                                 </div>
 
                                 {/* Packages List */}
@@ -573,17 +652,17 @@ export default function BookingFlow() {
                                                     transition: 'all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
                                                 }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
-                                                    <h3 style={{ fontSize: 16, fontWeight: 900, color: '#333', margin: 0, letterSpacing: '-0.02em', lineHeight: 1.1, flex: 1, textTransform: 'uppercase' }}>{pkg.nama}</h3>
+                                                    <h3 style={{ fontSize: TYPE.md, fontWeight: 900, color: '#333', margin: 0, letterSpacing: TRACK.tight, lineHeight: 1.1, flex: 1 }}>{pkg.nama}</h3>
                                                     <div style={{
                                                         background: '#5D2227',
                                                         color: '#FFFFFF', borderRadius: 999, padding: '6px 14px', flexShrink: 0,
-                                                        fontWeight: 800, fontSize: 13, letterSpacing: '-0.01em', display: 'inline-flex', alignItems: 'center', gap: 4
+                                                        fontWeight: 800, fontSize: TYPE.xs, letterSpacing: TRACK.base, display: 'inline-flex', alignItems: 'center', gap: 4
                                                     }}>
                                                         Rp {pkg.harga_dasar.toLocaleString('id-ID')}
                                                     </div>
                                                 </div>
                                                 
-                                                <ul style={{ margin: 0, paddingLeft: 18, color: '#555', fontSize: 11, fontWeight: 500, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                <ul style={{ margin: 0, paddingLeft: 18, color: '#555', fontSize: TYPE.xs, letterSpacing: TRACK.soft, fontWeight: 500, display: 'flex', flexDirection: 'column', gap: 2 }}>
                                                     {detailLines.map((line, idx) => (
                                                         <li key={idx}>{line}</li>
                                                     ))}
@@ -604,10 +683,10 @@ export default function BookingFlow() {
                                         {/* Warning Banner */}
                                         {showAddonSelector && (
                                              <div style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 100, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                                                <span style={{ fontSize: 18 }}>⚠️</span>
-                                                <p style={{ fontSize: 10, color: '#FFFFFF', margin: 0, lineHeight: 1.4 }}>
+                                                <span style={{ fontSize: TYPE.md }}>⚠️</span>
+                                                <p style={{ fontSize: TYPE.micro, letterSpacing: TRACK.soft, color: '#FFFFFF', margin: 0, lineHeight: 1.4 }}>
                                                     Paket foto ini menghasilkan foto dalam format <strong>Hitam Putih</strong>.<br/>
-                                                    Tambah <strong>Add-Ons</strong> dibawah untuk hasil <strong>ter-edit</strong> dan <strong>berwarna</strong>.
+                                                    Tambah <strong>Add-Ons</strong> dibawah untuk hasil <strong>ter-edit</strong> & <strong>berwarna</strong>.
                                                 </p>
                                              </div>
                                         )}
@@ -630,12 +709,12 @@ export default function BookingFlow() {
                                                     {state.selectedAddons.includes(ADDON_EDITED_COLORED) && <span style={{ color: '#FFF', fontSize: 12, fontWeight: 800 }}>✓</span>}
                                                 </div>
                                                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                                    <span style={{ fontSize: 8, fontWeight: 800, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Add-On</span>
-                                                    <span style={{ fontSize: 11, fontWeight: 900, color: '#333', textTransform: 'uppercase' }}>Edited and Colored Photo</span>
+                                                    <span style={{ fontSize: TYPE.micro, fontWeight: 700, color: '#888', letterSpacing: TRACK.soft }}>Add-On</span>
+                                                    <span style={{ fontSize: TYPE.xs, fontWeight: 900, color: '#333', letterSpacing: TRACK.tight }}>Edited & Colored Photo</span>
                                                 </div>
                                                 <div style={{
                                                     background: '#5D2227', color: '#FFFFFF', borderRadius: 999, padding: '6px 14px',
-                                                    fontWeight: 800, fontSize: 12
+                                                    fontWeight: 800, fontSize: TYPE.xs, letterSpacing: TRACK.soft
                                                 }}>
                                                     +{formatIDR(ADDON_PRICE)}
                                                 </div>
@@ -644,11 +723,11 @@ export default function BookingFlow() {
 
                                         {/* Pax Config (Add Person) */}
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 4 }}>
-                                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Add Person :</span>
-                                            <div style={{ display: 'flex', alignItems: 'center', background: '#F8F6F0', borderRadius: 100, padding: '4px 6px' }}>
+                                            <span style={{ fontSize: TYPE.xs, color: '#FFFFFF', fontWeight: 700, letterSpacing: TRACK.soft }}>Jumlah Orang :</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', background: '#FFFFFF', borderRadius: 100, padding: '4px 6px' }}>
                                                 <button onClick={() => setState(p => ({ ...p, pax: Math.max(1, p.pax - 1) }))} 
                                                     style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#EAE8E0', color: '#333', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                                                <span style={{ fontSize: 14, fontWeight: 900, width: 32, textAlign: 'center', color: '#333' }}>{state.pax}</span>
+                                                <span style={{ fontSize: TYPE.sm, fontWeight: 900, width: 32, textAlign: 'center', color: '#333' }}>{state.pax}</span>
                                                 <button onClick={() => setState(p => {
                                                     const n = p.selectedPackage?.nama.toLowerCase() || ''
                                                     let maxLimit = p.selectedPackage?.max_orang || 20
@@ -658,14 +737,14 @@ export default function BookingFlow() {
                                                     return { ...p, pax: Math.min(maxLimit, p.pax + 1) }
                                                 })} style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#EAE8E0', color: '#333', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
                                             </div>
-                                            <span style={{ fontSize: 14, fontWeight: 800, color: '#FFF' }}>?</span>
+                                            <span style={{ fontSize: TYPE.sm, fontWeight: 800, color: '#FFF' }}></span>
                                         </div>
 
                                         {/* Background Selection */}
                                         {(state.selectedRoom === 'Basic Studio' || state.selectedRoom === 'Pas Photo') && (
                                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 16 }}>
-                                                <span style={{ fontSize: 11, fontWeight: 800, color: '#FFFFFF', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-                                                    BACKGROUND Color :
+                                                <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft, marginBottom: 12 }}>
+                                                    Background Color :
                                                 </span>
                                                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
                                                     {VARIANTS['Basic Studio'].map(variant => {
@@ -684,7 +763,7 @@ export default function BookingFlow() {
                                                                     border: `2px solid ${sel ? '#FFF' : 'rgba(255,255,255,0.2)'}`,
                                                                     boxShadow: sel ? '0 0 0 2px rgba(255,255,255,0.4), inset 0 2px 4px rgba(0,0,0,0.2)' : 'inset 0 2px 4px rgba(0,0,0,0.1)'
                                                                 }} />
-                                                                <span style={{ fontSize: 10, fontWeight: 700, color: sel ? '#FFF' : 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                                <span style={{ fontSize: TYPE.micro, fontWeight: 700, color: sel ? '#FFF' : 'rgba(255,255,255,0.6)', letterSpacing: TRACK.soft }}>
                                                                     {variant.label}
                                                                 </span>
                                                             </button>
@@ -702,19 +781,19 @@ export default function BookingFlow() {
                                             boxShadow: '0 -10px 30px rgba(0,0,0,0.3)', zIndex: 50
                                         }}>
                                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontSize: 11, fontWeight: 800, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Payment</span>
-                                                <span style={{ fontSize: 20, fontWeight: 900, color: '#333' }}>{formatIDR(displayPrice)}</span>
+                                                <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', letterSpacing: TRACK.soft }}>Total Payment</span>
+                                                <span style={{ fontSize: TYPE.lg, fontWeight: 900, color: '#333', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
                                             </div>
                                             <button onClick={() => { setStep('datetime'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
                                                 disabled={!isPackageStepComplete}
                                                 style={{
                                                     background: isPackageStepComplete ? '#5D2227' : '#CCC',
                                                     color: '#FFF', padding: '14px 32px', borderRadius: 999, border: 'none',
-                                                    fontSize: 14, fontWeight: 800, cursor: isPackageStepComplete ? 'pointer' : 'not-allowed',
+                                                    fontSize: TYPE.sm, fontWeight: 700, letterSpacing: TRACK.soft, cursor: isPackageStepComplete ? 'pointer' : 'not-allowed',
                                                     boxShadow: isPackageStepComplete ? '0 4px 12px rgba(93,34,39,0.3)' : 'none',
                                                     transition: 'all 0.2s'
                                                 }}>
-                                                CONTINUE &rarr;
+                                                Continue &rarr;
                                             </button>
                                         </div>
 
@@ -729,7 +808,7 @@ export default function BookingFlow() {
             {/* ── Step 3: Date & Time ─────────────── */}
             {step === 'datetime' && (
                 <div style={{ padding: '40px 20px', maxWidth: 900, margin: '0 auto' }}>
-                    <button onClick={() => setStep('packages')} style={backBtnStyle}>← Packages</button>
+                    <button onClick={() => setStep('packages')} style={backBtnStyle}></button>
 
                     {/* Selected package summary banner */}
                     <div style={{
@@ -737,10 +816,10 @@ export default function BookingFlow() {
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8,
                     }}>
                         <div>
-                            <p style={{ fontSize: 11, color: '#AAAAAA', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Summary</p>
-                            <p style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF' }}>{state.selectedRoom} — {state.selectedPackage?.nama}</p>
+                            <p style={{ fontSize: TYPE.xs, color: '#AAAAAA', letterSpacing: TRACK.soft, marginBottom: 2 }}>Summary</p>
+                            <p style={{ fontSize: TYPE.md, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.tight }}>{state.selectedRoom} : <br/> {state.selectedPackage?.nama}</p>
                         </div>
-                        <p style={{ fontSize: 18, fontWeight: 800, color: '#ffffffff' }}>{formatIDR(displayPrice)}</p>
+                        <p style={{ fontSize: TYPE.md, fontWeight: 800, color: '#ffffffff', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</p>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
@@ -751,19 +830,19 @@ export default function BookingFlow() {
 
                         <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: 24 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                                <p style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#AAAAAA' }}>Available Slot</p>
-                                <span style={{ fontSize: 11, background: '#2C2C2E', color: '#AAAAAA', padding: '3px 8px', borderRadius: 4, fontWeight: 600 }}>
+                                <p style={{ fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, color: '#AAAAAA' }}>Available Slot</p>
+                                <span style={{ fontSize: TYPE.micro, background: '#2C2C2E', color: '#AAAAAA', padding: '3px 8px', borderRadius: 4, fontWeight: 600, letterSpacing: TRACK.soft }}>
                                     {state.preferredDate ? (new Date(state.preferredDate).getDay() === 0 || new Date(state.preferredDate).getDay() === 6 ? 'Weekend' : 'Weekday') : 'Pilih Tanggal'}
                                 </span>
                             </div>
                             {!state.preferredDate ? (
-                                <div style={{ padding: '30px 0', textAlign: 'center', color: '#555555', fontSize: 14 }}>Pilih tanggal terlebih dahulu</div>
+                                <div style={{ padding: '30px 0', textAlign: 'center', color: '#555555', fontSize: TYPE.sm, letterSpacing: TRACK.soft }}>Pilih tanggal terlebih dahulu</div>
                             ) : (
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                     {availableSlots.map(t => (
                                         <button key={t} onClick={() => setState(p => ({ ...p, preferredTime: t }))}
                                             style={{
-                                                padding: '10px 0', fontSize: 14, fontWeight: 600, border: '1px solid',
+                                                padding: '10px 0', fontSize: TYPE.sm, fontWeight: 600, letterSpacing: TRACK.soft, border: '1px solid',
                                                 borderColor: state.preferredTime === t ? '#8f0700ff' : '#333333',
                                                 background: state.preferredTime === t ? '#8f0700ff' : '#2C2C2E',
                                                 color: state.preferredTime === t ? '#FFFFFF' : '#888888',
@@ -781,9 +860,9 @@ export default function BookingFlow() {
                         <button onClick={() => { setStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
                             disabled={!state.preferredDate || !state.preferredTime}
                             style={{
-                                padding: '14px 36px', fontSize: 15, fontWeight: 700,
-                                background: state.preferredDate && state.preferredTime ? '#FFFFFF' : '#2C2C2E',
-                                color: state.preferredDate && state.preferredTime ? '#000000' : '#555555',
+                                padding: '14px 36px', fontSize: TYPE.sm, fontWeight: 700, letterSpacing: TRACK.soft,
+                                background: state.preferredDate && state.preferredTime ? '#FFFFFF' : '#ffffff',
+                                color: state.preferredDate && state.preferredTime ? '#000000' : '#ffffff',
                                 borderRadius: 12, border: 'none',
                                 cursor: state.preferredDate && state.preferredTime ? 'pointer' : 'not-allowed', fontFamily: FONT,
                             }}>
@@ -795,15 +874,15 @@ export default function BookingFlow() {
 
             {/* ── Step 4: Booking Form ─────────────── */}
             {step === 'form' && (
-                <div style={{ padding: '40px 20px', maxWidth: 960, margin: '0 auto' }}>
-                    <button onClick={() => setStep('datetime')} style={backBtnStyle}>← Ganti Jadwal</button>
+                <div style={{ padding: '16px 16px 32px', margin: '0 auto', width: '100%' }}>
+                    <button onClick={() => setStep('datetime')} style={backBtnStyle}></button>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 20, alignItems: 'start' }} className="form-layout">
+                    <div className="form-layout">
                         {/* Form main */}
-                        <div>
+                        <div className="form-main">
 
-                            <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: '26px 22px' }}>
-                                <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 22, color: '#FFFFFF' }}>Your Information</h2>
+                            <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: '20px 18px' }}>
+                                <h2 style={{ fontSize: TYPE.md, fontWeight: 700, marginBottom: 18, color: '#FFFFFF', letterSpacing: TRACK.tight }}>Personal Information</h2>
 
                                 <FormField label="Nama*">
                                     <input style={inputStyle} placeholder="Nama..."
@@ -812,17 +891,17 @@ export default function BookingFlow() {
                                 </FormField>
 
                                 <FormField label="Instagram*">
-                                    <div style={{ position: 'relative' }}>
-                                        <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#AAAAAA', fontSize: 15 }}>@</span>
-                                        <input style={{ ...inputStyle, paddingLeft: 28 }} placeholder="mera.selfstudio"
+                                    <div style={{ position: 'relative', width: '100%' }}>
+                                        <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: '#666666', fontSize: TYPE.sm, pointerEvents: 'none', userSelect: 'none' }}>@</span>
+                                        <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="username"
                                             value={state.instagramHandle.replace('@', '')}
                                             onChange={e => setState(p => ({ ...p, instagramHandle: e.target.value }))} />
                                     </div>
-                                    <p style={{ fontSize: 11, color: '#666666', marginTop: 5 }}>Konfirmasi booking akan dikirim via Instagram DM ke akun ini.</p>
+                                    <p style={{ fontSize: TYPE.xs, color: '#666666', marginTop: 5, letterSpacing: TRACK.soft }}>Pastikan username Instagram kamu benar dan aktif. <br/> Konfirmasi booking, mengirim hasil foto dan komunikasi lainnya akan dilakukan melalui DM @mera.selfstudio.</p>
                                 </FormField>
 
-                                <FormField label="Booking*">
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <FormField label="Payment Method*">
+                                    <div style={{ display: 'flex', color: '#FFFFFF', flexDirection: 'column', gap: 10 }}>
                                         {(Object.keys(BOOKING_TYPE_LABELS) as BookingType[]).map(bt => {
                                             const { icon, label, desc } = BOOKING_TYPE_LABELS[bt]
                                             const checked = state.bookingType === bt
@@ -835,8 +914,8 @@ export default function BookingFlow() {
                                                     <input type="radio" name="booking_type" checked={checked}
                                                         onChange={() => setState(p => ({ ...p, bookingType: bt }))} style={{ marginTop: 3 }} />
                                                     <div>
-                                                        <p style={{ fontWeight: 600, fontSize: 14, color: '#FFFFFF' }}>{icon} {label}</p>
-                                                        <p style={{ fontSize: 12, color: '#888888', marginTop: 2 }}>{desc}</p>
+                                                        <p style={{ fontWeight: 600, fontSize: TYPE.sm, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{icon} {label}</p>
+                                                        <p style={{ fontSize: TYPE.xs, color: '#888888', marginTop: 2, letterSpacing: TRACK.soft }}>{desc}</p>
                                                     </div>
                                                 </label>
                                             )
@@ -847,13 +926,13 @@ export default function BookingFlow() {
                                 {/* KEEPSLOT expiry warning */}
                                 {state.bookingType === 'ONLINE_KEEPSLOT' && (
                                     <div style={{ background: '#2B2200', border: '1px solid #ffc400ff', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
-                                        <p style={{ fontSize: 12, color: '#ffffffff' }}>⏰ Booking <strong>EXPIRED otomatis dalam 6 JAM</strong> jika tidak konfirmasi dan datang ke Studio.</p>
+                                        <p style={{ fontSize: TYPE.xs, color: '#ffffffff', letterSpacing: TRACK.soft }}>⏰ Booking <strong>EXPIRED otomatis dalam 6 JAM</strong> jika tidak konfirmasi dan datang ke Studio.</p>
                                     </div>
                                 )}
 
                                 <button onClick={handleSubmit} disabled={loading || !formValid}
                                     style={{
-                                        width: '100%', padding: '15px', fontSize: 16, fontWeight: 700,
+                                        width: '100%', padding: '15px', fontSize: TYPE.md, fontWeight: 700, letterSpacing: TRACK.soft,
                                         background: formValid ? '#FFFFFF' : '#2C2C2E',
                                         color: formValid ? '#000000' : '#555555', borderRadius: 12, border: 'none',
                                         cursor: formValid ? 'pointer' : 'not-allowed', marginTop: 8, fontFamily: FONT,
@@ -864,24 +943,24 @@ export default function BookingFlow() {
                         </div>
 
                         {/* Compact Summary */}
-                        <div style={{ position: 'sticky', top: 72 }}>
+                        <div className="form-summary">
                             <div style={{ background: '#1C1C1E', borderRadius: 14, border: '1px solid #2C2C2E', padding: '16px 18px' }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#666666', marginBottom: 12 }}>Ringkasan</p>
+                                <p style={{ fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, color: '#666666', marginBottom: 12 }}>Ringkasan</p>
 
-                                <p style={{ fontSize: 12, color: '#666666', marginBottom: 2 }}>{state.selectedRoom}</p>
-                                <p style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#FFFFFF' }}>{state.selectedPackage?.nama}</p>
-                                <p style={{ fontSize: 12, color: '#AAAAAA', marginBottom: 8 }}>{state.pax} Orang</p>
+                                <p style={{ fontSize: TYPE.xs, color: '#666666', marginBottom: 2, letterSpacing: TRACK.soft }}>{state.selectedRoom}</p>
+                                <p style={{ fontSize: TYPE.md, fontWeight: 800, marginBottom: 2, color: '#FFFFFF', letterSpacing: TRACK.tight }}>{state.selectedPackage?.nama}</p>
+                                <p style={{ fontSize: TYPE.xs, color: '#AAAAAA', marginBottom: 8, letterSpacing: TRACK.soft }}>{state.pax} Orang</p>
 
                                 {state.selectedVariant && (
                                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: '#2C2C2E', borderRadius: 8, marginBottom: 8 }}>
                                         <div style={{ width: 10, height: 10, borderRadius: '50%', background: VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.hex }} />
-                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#FFFFFF' }}>{VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.label}</span>
+                                        <span style={{ fontSize: TYPE.xs, fontWeight: 600, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.label}</span>
                                     </div>
                                 )}
 
                                 {state.selectedAddons.includes(ADDON_EDITED_COLORED) && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
-                                        <span style={{ fontSize: 11, color: '#30D158', fontWeight: 600 }}>✨ Edited + Colored</span>
+                                        <span style={{ fontSize: TYPE.xs, color: '#30D158', fontWeight: 600, letterSpacing: TRACK.soft }}>✨ Edited + Colored</span>
                                     </div>
                                 )}
 
@@ -892,8 +971,8 @@ export default function BookingFlow() {
 
                                 <div style={{ borderTop: '1px solid #2C2C2E', paddingTop: 10, marginTop: 4 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: 13, fontWeight: 700, color: '#FFFFFF' }}>Total</span>
-                                        <span style={{ fontSize: 18, fontWeight: 800, color: '#ffffffff' }}>{formatIDR(displayPrice)}</span>
+                                        <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft }}>Total</span>
+                                        <span style={{ fontSize: TYPE.md, fontWeight: 800, color: '#ffffffff', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -905,19 +984,18 @@ export default function BookingFlow() {
             {/* ── Step 5: Confirmation ─────────────── */}
             {step === 'confirm' && (
                 <div style={{ padding: '40px 20px', maxWidth: 460, margin: '0 auto', textAlign: 'center' }}>
-                    <div style={{ fontSize: 50, marginBottom: 8 }}>📸</div>
-                    <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, color: '#FFFFFF' }}>Booking Berhasil!</h1>
-                    <p style={{ fontSize: 14, color: '#AAAAAA', marginBottom: 24, lineHeight: 1.5 }}>
+                    <div style={{ fontSize: TYPE.xl, marginBottom: 8 }}>📸</div>
+                    <h1 style={{ fontSize: TYPE.lg, fontWeight: 800, marginBottom: 8, color: '#FFFFFF', letterSpacing: TRACK.tight }}>Booking Berhasil!</h1>
+                    <p style={{ fontSize: TYPE.sm, color: '#AAAAAA', marginBottom: 24, lineHeight: 1.5, letterSpacing: TRACK.soft }}>
                         Screenshot tiket ini dan kirimkan via <strong>Instagram DM</strong> untuk konfirmasi bookingmu.
                     </p>
 
                     {/* RECEIPT TICKET */}
                     <div style={{
-                        background: state.bookingType === 'OTS' ? '#d4edda' :
-                            state.bookingType === 'ONLINE_KEEPSLOT' ? '#fff3cd' :
-                                state.bookingType === 'ONLINE_QRIS' ? '#ffccbc' : '#111111',
+                        background: state.bookingType === 'ONLINE_KEEPSLOT' ? '#fff3cd' :
+                            state.bookingType === 'ONLINE_QRIS' ? '#ffccbc' : '#111111',
                         borderRadius: 20,
-                        border: `1px solid ${state.bookingType === 'OTS' ? '#c3e6cb' : state.bookingType === 'ONLINE_KEEPSLOT' ? '#ffeeba' : state.bookingType === 'ONLINE_QRIS' ? '#ffab91' : '#333333'}`,
+                        border: `1px solid ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#ffeeba' : state.bookingType === 'ONLINE_QRIS' ? '#ffab91' : '#333333'}`,
                         marginBottom: 24,
                         textAlign: 'left',
                         position: 'relative',
@@ -925,13 +1003,13 @@ export default function BookingFlow() {
                     }} className="receipt-ticket">
 
                         {/* Ticket Header */}
-                        <div style={{ padding: '24px 24px 16px', borderBottom: `2px dashed ${state.bookingType === 'OTS' ? '#B8D5C6' : state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#333'}`, position: 'relative' }}>
+                        <div style={{ padding: '24px 24px 16px', borderBottom: `2px dashed ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#333'}`, position: 'relative' }}>
                             <div style={{ position: 'absolute', bottom: -10, left: -10, width: 20, height: 20, borderRadius: '50%', background: '#000' }} />
                             <div style={{ position: 'absolute', bottom: -10, right: -10, width: 20, height: 20, borderRadius: '50%', background: '#000' }} />
 
-                            <p style={{ fontSize: 11, color: state.bookingType ? 'rgba(0,0,0,0.5)' : '#888', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>Booking ID</p>
-                            <p style={{ fontSize: 24, fontFamily: 'monospace', fontWeight: 800, color: state.bookingType ? '#000' : '#FFF', letterSpacing: '0.05em' }}>{state.sessionId}</p>
-                            <p style={{ fontSize: 13, color: state.bookingType ? 'rgba(0,0,0,0.6)' : '#AAA', marginTop: 4 }}>a.n. {state.customerName} (@{state.instagramHandle.replace('@', '')})</p>
+                            <p style={{ fontSize: TYPE.xs, color: state.bookingType ? 'rgba(0,0,0,0.5)' : '#888', letterSpacing: TRACK.soft, marginBottom: 4 }}>Booking Id</p>
+                            <p style={{ fontSize: TYPE.lg, fontFamily: 'monospace', fontWeight: 800, color: state.bookingType ? '#000' : '#FFF', letterSpacing: TRACK.soft }}>{state.sessionId}</p>
+                            <p style={{ fontSize: TYPE.xs, color: state.bookingType ? 'rgba(0,0,0,0.6)' : '#AAA', marginTop: 4, letterSpacing: TRACK.soft }}>a.n. {state.customerName} (@{state.instagramHandle.replace('@', '')})</p>
                         </div>
 
                         {/* Ticket Body */}
@@ -941,28 +1019,20 @@ export default function BookingFlow() {
                             <SummaryRowDark label="Jumlah Orang" value={`${state.pax} Orang`} bookingType={state.bookingType} />
                             {state.selectedVariant && <SummaryRowDark label="Warna" value={VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.label} bookingType={state.bookingType} />}
                             {state.selectedAddons.includes(ADDON_EDITED_COLORED) && <SummaryRowDark label="Add On" value="Edited + Colored" bookingType={state.bookingType} />}
-                            <div style={{ marginTop: 12, marginBottom: 12, borderTop: `1px solid ${state.bookingType === 'OTS' ? '#B8D5C6' : state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#222'}` }} />
+                            <div style={{ marginTop: 12, marginBottom: 12, borderTop: `1px solid ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#222'}` }} />
                             <SummaryRowDark label="Tanggal" value={state.preferredDate ? new Date(state.preferredDate).toLocaleDateString('id-ID', { dateStyle: 'long' }) : '—'} bookingType={state.bookingType} />
                             <SummaryRowDark label="Jam Sesi" value={state.preferredTime || '—'} bookingType={state.bookingType} />
                             <SummaryRowDark label="Tipe Pembayaran" value={BOOKING_TYPE_LABELS[state.bookingType]?.label || '—'} bookingType={state.bookingType} />
-                            <div style={{ marginTop: 12, marginBottom: 16, borderTop: `1px solid ${state.bookingType === 'OTS' ? '#B8D5C6' : state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#222'}` }} />
+                            <div style={{ marginTop: 12, marginBottom: 16, borderTop: `1px solid ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#222'}` }} />
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: 14, color: state.bookingType ? 'rgba(0,0,0,0.6)' : '#AAA' }}>Total Tagihan</span>
-                                <span style={{ fontSize: 22, fontWeight: 800, color: state.bookingType ? '#000' : '#FFF' }}>{formatIDR(displayPrice)}</span>
+                                <span style={{ fontSize: TYPE.sm, color: state.bookingType ? 'rgba(0,0,0,0.6)' : '#AAA', letterSpacing: TRACK.soft }}>Total Tagihan</span>
+                                <span style={{ fontSize: TYPE.lg, fontWeight: 800, color: state.bookingType ? '#000' : '#FFF', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
                             </div>
-
-                            {state.bookingType === 'OTS' && (
-                                <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(0, 0, 0, 0.05)', borderRadius: 10, border: '1px solid rgba(0, 0, 0, 0.1)' }}>
-                                    <p style={{ fontSize: 12, color: '#1B4D3E', lineHeight: 1.4, fontWeight: 600 }}>
-                                        Silahkan tunjukkan tiketmu ke Crew di Studio untuk check in.
-                                    </p>
-                                </div>
-                            )}
 
                             {state.bookingType === 'ONLINE_KEEPSLOT' && (
                                 <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(0,0,0,0.05)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)' }}>
-                                    <p style={{ fontSize: 12, color: '#7A5C00', lineHeight: 1.4, fontWeight: 600 }}>
+                                    <p style={{ fontSize: TYPE.xs, color: '#7A5C00', lineHeight: 1.4, fontWeight: 600, letterSpacing: TRACK.soft }}>
                                         ⏰ Tiket booking EXPIRED dalam 6 jam. Harap segera konfirmasi pembayaran via DM.
                                     </p>
                                 </div>
@@ -970,22 +1040,32 @@ export default function BookingFlow() {
 
                             {state.bookingType === 'ONLINE_QRIS' && (
                                 <div style={{ marginTop: 24, padding: '24px', background: '#FFFFFF', borderRadius: 16, textAlign: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                                    <p style={{ fontSize: 14, fontWeight: 700, color: '#000000', marginBottom: 16 }}>Scan QRIS untuk Membayar</p>
+                                    <p style={{ fontSize: TYPE.sm, fontWeight: 700, color: '#000000', marginBottom: 16, letterSpacing: TRACK.soft }}>Scan QRIS untuk Membayar</p>
                                     <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
                                         <QRCode value={generateDynamicQRIS(displayPrice)} size={200} />
                                     </div>
-                                    <p style={{ fontSize: 12, color: '#666', lineHeight: 1.4 }}>
+                                    <p style={{ fontSize: TYPE.xs, color: '#666', lineHeight: 1.4, letterSpacing: TRACK.soft }}>
                                         Nominal <strong>{formatIDR(displayPrice)}</strong> sudah terisi otomatis.
                                         Setelah berhasil bayar, kirimkan screenshot ke DM kami.
                                     </p>
-                                    <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(217, 83, 79, 0.1)', borderRadius: 10 }}>
-                                        <p style={{ fontSize: 12, color: '#A94442', lineHeight: 1.4, fontWeight: 600 }}>
-                                            ⚠️ Ada pilihan reschedule. Ada tombol untuk membuka kamera dan scan QR code di meja Nasir untuk self check-in jika sudah datang ke studio.
+                                    <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(0,0,0,0.04)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.08)' }}>
+                                        <p style={{ fontSize: TYPE.xs, color: '#555', lineHeight: 1.4, letterSpacing: TRACK.soft }}>
+                                            Ingin ubah jadwal? Gunakan tombol <strong>Reschedule</strong> di bawah. Sudah tiba di studio? Tap <strong>Self Check-in</strong>.
                                         </p>
                                     </div>
                                     <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                                        <button style={{ flex: 1, padding: '10px', background: '#F2F2F7', color: '#000', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>📅 Reschedule</button>
-                                        <button style={{ flex: 1, padding: '10px', background: '#000', color: '#FFF', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>📷 Self Check-in</button>
+                                        <button
+                                            onClick={() => {
+                                                setRescDate(state.preferredDate)
+                                                setRescTime(state.preferredTime)
+                                                setRescCalDate(new Date())
+                                                setShowReschedule(true)
+                                            }}
+                                            style={{ flex: 1, padding: '10px', background: '#F2F2F7', color: '#000', border: 'none', borderRadius: 8, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer' }}>📅 Reschedule</button>
+                                        <a
+                                            href={`/checkin?sid=${encodeURIComponent(state.sessionId ?? '')}`}
+                                            target="_blank" rel="noopener noreferrer"
+                                            style={{ flex: 1, padding: '10px', background: '#000', color: '#FFF', border: 'none', borderRadius: 8, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>📷 Self Check-in</a>
                                     </div>
                                 </div>
                             )}
@@ -994,18 +1074,18 @@ export default function BookingFlow() {
 
                     {/* Instagram DM button */}
                     <a
-                        href={`https://ig.me/m/${state.instagramHandle.replace('@mera.selfstudio', '')}`}
+                        href={`https://ig.me/m/${INSTAGRAM_DM_TARGET}`}
                         target="_blank" rel="noopener noreferrer"
                         style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
                             padding: '16px 28px',
                             background: 'linear-gradient(135deg, #833AB4, #FD1D1D, #F77737)',
-                            color: '#fff', borderRadius: 14, fontWeight: 700, fontSize: 16, marginBottom: 16, textDecoration: 'none',
+                            color: '#fff', borderRadius: 14, fontWeight: 700, fontSize: TYPE.md, letterSpacing: TRACK.soft, marginBottom: 16, textDecoration: 'none',
                         }}>
                         <InstagramIcon /> Konfirmasi Booking
                     </a>
 
-                    <Link href="/" style={{ display: 'block', fontSize: 14, color: '#ffffffff', padding: '10px 0', textDecoration: 'none' }}>
+                    <Link href="/" style={{ display: 'block', fontSize: TYPE.sm, color: '#ffffffff', padding: '10px 0', letterSpacing: TRACK.soft, textDecoration: 'none' }}>
                         ← Home
                     </Link>
                 </div>
@@ -1013,6 +1093,104 @@ export default function BookingFlow() {
                         </>
                     )
                 })()}
+
+            {/* ── Reschedule Modal ────────────────────────────────── */}
+            {showReschedule && (
+                <div
+                    onClick={e => { if (e.target === e.currentTarget) setShowReschedule(false) }}
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 999,
+                        background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)',
+                        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                        padding: '0 0 env(safe-area-inset-bottom)',
+                    }}
+                >
+                    <div style={{
+                        width: '100%', maxWidth: 480,
+                        background: '#1C1C1E', borderRadius: '20px 20px 0 0',
+                        border: '1px solid #2C2C2E', padding: '24px 20px 32px',
+                        maxHeight: '90dvh', overflowY: 'auto',
+                    }}>
+                        {/* Handle bar */}
+                        <div style={{ width: 36, height: 4, background: '#3A3A3C', borderRadius: 2, margin: '0 auto 20px' }} />
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <h2 style={{ fontSize: TYPE.md, fontWeight: 800, color: '#FFFFFF', letterSpacing: TRACK.tight, margin: 0 }}>
+                                📅 Reschedule Booking
+                            </h2>
+                            <button onClick={() => setShowReschedule(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: 22, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }}>×</button>
+                        </div>
+                        <p style={{ fontSize: TYPE.xs, color: '#666', marginBottom: 20, letterSpacing: TRACK.soft }}>
+                            Booking ID: <span style={{ fontFamily: 'monospace', color: '#AAAAAA', fontWeight: 700 }}>{state.sessionId}</span>
+                        </p>
+
+                        {/* Calendar */}
+                        <div style={{ background: '#111111', borderRadius: 14, border: '1px solid #2C2C2E', padding: 16, marginBottom: 16 }}>
+                            <p style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#AAAAAA', letterSpacing: TRACK.soft, marginBottom: 12 }}>Pilih Tanggal Baru</p>
+                            <MiniCalendar
+                                value={rescDate}
+                                viewDate={rescCalDate}
+                                onViewChange={setRescCalDate}
+                                onChange={d => { setRescDate(d); setRescTime('') }}
+                            />
+                        </div>
+
+                        {/* Time slots */}
+                        <div style={{ background: '#111111', borderRadius: 14, border: '1px solid #2C2C2E', padding: 16, marginBottom: 20 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <p style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#AAAAAA', letterSpacing: TRACK.soft }}>Pilih Jam Sesi</p>
+                                {rescDate && (
+                                    <span style={{ fontSize: TYPE.micro, background: '#2C2C2E', color: '#AAAAAA', padding: '3px 8px', borderRadius: 4, fontWeight: 600, letterSpacing: TRACK.soft }}>
+                                        {new Date(rescDate).getDay() === 0 || new Date(rescDate).getDay() === 6 ? 'Weekend' : 'Weekday'}
+                                    </span>
+                                )}
+                            </div>
+                            {!rescDate ? (
+                                <p style={{ color: '#555', fontSize: TYPE.sm, textAlign: 'center', padding: '16px 0', letterSpacing: TRACK.soft }}>Pilih tanggal terlebih dahulu</p>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                    {rescAvailableSlots.map(t => (
+                                        <button key={t} onClick={() => setRescTime(t)}
+                                            style={{
+                                                padding: '10px 0', fontSize: TYPE.sm, fontWeight: 600, letterSpacing: TRACK.soft, border: '1px solid',
+                                                borderColor: rescTime === t ? '#8f0700ff' : '#333333',
+                                                background: rescTime === t ? '#8f0700ff' : '#2C2C2E',
+                                                color: rescTime === t ? '#FFFFFF' : '#888888',
+                                                borderRadius: 10, cursor: 'pointer', transition: 'all 0.15s', fontFamily: FONT,
+                                            }}>
+                                            {t}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Selected summary */}
+                        {rescDate && rescTime && (
+                            <div style={{ padding: '12px 16px', background: 'rgba(48,209,88,0.1)', borderRadius: 12, border: '1px solid rgba(48,209,88,0.2)', marginBottom: 16 }}>
+                                <p style={{ fontSize: TYPE.xs, color: '#30D158', fontWeight: 600, letterSpacing: TRACK.soft }}>
+                                    ✓ Jadwal baru: {new Date(rescDate).toLocaleDateString('id-ID', { dateStyle: 'long' })} · {rescTime}
+                                </p>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={handleReschedule}
+                            disabled={!rescDate || !rescTime || rescLoading}
+                            style={{
+                                width: '100%', padding: '14px', fontSize: TYPE.sm, fontWeight: 700, letterSpacing: TRACK.soft,
+                                border: 'none', borderRadius: 12, fontFamily: FONT,
+                                background: rescDate && rescTime && !rescLoading ? '#FFFFFF' : '#2C2C2E',
+                                color: rescDate && rescTime && !rescLoading ? '#000000' : '#555555',
+                                cursor: rescDate && rescTime && !rescLoading ? 'pointer' : 'not-allowed',
+                                transition: 'all 0.15s',
+                            }}
+                        >
+                            {rescLoading ? 'Menyimpan...' : 'Simpan Jadwal Baru →'}
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
@@ -1021,12 +1199,12 @@ export default function BookingFlow() {
 const backBtnStyle: React.CSSProperties = {
     display: 'inline-flex', alignItems: 'center', gap: 6,
     padding: '7px 14px', borderRadius: 10, border: '1px solid #2C2C2E',
-    background: '#1C1C1E', fontSize: 13, fontWeight: 600, color: '#AAAAAA',
+    background: '#1C1C1E', fontSize: TYPE.xs, fontWeight: 600, letterSpacing: TRACK.soft, color: '#AAAAAA',
     cursor: 'pointer', marginBottom: 28, transition: 'color 0.15s',
 }
 
 const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '12px 14px', fontSize: 15,
+    width: '100%', padding: '12px 14px', fontSize: TYPE.sm, letterSpacing: TRACK.soft,
     border: '1px solid #2C2C2E', borderRadius: 10,
     background: '#2C2C2E', color: '#FFFFFF', outline: 'none',
     boxSizing: 'border-box', fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif",
@@ -1053,12 +1231,12 @@ function MiniCalendar({ value, viewDate, onViewChange, onChange }: { value: stri
     return (
         <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <button onClick={() => onViewChange(new Date(year, month - 1, 1))} style={{ background: 'none', border: '1px solid #333333', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 14, color: '#FFFFFF' }}>‹</button>
-                <span style={{ font: `600 14px ${FONT_LOCAL}`, color: '#FFFFFF' }}>{MONTH_ID[month]} {year}</span>
-                <button onClick={() => onViewChange(new Date(year, month + 1, 1))} style={{ background: 'none', border: '1px solid #333333', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 14, color: '#FFFFFF' }}>›</button>
+                <button onClick={() => onViewChange(new Date(year, month - 1, 1))} style={{ background: 'none', border: '1px solid #333333', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: TYPE.sm, color: '#FFFFFF' }}>‹</button>
+                <span style={{ font: `600 ${TYPE.sm} ${FONT_LOCAL}`, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{MONTH_ID[month]} {year}</span>
+                <button onClick={() => onViewChange(new Date(year, month + 1, 1))} style={{ background: 'none', border: '1px solid #333333', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: TYPE.sm, color: '#FFFFFF' }}>›</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 8 }}>
-                {DAY_SHORT.map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#555555', padding: '4px 0' }}>{d}</div>)}
+                {DAY_SHORT.map(d => <div key={d} style={{ textAlign: 'center', fontSize: TYPE.micro, fontWeight: 600, letterSpacing: TRACK.soft, color: '#555555', padding: '4px 0' }}>{d}</div>)}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
                 {days.map((d, i) => {
@@ -1069,7 +1247,7 @@ function MiniCalendar({ value, viewDate, onViewChange, onChange }: { value: stri
                     return (
                         <button key={i} onClick={() => !isPast && onChange(iso)} disabled={isPast}
                             style={{
-                                padding: '8px 0', fontSize: 13, fontWeight: isSelected ? 700 : 400, border: 'none', borderRadius: 8,
+                                padding: '8px 0', fontSize: TYPE.xs, fontWeight: isSelected ? 700 : 400, letterSpacing: TRACK.soft, border: 'none', borderRadius: 8,
                                 cursor: isPast ? 'default' : 'pointer',
                                 background: isSelected ? '#FF3B30' : 'transparent',
                                 color: isSelected ? '#FFFFFF' : isPast ? '#333333' : '#FFFFFF', fontFamily: FONT_LOCAL,
@@ -1086,7 +1264,7 @@ function MiniCalendar({ value, viewDate, onViewChange, onChange }: { value: stri
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
     return (
         <div style={{ marginBottom: 18 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#AAAAAA', marginBottom: 7, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <label style={{ display: 'block', fontSize: TYPE.xs, fontWeight: 600, color: '#AAAAAA', marginBottom: 7, letterSpacing: TRACK.soft }}>
                 {label}
             </label>
             {children}
@@ -1097,18 +1275,18 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
 function SummaryRow({ label, value }: { label: string; value?: string | null }) {
     return (
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', gap: 12 }}>
-            <span style={{ fontSize: 12, color: '#666666', flexShrink: 0 }}>{label}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, textAlign: 'right', color: '#FFFFFF' }}>{value ?? '—'}</span>
+            <span style={{ fontSize: TYPE.xs, color: '#666666', letterSpacing: TRACK.soft, flexShrink: 0 }}>{label}</span>
+            <span style={{ fontSize: TYPE.xs, fontWeight: 600, letterSpacing: TRACK.soft, textAlign: 'right', color: '#FFFFFF' }}>{value ?? '—'}</span>
         </div>
     )
 }
 
-function SummaryRowDark({ label, value, bold, bookingType }: { label: string; value?: string | null; bold?: boolean; bookingType?: 'OTS' | 'ONLINE_KEEPSLOT' | 'ONLINE_QRIS' | null }) {
+function SummaryRowDark({ label, value, bold, bookingType }: { label: string; value?: string | null; bold?: boolean; bookingType?: 'ONLINE_KEEPSLOT' | 'ONLINE_QRIS' | null }) {
     const isLight = !!bookingType;
     return (
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', gap: 12 }}>
-            <span style={{ fontSize: 13, color: isLight ? 'rgba(0,0,0,0.6)' : '#888888', flexShrink: 0 }}>{label}</span>
-            <span style={{ fontSize: 13, fontWeight: bold ? 800 : 600, textAlign: 'right', color: bold ? '#FF3B30' : (isLight ? '#000' : '#FFFFFF') }}>{value ?? '—'}</span>
+            <span style={{ fontSize: TYPE.xs, color: isLight ? 'rgba(0,0,0,0.6)' : '#888888', letterSpacing: TRACK.soft, flexShrink: 0 }}>{label}</span>
+            <span style={{ fontSize: TYPE.xs, fontWeight: bold ? 800 : 600, letterSpacing: TRACK.soft, textAlign: 'right', color: bold ? '#FF3B30' : (isLight ? '#000' : '#FFFFFF') }}>{value ?? '—'}</span>
         </div>
     )
 }

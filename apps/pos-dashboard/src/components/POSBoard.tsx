@@ -22,7 +22,6 @@ const REG_STATUS_CONFIG: Record<RegistrationStatus, { label: () => React.JSX.Ele
 }
 
 const BOOKING_TYPE_LABELS: Record<string, () => React.JSX.Element> = {
-    OTS: () => <><User size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} /> OTS</>,
     ONLINE_KEEPSLOT: () => <><Clock size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} /> Keep Slot</>,
     ONLINE_QRIS: () => <><CreditCard size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} /> QRIS</>,
 }
@@ -873,7 +872,7 @@ export default function POSBoard({ role, onLogout }: POSBoardProps) {
                             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--mera-border)', display: 'grid', gap: 10 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                                     <div>
-                                        <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--mera-text-primary)' }}>Need Slot / Walk-in</p>
+                                        <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--mera-text-primary)' }}>Need Slot Queue</p>
                                         <p style={{ fontSize: 11, color: 'var(--mera-text-secondary)', marginTop: 4 }}>
                                             Booking tanpa slot pasti atau studio assignment tetap tampil di sini untuk ditangani cepat.
                                         </p>
@@ -1627,7 +1626,7 @@ function TransactionDetailPanel({
                         {/* Base Package */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                             <span style={{ fontSize: 13, color: 'var(--mera-text-primary)' }}>
-                                {reg ? (reg.booking_type === 'OTS' ? 'On The Spot Package' : 'Online Booking Package') : 'Studio Package'}
+                                {reg ? 'Online Booking Package' : 'Studio Package'}
                             </span>
                             <span style={{ fontSize: 13, color: 'var(--mera-text-primary)' }}>
                                 Rp {((reg as any)?.addons?.computed_price || 0).toLocaleString('id-ID')}

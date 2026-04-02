@@ -39,6 +39,19 @@
     --mera-radius-full: 9999px;
 
     --mera-font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    --mera-ratio: 1.618;
+    --mera-step--2: clamp(0.72rem, 0.7rem + 0.08vw, 0.78rem);
+    --mera-step--1: clamp(0.84rem, 0.8rem + 0.12vw, 0.92rem);
+    --mera-step-0: clamp(1rem, 0.97rem + 0.18vw, 1.08rem);
+    --mera-step-1: clamp(1.15rem, 1.08rem + 0.32vw, 1.28rem);
+    --mera-step-2: clamp(1.38rem, 1.22rem + 0.76vw, 1.68rem);
+    --mera-step-3: clamp(1.86rem, 1.54rem + 1.44vw, 2.42rem);
+    --mera-step-4: clamp(2.42rem, 1.94rem + 2.18vw, 3.36rem);
+    --mera-step-5: clamp(3.9rem, 2.84rem + 4.64vw, 5.6rem);
+    --mera-track-tight: -0.025em;
+    --mera-track-base: 0em;
+    --mera-track-soft: 0.012em;
+    --mera-track-wide: 0.03em;
     --mera-ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
     --mera-duration: 200ms;
 }
@@ -77,39 +90,42 @@ body {
 
 /* ── Typography Scale ────────────────────────────────────── */
 .heading-hero {
-    font-size: clamp(2.5rem, 6vw, 5rem);
+    font-size: var(--mera-step-5);
     font-weight: 700;
     line-height: 1.05;
-    letter-spacing: -0.03em;
+    letter-spacing: var(--mera-track-tight);
     color: var(--mera-text-primary);
 }
 
 .heading-xl {
-    font-size: clamp(1.75rem, 4vw, 2.75rem);
+    font-size: var(--mera-step-3);
     font-weight: 700;
-    letter-spacing: -0.025em;
+    letter-spacing: var(--mera-track-tight);
     line-height: 1.1;
 }
 
 .heading-lg {
-    font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+    font-size: var(--mera-step-2);
     font-weight: 600;
-    letter-spacing: -0.02em;
+    letter-spacing: var(--mera-track-tight);
 }
 
 .body-lg {
-    font-size: 1.125rem;
+    font-size: var(--mera-step-1);
     line-height: 1.7;
+    letter-spacing: var(--mera-track-soft);
 }
 
 .body-md {
-    font-size: 1rem;
+    font-size: var(--mera-step-0);
     line-height: 1.6;
+    letter-spacing: var(--mera-track-soft);
 }
 
 .body-sm {
-    font-size: 0.875rem;
+    font-size: var(--mera-step--1);
     line-height: 1.5;
+    letter-spacing: var(--mera-track-soft);
 }
 
 /* ── Section Padding ─────────────────────────────────────── */
@@ -155,7 +171,8 @@ body {
     border: 1px solid var(--mera-border-strong);
     border-radius: var(--mera-radius-md);
     font-family: var(--mera-font);
-    font-size: 15px;
+    font-size: var(--mera-step-0);
+    letter-spacing: var(--mera-track-soft);
     color: var(--mera-text-primary);
     background: var(--mera-surface);
     outline: none;
@@ -173,11 +190,11 @@ body {
 
 .mera-label {
     display: block;
-    font-size: 13px;
+    font-size: var(--mera-step--1);
     font-weight: 500;
     color: var(--mera-text-secondary);
     margin-bottom: 6px;
-    letter-spacing: 0.01em;
+    letter-spacing: var(--mera-track-soft);
 }
 
 .mera-field {
@@ -213,10 +230,39 @@ body {
     animation-delay: 0.3s;
 }
 
-/* ── Booking Form Layout ─────────────────────────────────── */
-/* Desktop: form left, compact summary right */
+/* ── Booking Form Layout — mobile-first ─────────────────── */
 .form-layout {
-    grid-template-columns: minmax(0, 1fr) 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+}
+
+/* Summary card appears ABOVE the form on mobile */
+.form-summary { order: -1; }
+
+@media (min-width: 660px) {
+    .form-layout {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 20px;
+        max-width: 780px;
+    }
+
+    .form-main {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .form-summary {
+        order: 0;
+        width: 240px;
+        flex-shrink: 0;
+        position: sticky;
+        top: 72px;
+    }
 }
 
 @media (max-width: 768px) {
@@ -234,15 +280,5 @@ body {
 
     .grid-products {
         grid-template-columns: 1fr;
-    }
-
-    /* On mobile: form first, then summary below */
-    .form-layout {
-        grid-template-columns: 1fr;
-    }
-
-    .form-layout>div:last-child {
-        order: 2;
-        /* summary goes after form on mobile */
     }
 }

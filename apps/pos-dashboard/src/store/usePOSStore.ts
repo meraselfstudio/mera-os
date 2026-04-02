@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 export type BookingStatus = 'PENDING' | 'VERIFIED' | 'PROCESSED' | 'PAID' | 'CANCELLED';
-export type BookingType = 'OTS' | 'KEEP_SLOT' | 'QRIS';
+export type BookingType = 'KEEP_SLOT' | 'QRIS';
 export type PaymentStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
 
 export type Booking = {

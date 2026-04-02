@@ -66,19 +66,12 @@ BEGIN
   WHERE status IN ('PENDING', 'KEEPSLOT')
     AND booking_type IN ('ONLINE_QRIS', 'ONLINE_KEEPSLOT')
     AND created_at < NOW() - INTERVAL '6 hours';
-
-  -- 2. Expire OTS (Walk-in) after 30 minutes
-  UPDATE public.registrations
-  SET status = 'EXPIRED'
-  WHERE status IN ('PENDING', 'KEEPSLOT')
-    AND booking_type = 'OTS'
-    AND created_at < NOW() - INTERVAL '30 minutes';
 END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION public.purge_expired_slots IS
   'Called by pg_cron or Supabase scheduled function to clean ghost queue from POS Column 1.
-   Online: expires after 6 hours. OTS: expires after 30 minutes.';
+  Online bookings expire after 6 hours.';
 
 -- =============================================================
 -- Session ID Format Reference (not stored — used in transactions)

@@ -117,16 +117,16 @@ CREATE TABLE public.registrations (
   id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_name    TEXT NOT NULL,
   instagram_handle TEXT NOT NULL,
-  booking_type     TEXT NOT NULL DEFAULT 'OTS',
-  -- 'ONLINE_QRIS' | 'ONLINE_KEEPSLOT' | 'OTS' (On-The-Spot)
+  booking_type     TEXT NOT NULL DEFAULT 'ONLINE_KEEPSLOT',
+  -- 'ONLINE_QRIS' | 'ONLINE_KEEPSLOT'
   status           TEXT NOT NULL DEFAULT 'PENDING',
   -- 'PENDING' | 'VERIFIED' | 'PROCESSED' | 'EXPIRED'
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 COMMENT ON TABLE public.registrations IS 'Antrean pelanggan dari Customer Portal (Pulau 1). Status dikelola oleh POS.';
-COMMENT ON COLUMN public.registrations.booking_type IS 'ONLINE_QRIS = bayar online via QRIS; ONLINE_KEEPSLOT = jaga slot saja; OTS = datang langsung';
-COMMENT ON COLUMN public.registrations.instagram_handle IS 'Handle IG pelanggan untuk follow-up dan galeri';
+COMMENT ON COLUMN public.registrations.booking_type IS 'ONLINE_QRIS = bayar online via QRIS; ONLINE_KEEPSLOT = jaga slot saja';
+COMMENT ON COLUMN public.registrations.instagram_handle IS 'Handle IG pelanggan untuk follow-up. Konfirmasi booking diproses via DM @mera.selfstudio';
 
 CREATE INDEX IF NOT EXISTS idx_registrations_status     ON public.registrations(status);
 CREATE INDEX IF NOT EXISTS idx_registrations_created_at ON public.registrations(created_at DESC);

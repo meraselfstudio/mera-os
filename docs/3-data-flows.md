@@ -5,7 +5,7 @@ Alur operasional mutlak. Pelanggan dilarang dilayani jika tidak melalui Fase 1 s
 
 ### FASE 1: DATA INPUT (Self-Service via meraselfstudio.com)
 - **Aktor:** Pelanggan.
-- **Tindakan:** Pelanggan mengisi formulir mandiri (via booking web atau scan QR OTS di meja).
+- **Tindakan:** Pelanggan mengisi formulir mandiri via booking web.
 - **Hasil:** Data masuk ke tabel `registrations`. Pelanggan mendapat tiket warna (Oranye: KeepSlot, Kuning: Lunas QRIS).
 
 ### FASE 2: VERIFIKASI (POS Kolom 1: Lobby)

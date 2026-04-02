@@ -8,7 +8,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  CREATE TYPE booking_type_enum AS ENUM ('OTS', 'KEEP_SLOT', 'QRIS');
+  CREATE TYPE booking_type_enum AS ENUM ('KEEP_SLOT', 'QRIS');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   studio_type        VARCHAR(50) NOT NULL, -- 'BASIC', 'WIDE', 'MAJESTIC', 'ELEVATOR'
   booking_time       TIMESTAMPTZ NOT NULL,
   status             booking_status_enum NOT NULL DEFAULT 'PENDING',
-  booking_type       booking_type_enum NOT NULL DEFAULT 'OTS',
+  booking_type       booking_type_enum NOT NULL DEFAULT 'KEEP_SLOT',
   payment_status     payment_status_enum NOT NULL DEFAULT 'UNPAID',
   total_amount       NUMERIC(12, 0) NOT NULL DEFAULT 0,
   expired_at         TIMESTAMPTZ,
