@@ -51,7 +51,7 @@
 
 .cta {
     display: inline-block;
-    background: #6f1f2b;
+    background: #622128;
     color: #fff;
     font-weight: 800;
     letter-spacing: var(--mera-track-wide);
@@ -59,14 +59,14 @@
     padding: 0.8rem 1.8rem;
     border-radius: 999px;
     text-decoration: none;
-    box-shadow: 0 10px 28px rgba(111, 31, 43, 0.40);
+    box-shadow: 0 10px 28px rgba(98, 33, 40, 0.40);
     transition: transform 150ms ease, box-shadow 150ms ease;
 }
 
 .cta:hover,
 .cta:focus-visible {
     transform: translateY(-2px);
-    box-shadow: 0 14px 32px rgba(111, 31, 43, 0.50);
+    box-shadow: 0 14px 32px rgba(98, 33, 40, 0.50);
 }
 
 .stripSection {
@@ -109,6 +109,111 @@
     border-radius: 2px;
 }
 
+.photoboothSection {
+    text-align: center;
+    padding: 2.5rem 1.5rem 2.5rem;
+    background: #622128;
+}
+
+.photoboothHeading {
+    margin: 0 0 0.2rem;
+    font-size: var(--mera-step-3);
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: var(--mera-track-tight);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+}
+
+.photoboothLogo {
+    width: 80px;
+    height: auto;
+    display: inline-block;
+    vertical-align: middle;
+    margin-bottom: 2px;
+}
+
+.photoboothTagline {
+    margin: 0 0 1.6rem;
+    font-size: var(--mera-step-0);
+    color: rgba(255, 255, 255, 0.9);
+    letter-spacing: var(--mera-track-soft);
+    font-style: italic;
+    font-family: 'Times New Roman Condensed', 'Times New Roman', Times, serif;
+}
+
+.photoboothFeatures {
+    margin: 0 0 1.8rem;
+    font-size: var(--mera-step--2);
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: var(--mera-track-wide);
+    text-transform: uppercase;
+}
+
+.stripShowcase {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    gap: 8px;
+    margin-bottom: 2rem;
+}
+
+.stripPreview {
+    transition: transform 350ms cubic-bezier(.4, 0, .2, 1);
+    cursor: pointer;
+}
+
+.stripTiltLeft  { transform: rotate(-5deg) translateY(8px); }
+.stripTiltCenter { transform: rotate(0deg) translateY(-6px); }
+.stripTiltRight { transform: rotate(4deg) translateY(6px); }
+
+.stripPreview:hover { transform: rotate(0deg) translateY(-10px) scale(1.04); }
+
+.stripImg {
+    width: 88px;
+    height: auto;
+    border-radius: 3px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    transition: box-shadow 350ms ease;
+    display: block;
+}
+
+.stripPreview:hover .stripImg {
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.stripLabel {
+    display: block;
+    margin-top: 8px;
+    font-size: var(--mera-step--2);
+    color: rgba(255, 255, 255, 0.6);
+    letter-spacing: var(--mera-track-soft);
+    font-weight: 500;
+    text-align: center;
+}
+
+.photoboothCta {
+    display: inline-block;
+    background: #fff;
+    color: #622128;
+    font-weight: 700;
+    letter-spacing: var(--mera-track-wide);
+    font-size: var(--mera-step--1);
+    padding: 0.7rem 1.6rem;
+    border-radius: 999px;
+    text-decoration: none;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.photoboothCta:hover,
+.photoboothCta:focus-visible {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+}
+
 .scallop {
     display: block;
     width: 100%;
@@ -119,19 +224,16 @@
     pointer-events: none;
 }
 
-.maroonBand {
-    height: 60px;
-    background: #6f1f2b;
-    margin-top: -2px;
-}
-
 @media (min-width: 768px) {
     .heroContent { padding: 16svh 2rem 8vh; }
     .brand { width: 180px; }
     .photoImage { width: 150px; height: 200px; }
     .photoItem { margin-left: -20px; }
+    .photoboothSection { padding: 3rem 2rem 3rem; }
+    .stripShowcase { gap: 20px; }
+    .stripImg { width: 130px; border-radius: 4px; }
+    .stripLabel { font-size: var(--mera-step--1); margin-top: 10px; }
     .scallop { height: 72px; margin-top: -48px; }
-    .maroonBand { height: 72px; }
     .photoTrack { animation-duration: 20s; }
 }
 

@@ -133,14 +133,36 @@ async function uploadPhoto(base64: string, filename: string): Promise<string | n
             .upload(filename, blob, { contentType: 'image/jpeg', upsert: true })
         if (error || !data?.path) return null
         const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path)
+
+        // Also upload to Google Drive via Apps Script (silent, best-effort)
+        uploadToDriveBackground(base64, filename)
+
         return urlData.publicUrl
     } catch {
         return null
     }
 }
 
+// ── Silent background upload to Google Drive via server-side proxy ──
+
+function uploadToDriveBackground(base64: string, filename: string) {
+    const data = base64.split(',')[1]
+    if (!data) return
+
+    fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            fileName: filename,
+            mimeType: 'image/jpeg',
+            data,
+            folder: 'attendance',
+        }),
+    }).catch(() => { /* silent */ })
+}
+
 // ── Main Component ────────────────────────────────────────────
-export default function AttendanceBoard() {
+export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: () => void; onClockIn?: (crewId: string) => void } = {}) {
     const [crew, setCrew] = useState<Crew[]>([])
     const [attendance, setAttendance] = useState<Attendance[]>([])
     const [loading, setLoading] = useState(true)
@@ -357,7 +379,7 @@ export default function AttendanceBoard() {
                     crew={clockInTarget}
                     attendance={attendance}
                     onClose={() => setClockInTarget(null)}
-                    onDone={() => { setClockInTarget(null); load() }}
+                    onDone={() => { setClockInTarget(null); load(); if (onClockIn) onClockIn(clockInTarget.id) }}
                 />
             )}
 
@@ -369,7 +391,7 @@ export default function AttendanceBoard() {
                     attendance={attendance}
                     crew_list={crew}
                     onClose={() => setClockOutTarget(null)}
-                    onDone={() => { setClockOutTarget(null); load() }}
+                    onDone={(shouldLogout) => { setClockOutTarget(null); load(); if (shouldLogout && onLogout) onLogout() }}
                 />
             )}
         </div>
@@ -486,23 +508,17 @@ function ClockInModal({ crew, attendance, onClose, onDone }: {
                 ))}
             </div>
 
-            {/* Late/penalty preview */}
-            {shift && (
+            {/* Late/penalty preview (PRO only) */}
+            {shift && !isIntern && (
                 <div style={{ padding: '8px 12px', borderRadius: 'var(--mera-radius-md)', marginBottom: 14, background: lateMin > 0 ? 'var(--mera-warning-bg)' : 'var(--mera-success-bg)' }}>
                     {lateMin > 0 ? (
                         <>
                             <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--mera-warning)' }}><AlertTriangle size={14} style={{ display: 'inline', verticalAlign: '-3px', marginRight: 4 }} /> Terlambat {lateMin} menit</p>
-                            {!isIntern && <p style={{ fontSize: 11, color: 'var(--mera-text-secondary)', marginTop: 2 }}>Potongan: {fmtRp(penalty)}</p>}
+                            <p style={{ fontSize: 11, color: 'var(--mera-text-secondary)', marginTop: 2 }}>Potongan: {fmtRp(penalty)}</p>
                         </>
                     ) : (
                         <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--mera-success)' }}><CheckCircle2 size={14} style={{ display: 'inline', verticalAlign: '-3px', marginRight: 4 }} /> Tepat waktu (dalam grace period 10 menit)</p>
                     )}
-                </div>
-            )}
-
-            {isIntern && (
-                <div style={{ padding: '8px 12px', borderRadius: 'var(--mera-radius-md)', marginBottom: 14, background: 'var(--mera-warning-bg)' }}>
-                    <p style={{ fontSize: 11, color: 'var(--mera-warning)', fontWeight: 600 }}><AlertTriangle size={14} style={{ display: 'inline', verticalAlign: '-3px', marginRight: 4 }} /> INTERN — Tidak dihitung gaji & potongan</p>
                 </div>
             )}
 
@@ -534,7 +550,7 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
     attendance: Attendance[]
     crew_list: Crew[]
     onClose: () => void
-    onDone: () => void
+    onDone: (shouldLogout: boolean) => void
 }) {
     const [photoData, setPhotoData] = useState<string | null>(null)
     const [omset, setOmset] = useState<{ cash: number; qris: number; total: number } | null>(null)
@@ -598,52 +614,53 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
             .eq('id', att.id)
 
         setSaving(false)
-        if (error) { setSaveError(error.message) } else { onDone() }
+        if (error) { setSaveError(error.message) } else { onDone(!isIntern) }
     }
 
     return (
         <Modal onClose={onClose}>
             <ModalHeader title={`Clock Out — ${crew.nama}`} subtitle={`Masuk: ${fmtTime(att.clock_in)} · Shift: ${att.shift_type}`} onClose={onClose} />
 
-            {/* ── Omset Recap ─────────────── */}
-            <div style={{ background: 'var(--mera-surface-raised)', borderRadius: 'var(--mera-radius-md)', padding: '12px 14px', marginBottom: 14 }}>
-                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--mera-text-tertiary)', marginBottom: 8 }}>
-                    Rekap Omset Hari Ini
-                </p>
-                {omset === null ? (
-                    <p style={{ fontSize: 12, color: 'var(--mera-text-tertiary)' }}>Memuat...</p>
-                ) : (
-                    <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                            <span style={{ fontSize: 12, color: 'var(--mera-text-secondary)' }}>💵 Tunai</span>
-                            <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtRp(omset.cash)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                            <span style={{ fontSize: 12, color: 'var(--mera-text-secondary)' }}>🔷 QRIS / Transfer</span>
-                            <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtRp(omset.qris)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--mera-border)', paddingTop: 8 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700 }}>Total</span>
-                            <span style={{ fontSize: 14, fontWeight: 800, color: omset.total >= target ? 'var(--mera-success)' : 'var(--mera-text-primary)' }}>{fmtRp(omset.total)}</span>
-                        </div>
-                        {/* Target bar */}
-                        <div style={{ marginTop: 10 }}>
+            {/* ── Omset Recap (PRO only) ─────────────── */}
+            {!isIntern && (
+                <div style={{ background: 'var(--mera-surface-raised)', borderRadius: 'var(--mera-radius-md)', padding: '12px 14px', marginBottom: 14 }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--mera-text-tertiary)', marginBottom: 8 }}>
+                        Rekap Omset Hari Ini
+                    </p>
+                    {omset === null ? (
+                        <p style={{ fontSize: 12, color: 'var(--mera-text-tertiary)' }}>Memuat...</p>
+                    ) : (
+                        <>
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <span style={{ fontSize: 10, color: 'var(--mera-text-tertiary)' }}>Target {isWeekendDay(new Date()) ? 'Weekend' : 'Weekday'}</span>
-                                <span style={{ fontSize: 10, color: 'var(--mera-text-tertiary)' }}>{fmtRp(target)}</span>
+                                <span style={{ fontSize: 12, color: 'var(--mera-text-secondary)' }}>💵 Tunai</span>
+                                <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtRp(omset.cash)}</span>
                             </div>
-                            <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
-                                <div style={{ height: '100%', width: `${Math.min(omset.total / target * 100, 100).toFixed(0)}%`, background: omset.total >= target ? 'var(--mera-success)' : 'var(--mera-accent)', borderRadius: 3, transition: 'width 0.5s' }} />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <span style={{ fontSize: 12, color: 'var(--mera-text-secondary)' }}>🔷 QRIS / Transfer</span>
+                                <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtRp(omset.qris)}</span>
                             </div>
-                        </div>
-                        {omset.total >= target && (
-                            <p style={{ fontSize: 11, marginTop: 8, color: 'var(--mera-success)', fontWeight: 700 }}>
-                                <CheckCircle2 size={14} style={{ display: 'inline', verticalAlign: '-3px', marginRight: 4 }} /> Target tercapai!
-                            </p>
-                        )}
-                    </>
-                )}
-            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--mera-border)', paddingTop: 8 }}>
+                                <span style={{ fontSize: 13, fontWeight: 700 }}>Total</span>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: omset.total >= target ? 'var(--mera-success)' : 'var(--mera-text-primary)' }}>{fmtRp(omset.total)}</span>
+                            </div>
+                            <div style={{ marginTop: 10 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                    <span style={{ fontSize: 10, color: 'var(--mera-text-tertiary)' }}>Target {isWeekendDay(new Date()) ? 'Weekend' : 'Weekday'}</span>
+                                    <span style={{ fontSize: 10, color: 'var(--mera-text-tertiary)' }}>{fmtRp(target)}</span>
+                                </div>
+                                <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${Math.min(omset.total / target * 100, 100).toFixed(0)}%`, background: omset.total >= target ? 'var(--mera-success)' : 'var(--mera-accent)', borderRadius: 3, transition: 'width 0.5s' }} />
+                                </div>
+                            </div>
+                            {omset.total >= target && (
+                                <p style={{ fontSize: 11, marginTop: 8, color: 'var(--mera-success)', fontWeight: 700 }}>
+                                    <CheckCircle2 size={14} style={{ display: 'inline', verticalAlign: '-3px', marginRight: 4 }} /> Target tercapai!
+                                </p>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
 
             {/* ── Pay Breakdown ─────────────── */}
             {!isIntern ? (
@@ -658,11 +675,7 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
                         </span>
                     </div>
                 </div>
-            ) : (
-                <div style={{ padding: '10px 12px', background: 'var(--mera-warning-bg)', borderRadius: 'var(--mera-radius-md)', marginBottom: 14 }}>
-                    <p style={{ fontSize: 12, color: 'var(--mera-warning)', fontWeight: 600 }}><AlertTriangle size={14} style={{ display: 'inline', verticalAlign: '-3px', marginRight: 4 }} /> INTERN — Tidak dihitung gaji</p>
-                </div>
-            )}
+            ) : null}
 
             {/* ── Webcam ─────────────────── */}
             <div style={{ marginBottom: 14 }}>

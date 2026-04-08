@@ -17,6 +17,7 @@ export type {
     TransactionWithRegistration,
     PayrollResult,
     StatusGaji,
+    PhoneBoothPhoto,
 } from './database.types'
 
 export { hitungHargaBertingkat } from './database.types'

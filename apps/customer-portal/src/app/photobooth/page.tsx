@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import PhotoboothPage from '@/components/PhotoboothPage'
 
 export const metadata: Metadata = {
-    title: 'Free Photobooth',
-    description: 'Space to be Real You!',
+    title: 'Méra PhoneBooth',
+    description: 'Free PhoneBooth — Space to be Real You!',
     robots: { index: true },
 }
 

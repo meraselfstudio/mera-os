@@ -17,18 +17,20 @@
     --mera-text-tertiary: rgba(235, 235, 245, 0.3);
     --mera-text-inverse: #000000;
 
-    --mera-accent: #FFFFFF;
-    --mera-accent-hover: #E5E5EA;
-    --mera-accent-light: rgba(255, 255, 255, 0.1);
+    --mera-accent: #622128;
+    --mera-accent-hover: #4e1a20;
+    --mera-accent-light: rgba(98, 33, 40, 0.15);
+    --mera-maroon: #622128;
+    --mera-maroon-soft: rgba(98, 33, 40, 0.25);
 
-    --mera-success: #88D49E;
-    --mera-success-bg: rgba(136, 212, 158, 0.15);
-    --mera-warning: #D9A05B;
-    --mera-warning-bg: rgba(217, 160, 91, 0.15);
-    --mera-error: #B06A6A;
-    --mera-error-bg: rgba(176, 106, 106, 0.15);
-    --mera-info: #6A9AB0;
-    --mera-info-bg: rgba(106, 154, 176, 0.15);
+    --mera-success: #A8C5A0;
+    --mera-success-bg: rgba(168, 197, 160, 0.15);
+    --mera-warning: #E0B88A;
+    --mera-warning-bg: rgba(224, 184, 138, 0.15);
+    --mera-error: #C89696;
+    --mera-error-bg: rgba(200, 150, 150, 0.15);
+    --mera-info: #9BB8D0;
+    --mera-info-bg: rgba(155, 184, 208, 0.15);
 
     --mera-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
     --mera-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.3);
@@ -58,8 +60,19 @@ html,
 body,
 #root {
     height: 100%;
+}
+
+html {
     overflow: hidden;
-    /* POS is fixed-height app */
+}
+
+body {
+    overflow: hidden;
+}
+
+#root {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 body {
@@ -129,6 +142,30 @@ a {
 
 .slide-in {
     animation: slide-in-left 0.25s var(--mera-ease) both;
+}
+
+/* iPhone passcode shake animation */
+@keyframes pin-shake {
+    0%, 100% { transform: translateX(0); }
+    15% { transform: translateX(-12px); }
+    30% { transform: translateX(10px); }
+    45% { transform: translateX(-8px); }
+    60% { transform: translateX(6px); }
+    75% { transform: translateX(-3px); }
+    90% { transform: translateX(2px); }
+}
+.pin-shake {
+    animation: pin-shake 0.5s ease-in-out;
+}
+
+/* iPhone passcode dot fill animation */
+@keyframes pin-dot-pop {
+    0% { transform: scale(0.5); }
+    60% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+.pin-dot-filled {
+    animation: pin-dot-pop 0.15s ease-out;
 }
 
 .gc-shell {

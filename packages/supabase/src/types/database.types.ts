@@ -155,6 +155,16 @@ export interface Expense {
     created_at: string
 }
 
+// ── PhoneBooth Photos ─────────────────────────────────────────
+export interface PhoneBoothPhoto {
+    id: string
+    strip_url: string
+    filter: string
+    photo_count: number
+    promo_consent: boolean
+    created_at: string
+}
+
 // ── Supabase Database helper type ─────────────────────────────
 export interface Database {
     public: {
@@ -188,6 +198,11 @@ export interface Database {
                 Row: Expense
                 Insert: Omit<Expense, 'id' | 'created_at'>
                 Update: Partial<Omit<Expense, 'id' | 'created_at'>>
+            }
+            phonebooth_photos: {
+                Row: PhoneBoothPhoto
+                Insert: Omit<PhoneBoothPhoto, 'id' | 'created_at'>
+                Update: Partial<Omit<PhoneBoothPhoto, 'id' | 'created_at'>>
             }
         }
     }

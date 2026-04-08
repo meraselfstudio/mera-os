@@ -6,32 +6,32 @@ import './globals.css'
 export const metadata: Metadata = {
     metadataBase: new URL('https://meraselfstudio.com'),
     title: {
-        default: 'Méra - Mojokerto Self Photo Studio',
+        default: 'Mera Self Studio | Self Photo Studio Mojokerto',
         template: '%s | Méra SelfStudio',
     },
     description:
-        'Mojokerto Finest Self Photo Studio',
-    keywords: ['self studio foto', 'foto studio mojokerto', 'self photo studio', 'booking foto', 'méra studio'],
+        'Abadikan momen terbaikmu di Mera Self Studio. Self photo studio dengan fasilitas lengkap, properti estetik, dan hasil cetak berkualitas di Mojokerto.',
+    keywords: ['self photo studio mojokerto', 'mera self studio', 'foto studio mojokerto', 'photobox mojokerto', 'studio foto estetik', 'self studio foto', 'booking foto'],
     icons: {
         icon: [
-            { url: '/mera-logo-icon.webp', type: 'image/webp' },
-            { url: '/mera-logo-icon.webp', sizes: '32x32', type: 'image/webp' },
+            { url: '/mera-icon-maroon.png', type: 'image/png' },
+            { url: '/mera-icon-maroon.png', sizes: '32x32', type: 'image/png' },
         ],
-        apple: '/mera-logo-icon.webp',
+        apple: '/mera-icon-maroon.png',
     },
     openGraph: {
         type: 'website',
         locale: 'id_ID',
         url: 'https://meraselfstudio.com',
-        siteName: 'Méra SelfStudio',
-        title: 'Méra SelfStudio — Mojokerto Finest Self Photo Studio',
-        description: 'Méra SelfStudio. Self photo studio Mojokerto.',
-        images: [{ url: '/logo-mera-white.png', width: 800, height: 600, alt: 'Méra SelfStudio Logo' }],
+        siteName: 'Mera Self Studio',
+        title: 'Mera Self Studio | Self Photo Studio Mojokerto',
+        description: 'Abadikan momen terbaikmu di Mera Self Studio. Self photo studio dengan fasilitas lengkap dan properti estetik di Mojokerto.',
+        images: [{ url: '/mera-logo-maroon.png', width: 800, height: 600, alt: 'Mera Self Studio Logo' }],
     },
     twitter: {
         card: 'summary_large_image',
-        title: 'Méra SelfStudio',
-        description: 'Self photo studio Mojokerto.',
+        title: 'Mera Self Studio | Self Photo Studio Mojokerto',
+        description: 'Abadikan momen terbaikmu di Mera Self Studio. Self photo studio dengan fasilitas lengkap dan properti estetik di Mojokerto.',
     },
     robots: { index: true, follow: true },
 }

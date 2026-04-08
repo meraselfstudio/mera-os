@@ -196,17 +196,17 @@ function crc16(data: string) {
 function generateDynamicQRIS(amount: number) {
     // Real Mera Selfstudio QRIS (Bank Mandiri, NMID: ID10253901525400)
     const REAL_STATIC = "00020101021126690021ID.CO.BANKMANDIRI.WWW01189360000801777298280211717772982880303UMI51440014ID.CO.QRIS.WWW0215ID10253901525400303UMI5204274153033605802ID5915Mera Selfstudio6015Mojokerto (Kab)61056136362070703A0163042FA3";
-    
+
     // Strip the trailing CRC (6304XXXX = 8 chars)
     let base = REAL_STATIC.slice(0, -8);
     // Switch from static (010211) to dynamic (010212)
     base = base.replace("010211", "010212");
-    
+
     // Build amount tag (54 + len + value)
     const amountStr = amount.toString();
     const amountLen = amountStr.length.toString().padStart(2, '0');
     const amountField = `54${amountLen}${amountStr}`;
-    
+
     // Insert amount before country code tag (5802ID)
     const idx = base.indexOf("5802ID");
     if (idx !== -1) {
@@ -214,7 +214,7 @@ function generateDynamicQRIS(amount: number) {
     } else {
         base += amountField;
     }
-    
+
     // Append CRC placeholder and calculate
     base += "6304";
     return base + crc16(base);
@@ -230,11 +230,11 @@ function WavyTopDivider({ fill }: { fill: string }) {
 
 // ── Striped Background Hook ─────────────────────────────────────
 function useStripedBackground(room: string | null) {
-    if (!room) return '#5D2227' // Default Maroon
+    if (!room) return '#622128' // Default Maroon
     switch (room) {
-        case 'Basic Studio': 
+        case 'Basic Studio':
             // Maroon stripes
-            return 'repeating-linear-gradient(0deg, #5D2227, #5D2227 40px, #7A3339 40px, #7A3339 80px)'
+            return 'repeating-linear-gradient(0deg, #622128, #622128 40px, #7A3339 40px, #7A3339 80px)'
         case 'Pas Photo':
             // Blue stripes
             return 'repeating-linear-gradient(0deg, #2E4B72, #2E4B72 40px, #3A5F8F 40px, #3A5F8F 80px)'
@@ -244,7 +244,7 @@ function useStripedBackground(room: string | null) {
         default:
             // Brown stripes
             return 'repeating-linear-gradient(0deg, #471d06d0, #471d06d0 40px, #55241b 40px, #55241b 80px)'
-            return '#5D2227'
+            return '#622128'
     }
 }
 
@@ -393,7 +393,25 @@ export default function BookingFlow() {
     const showAddonSelector = state.selectedPackage ? (!isPasPhoto && (state.selectedPackage.default_bw || isBwPackage(state.selectedPackage.nama))) : false
 
     const stripedBg = useStripedBackground(state.selectedRoom)
-    const baseBgColor = state.selectedRoom === 'Pas Photo' ? '#2E4B72' : (state.selectedRoom === 'Elevator Studio' || state.selectedRoom === 'Majestic Studio' ? '#9C9B98' : '#5D2227')
+    const baseBgColor = state.selectedRoom === 'Pas Photo' ? '#2E4B72' : (state.selectedRoom === 'Elevator Studio' ? '#9C9B98' : '#622128')
+
+    // Persist ticket state on mount if exists
+    useEffect(() => {
+        const saved = localStorage.getItem('mera_ticket_state_v2')
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved)
+                // only restore if ticket hasn't been expired yet
+                if (parsed && typeof parsed.customerName === 'string') {
+                    // if they were at step > 'datetime', jump them to confirm
+                    setState(parsed)
+                    setStep('confirm')
+                }
+            } catch (e) {
+                console.error('Failed to parse saved ticket', e)
+            }
+        }
+    }, [])
 
     const handleSubmit = async () => {
         setLoading(true)
@@ -445,7 +463,9 @@ export default function BookingFlow() {
 
         setLoading(false)
         if (!error && data) {
-            setState(p => ({ ...p, registrationId: data.id, sessionId: sid }))
+            const newState = { ...state, registrationId: data.id, sessionId: sid }
+            setState(newState)
+            localStorage.setItem('mera_ticket_state_v2', JSON.stringify(newState))
             setStep('confirm')
         } else {
             alert(`Gagal booking: ${error?.message || 'Terjadi kendala saat membuat session ID unik'}`)
@@ -468,32 +488,32 @@ export default function BookingFlow() {
             }}>
                 {/* Left — back button */}
                 {step === 'studio' ? (
-                <Link href="/" style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '7px 14px', borderRadius: 10,
-                    border: `1px solid rgba(0,0,0,0.1)`, 
-                    background: '#FFFFFF',
-                    fontSize: 13, fontWeight: 600, color: '#000000', textDecoration: 'none',
-                    justifySelf: 'start',
-                }}>
-                    ←
-                </Link>
+                    <Link href="/" style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '7px 14px', borderRadius: 10,
+                        border: `1px solid rgba(0,0,0,0.1)`,
+                        background: '#FFFFFF',
+                        fontSize: 13, fontWeight: 600, color: '#000000', textDecoration: 'none',
+                        justifySelf: 'start',
+                    }}>
+                        ←
+                    </Link>
                 ) : (
-                <button onClick={() => {
-                    if (step === 'packages') setStep('studio')
-                    else if (step === 'datetime') setStep('packages')
-                    else if (step === 'form') setStep('datetime')
-                    else if (step === 'confirm') setStep('form')
-                }} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '7px 14px', borderRadius: 10,
-                    border: `1px solid ${step === 'packages' ? 'rgba(0,0,0,0.1)' : '#333333'}`, 
-                    background: step === 'packages' ? '#FFFFFF' : '#1C1C1E',
-                    fontSize: 13, fontWeight: 600, color: step === 'packages' ? '#000000' : '#FFFFFF', cursor: 'pointer',
-                    justifySelf: 'start',
-                }}>
-                    ←
-                </button>
+                    <button onClick={() => {
+                        if (step === 'packages') setStep('studio')
+                        else if (step === 'datetime') setStep('packages')
+                        else if (step === 'form') setStep('datetime')
+                        else if (step === 'confirm') setStep('form')
+                    }} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '7px 14px', borderRadius: 10,
+                        border: `1px solid ${step === 'packages' ? 'rgba(0,0,0,0.1)' : '#333333'}`,
+                        background: step === 'packages' ? '#FFFFFF' : '#1C1C1E',
+                        fontSize: 13, fontWeight: 600, color: step === 'packages' ? '#000000' : '#FFFFFF', cursor: 'pointer',
+                        justifySelf: 'start',
+                    }}>
+                        ←
+                    </button>
                 )}
 
                 {/* Center — logo home button */}
@@ -522,578 +542,604 @@ export default function BookingFlow() {
                     fontSize: TYPE.sm, letterSpacing: TRACK.soft, outline: 'none',
                     boxSizing: 'border-box', fontFamily: FONT,
                 };
-                
+
                 return (
                     <>
-            {/* ── Step 1: Studio Selection ─────────── */}
-            {step === 'studio' && (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: LANDING_BG, padding: '24px 16px 40px', alignItems: 'center' }}>
-                    <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                        <h2 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#333', letterSpacing: TRACK.wide, margin: '0 0 12px' }}>
-                        </h2>
-                        <h1 style={{ font: `italic 700 48px/1.05 "Times New Roman Condensed", serif`, color: '#1e1e1e', margin: 0, letterSpacing: TRACK.tight }}>
-                            Choose Studio:
-                        </h1>
-                    </div>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%', maxWidth: 760 }}>
-                        {/* Row 1: Basic Studio & Pas Photo */}
-                        <div>
-                            <h3 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', marginBottom: 14, textAlign: 'center', letterSpacing: TRACK.soft }}>Basic Studio Packages:</h3>
-                            <div style={{ 
-                                display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, width: '100%'
-                            }}>
-                                {[STUDIO_ROOMS[0], STUDIO_ROOMS[1]].map(r => (
-                                    <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifySelf: 'center', width: 'clamp(120px, 42vw, 168px)' }}>
-                                        <div style={{ width: '100%', position: 'relative', marginBottom: 12, aspectRatio: '4/5' }}>
-                                            <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat` }} />
-                                        </div>
-                                        <button onClick={() => { setState(p => ({ ...p, selectedRoom: r.id, selectedPackage: null, selectedVariant: null, selectedAddons: [] })); setStep('packages'); }}
-                                                style={{ background: '#5D2227', color: '#fff', border: 'none', borderRadius: 999, padding: '11px 14px', width: '100%', minHeight: 44, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', lineHeight: 1.2, textAlign: 'center', transition: 'transform 0.15s ease' }}>
-                                            {r.name} <span style={{ opacity: 0.6 }}>→</span>
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        {/* ── Step 1: Studio Selection ─────────── */}
+                        {step === 'studio' && (
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: LANDING_BG, padding: '24px 16px 40px', alignItems: 'center' }}>
+                                <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                                    <h2 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#333', letterSpacing: TRACK.wide, margin: '0 0 12px' }}>
+                                    </h2>
+                                    <h1 style={{ font: `italic 700 48px/1.05 "Times New Roman Condensed", serif`, color: '#1e1e1e', margin: 0, letterSpacing: TRACK.tight }}>
+                                        Choose Studio:
+                                    </h1>
+                                </div>
 
-                        {/* Row 2: Majestic & Elevator */}
-                        <div>
-                            <h3 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', marginBottom: 14, textAlign: 'center', marginTop: 6, letterSpacing: TRACK.soft }}>Thematic Studio Packages:</h3>
-                            <div style={{ 
-                                display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, width: '100%'
-                            }}>
-                                {[STUDIO_ROOMS[2], STUDIO_ROOMS[3]].map(r => (
-                                    <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifySelf: 'center', width: 'clamp(120px, 42vw, 168px)' }}>
-                                        <div style={{ width: '100%', position: 'relative', marginBottom: 12, aspectRatio: '4/5' }}>
-                                            <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat` }} />
-                                        </div>
-                                        <button onClick={() => { setState(p => ({ ...p, selectedRoom: r.id, selectedPackage: null, selectedVariant: null, selectedAddons: [] })); setStep('packages'); }}
-                                                style={{ background: '#5D2227', color: '#fff', border: 'none', borderRadius: 999, padding: '11px 14px', width: '100%', minHeight: 44, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', lineHeight: 1.2, textAlign: 'center', transition: 'transform 0.15s ease' }}>
-                                            {r.name} <span style={{ opacity: 0.6 }}>→</span>
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ── Step 2: Package Selection ─────────── */}
-            {step === 'packages' && (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                    {/* Wavy Divider Transition to Striped Area */}
-                    <div style={{ background: LANDING_BG }}>
-                        <WavyTopDivider fill={baseBgColor} />
-                    </div>
-
-                    {/* Striped Background Area */}
-                    <div style={{ 
-                        flex: 1, 
-                        background: stripedBg,
-                        paddingBottom: 140, 
-                        paddingTop: 32,
-                    }}>
-                        <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'row', gap: 40, alignItems: 'flex-start', padding: '0 20px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                            
-                            {/* LEFT: Selected Studio Polaroid */}
-                            {state.selectedRoom && (
-                                <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    <div style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft, marginLeft: 8 }}>
-                                    </div>
-                                    <div style={{
-                                        width: 260, position: 'relative', aspectRatio: '4/5'
-                                    }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%', maxWidth: 760 }}>
+                                    {/* Row 1: Basic Studio & Pas Photo */}
+                                    <div>
+                                        <h3 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', marginBottom: 14, textAlign: 'center', letterSpacing: TRACK.soft }}>Basic Studio Packages:</h3>
                                         <div style={{
-                                            width: '100%', height: '100%',
-                                            background: `url(${STUDIO_ROOMS.find(r => r.id === state.selectedRoom)?.image || ''}) center/contain no-repeat`,
-                                        }} />
+                                            display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, width: '100%'
+                                        }}>
+                                            {[STUDIO_ROOMS[0], STUDIO_ROOMS[1]].map(r => (
+                                                <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifySelf: 'center', width: 'clamp(120px, 42vw, 168px)' }}>
+                                                    <div style={{ width: '100%', position: 'relative', marginBottom: 12, aspectRatio: '4/5' }}>
+                                                        <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat` }} />
+                                                    </div>
+                                                    <button onClick={() => { setState(p => ({ ...p, selectedRoom: r.id, selectedPackage: null, selectedVariant: null, selectedAddons: [] })); setStep('packages'); }}
+                                                        style={{ background: '#622128', color: '#fff', border: 'none', borderRadius: 999, padding: '11px 14px', width: '100%', minHeight: 44, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', lineHeight: 1.2, textAlign: 'center', transition: 'transform 0.15s ease' }}>
+                                                        {r.name} <span style={{ opacity: 0.6 }}>→</span>
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Row 2: Majestic & Elevator */}
+                                    <div>
+                                        <h3 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', marginBottom: 14, textAlign: 'center', marginTop: 6, letterSpacing: TRACK.soft }}>Thematic Studio Packages:</h3>
+                                        <div style={{
+                                            display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, width: '100%'
+                                        }}>
+                                            {[STUDIO_ROOMS[2], STUDIO_ROOMS[3]].map(r => (
+                                                <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifySelf: 'center', width: 'clamp(120px, 42vw, 168px)' }}>
+                                                    <div style={{ width: '100%', position: 'relative', marginBottom: 12, aspectRatio: '4/5' }}>
+                                                        <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat` }} />
+                                                    </div>
+                                                    <button onClick={() => { setState(p => ({ ...p, selectedRoom: r.id, selectedPackage: null, selectedVariant: null, selectedAddons: [] })); setStep('packages'); }}
+                                                        style={{ background: '#622128', color: '#fff', border: 'none', borderRadius: 999, padding: '11px 14px', width: '100%', minHeight: 44, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', lineHeight: 1.2, textAlign: 'center', transition: 'transform 0.15s ease' }}>
+                                                        {r.name} <span style={{ opacity: 0.6 }}>→</span>
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
-                            )}
+                            </div>
+                        )}
 
-                            {/* RIGHT: Packages & Options */}
-                            <div style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 480 }}>
-                                <div style={{ fontSize: TYPE.lg, fontWeight: 800, color: '#FFFFFF', marginLeft: 8, letterSpacing: TRACK.tight }}>
-                                    Choose Package :
+                        {/* ── Step 2: Package Selection ─────────── */}
+                        {step === 'packages' && (
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                {/* Wavy Divider Transition to Striped Area */}
+                                <div style={{ background: LANDING_BG }}>
+                                    <WavyTopDivider fill={baseBgColor} />
                                 </div>
 
-                                {/* Packages List */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                                    {allProducts.filter(p => {
-                                        const name = p.nama.toLowerCase()
-                                        if (state.selectedRoom === 'Basic Studio') return name.includes('photo session')
-                                        if (state.selectedRoom === 'Pas Photo') return name.includes('pas photo') || name.includes('graduation')
-                                        if (state.selectedRoom === 'Elevator Studio' || state.selectedRoom === 'Majestic Studio') return name.includes('thematic')
-                                        return false
-                                    }).map(pkg => {
-                                        const selected = state.selectedPackage?.id === pkg.id
-                                        let detailLines = ['10 Menit | 1-2 Orang', 'Unlimited Jepret', '1 Cetak | All Soft Files']
-                                        let isBw = false
-                                        const pkgName = pkg.nama.toLowerCase()
-                                        if (pkgName.includes('self photo')) { detailLines = ['1-2 Orang', '10 Menit Sesi foto', 'Unlimited Jepret', 'Free 1 Print - Basic Frame', 'Semua Soft Files Hitam Putih']; isBw = true }
-                                        else if (pkgName.includes('party photo')) { detailLines = ['8 Orang', '15 Menit Sesi Foto', 'Unlimited Jepret', 'Free 2 Print - Basic Frame', 'Semua Soft Files Hitam Putih']; isBw = true }
-                                        else if (pkgName.includes('pas photo basic')) { detailLines = ['1 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 2 Print', '1 Basic Frame, 1 Formal Print']; }
-                                        else if (pkgName.includes('pas photo package')) { detailLines = ['2 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 3 Print', '1 Basic Frame, 2 Formal Print']; }
-                                        else if (pkgName.includes('thematic basic')) { detailLines = ['1 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Semua Soft Files Hitam Putih']; isBw = true }
-                                        else if (pkgName.includes('thematic package')) { detailLines = ['2 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 1 Print - Basic Frame', 'Semua Soft Files']; }
+                                {/* Striped Background Area */}
+                                <div style={{
+                                    flex: 1,
+                                    background: stripedBg,
+                                    paddingBottom: 140,
+                                    paddingTop: 32,
+                                }}>
+                                    <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'row', gap: 40, alignItems: 'flex-start', padding: '0 20px', flexWrap: 'wrap', justifyContent: 'center' }}>
 
-                                        return (
-                                            <button key={pkg.id} onClick={() => setState(p => ({
-                                                ...p, selectedPackage: pkg, selectedVariant: null, selectedAddons: []
-                                            }))}
-                                                style={{
-                                                    background: '#F8F6F0',
-                                                    border: `2px solid ${selected ? '#333' : 'transparent'}`,
-                                                    borderRadius: 24, padding: '16px 24px', textAlign: 'left', cursor: 'pointer',
-                                                    display: 'flex', flexDirection: 'column', gap: 8,
-                                                    boxShadow: selected ? '0 12px 24px rgba(0,0,0,0.2)' : '0 4px 12px rgba(0,0,0,0.1)',
-                                                    transform: selected ? 'scale(1.02)' : 'scale(1)', 
-                                                    transition: 'all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
-                                                }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
-                                                    <h3 style={{ fontSize: TYPE.md, fontWeight: 900, color: '#333', margin: 0, letterSpacing: TRACK.tight, lineHeight: 1.1, flex: 1 }}>{pkg.nama}</h3>
-                                                    <div style={{
-                                                        background: '#5D2227',
-                                                        color: '#FFFFFF', borderRadius: 999, padding: '6px 14px', flexShrink: 0,
-                                                        fontWeight: 800, fontSize: TYPE.xs, letterSpacing: TRACK.base, display: 'inline-flex', alignItems: 'center', gap: 4
-                                                    }}>
-                                                        Rp {pkg.harga_dasar.toLocaleString('id-ID')}
-                                                    </div>
-                                                </div>
-                                                
-                                                <ul style={{ margin: 0, paddingLeft: 18, color: '#555', fontSize: TYPE.xs, letterSpacing: TRACK.soft, fontWeight: 500, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                    {detailLines.map((line, idx) => (
-                                                        <li key={idx}>{line}</li>
-                                                    ))}
-                                                </ul>
-
-                                                {selected && (
-                                                    <div style={{ position: 'absolute', bottom: 16, right: 16, width: 20, height: 20, borderRadius: '50%', border: '1px solid #333', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: 12, fontWeight: 800 }}>✓</div>
-                                                )}
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-
-                                {/* Options Container (Shown when a package is selected) */}
-                                {state.selectedPackage && (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 8 }}>
-                                        
-                                        {/* Warning Banner */}
-                                        {showAddonSelector && (
-                                             <div style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 100, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                                                <span style={{ fontSize: TYPE.md }}>⚠️</span>
-                                                <p style={{ fontSize: TYPE.micro, letterSpacing: TRACK.soft, color: '#FFFFFF', margin: 0, lineHeight: 1.4 }}>
-                                                    Paket foto ini menghasilkan foto dalam format <strong>Hitam Putih</strong>.<br/>
-                                                    Tambah <strong>Add-Ons</strong> dibawah untuk hasil <strong>ter-edit</strong> & <strong>berwarna</strong>.
-                                                </p>
-                                             </div>
-                                        )}
-
-                                        {/* Add-On Pill */}
-                                        {showAddonSelector && (
-                                            <label 
-                                                onClick={() => setState(p => ({ ...p, selectedAddons: p.selectedAddons.includes(ADDON_EDITED_COLORED) ? p.selectedAddons.filter(a => a !== ADDON_EDITED_COLORED) : [...p.selectedAddons, ADDON_EDITED_COLORED] }))}
-                                                style={{
-                                                display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderRadius: 100,
-                                                background: '#F8F6F0', cursor: 'pointer',
-                                                border: `2px solid ${state.selectedAddons.includes(ADDON_EDITED_COLORED) ? '#333' : 'transparent'}`,
-                                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                                            }}>
-                                                <div style={{ 
-                                                    width: 20, height: 20, borderRadius: '50%', border: '1px solid #333', 
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    background: state.selectedAddons.includes(ADDON_EDITED_COLORED) ? '#333' : 'transparent'
-                                                }}>
-                                                    {state.selectedAddons.includes(ADDON_EDITED_COLORED) && <span style={{ color: '#FFF', fontSize: 12, fontWeight: 800 }}>✓</span>}
-                                                </div>
-                                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                                    <span style={{ fontSize: TYPE.micro, fontWeight: 700, color: '#888', letterSpacing: TRACK.soft }}>Add-On</span>
-                                                    <span style={{ fontSize: TYPE.xs, fontWeight: 900, color: '#333', letterSpacing: TRACK.tight }}>Edited & Colored Photo</span>
+                                        {/* LEFT: Selected Studio Polaroid */}
+                                        {state.selectedRoom && (
+                                            <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                                <div style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft, marginLeft: 8 }}>
                                                 </div>
                                                 <div style={{
-                                                    background: '#5D2227', color: '#FFFFFF', borderRadius: 999, padding: '6px 14px',
-                                                    fontWeight: 800, fontSize: TYPE.xs, letterSpacing: TRACK.soft
+                                                    width: 260, position: 'relative', aspectRatio: '4/5'
                                                 }}>
-                                                    +{formatIDR(ADDON_PRICE)}
+                                                    <div style={{
+                                                        width: '100%', height: '100%',
+                                                        background: `url(${STUDIO_ROOMS.find(r => r.id === state.selectedRoom)?.image || ''}) center/contain no-repeat`,
+                                                    }} />
                                                 </div>
-                                            </label>
+                                            </div>
                                         )}
 
-                                        {/* Pax Config (Add Person) */}
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 4 }}>
-                                            <span style={{ fontSize: TYPE.xs, color: '#FFFFFF', fontWeight: 700, letterSpacing: TRACK.soft }}>Jumlah Orang :</span>
-                                            <div style={{ display: 'flex', alignItems: 'center', background: '#FFFFFF', borderRadius: 100, padding: '4px 6px' }}>
-                                                <button onClick={() => setState(p => ({ ...p, pax: Math.max(1, p.pax - 1) }))} 
-                                                    style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#EAE8E0', color: '#333', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                                                <span style={{ fontSize: TYPE.sm, fontWeight: 900, width: 32, textAlign: 'center', color: '#333' }}>{state.pax}</span>
-                                                <button onClick={() => setState(p => {
-                                                    const n = p.selectedPackage?.nama.toLowerCase() || ''
-                                                    let maxLimit = p.selectedPackage?.max_orang || 20
-                                                    if (n.includes('party')) maxLimit = 20
-                                                    if (n.includes('pas photo package')) maxLimit = 2
-                                                    if (n.includes('thematic package')) maxLimit = 8
-                                                    return { ...p, pax: Math.min(maxLimit, p.pax + 1) }
-                                                })} style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#EAE8E0', color: '#333', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                                        {/* RIGHT: Packages & Options */}
+                                        <div style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 480 }}>
+                                            <div style={{ fontSize: TYPE.lg, fontWeight: 800, color: '#FFFFFF', marginLeft: 8, letterSpacing: TRACK.tight }}>
+                                                Choose Package :
                                             </div>
-                                            <span style={{ fontSize: TYPE.sm, fontWeight: 800, color: '#FFF' }}></span>
-                                        </div>
 
-                                        {/* Background Selection */}
-                                        {(state.selectedRoom === 'Basic Studio' || state.selectedRoom === 'Pas Photo') && (
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 16 }}>
-                                                <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft, marginBottom: 12 }}>
-                                                    Background Color :
-                                                </span>
-                                                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-                                                    {VARIANTS['Basic Studio'].map(variant => {
-                                                        const sel = state.selectedVariant === variant.code
-                                                        return (
-                                                            <button key={variant.code} onClick={() => setState(p => ({ ...p, selectedVariant: variant.code }))}
-                                                                style={{
-                                                                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                                                                    background: 'none', border: 'none', cursor: 'pointer',
-                                                                    transform: sel ? 'scale(1.1) translateY(-4px)' : 'scale(1)',
-                                                                    transition: 'all 0.2s', padding: 0
-                                                                }}>
+                                            {/* Packages List */}
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                                {allProducts.filter(p => {
+                                                    const name = p.nama.toLowerCase()
+                                                    if (state.selectedRoom === 'Basic Studio') return name.includes('photo session')
+                                                    if (state.selectedRoom === 'Pas Photo') return name.includes('pas photo') || name.includes('graduation')
+                                                    if (state.selectedRoom === 'Elevator Studio' || state.selectedRoom === 'Majestic Studio') return name.includes('thematic')
+                                                    return false
+                                                }).map(pkg => {
+                                                    const selected = state.selectedPackage?.id === pkg.id
+                                                    let detailLines = ['10 Menit | 1-2 Orang', 'Unlimited Jepret', '1 Cetak | All Soft Files']
+                                                    let isBw = false
+                                                    const pkgName = pkg.nama.toLowerCase()
+                                                    if (pkgName.includes('self photo')) { detailLines = ['1-2 Orang', '10 Menit Sesi foto', 'Unlimited Jepret', 'Free 1 Print - Basic Frame', 'Semua Soft Files Hitam Putih']; isBw = true }
+                                                    else if (pkgName.includes('party photo')) { detailLines = ['8 Orang', '15 Menit Sesi Foto', 'Unlimited Jepret', 'Free 2 Print - Basic Frame', 'Semua Soft Files Hitam Putih']; isBw = true }
+                                                    else if (pkgName.includes('pas photo basic')) { detailLines = ['1 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 2 Print', '1 Basic Frame, 1 Formal Print']; }
+                                                    else if (pkgName.includes('pas photo package')) { detailLines = ['2 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 3 Print', '1 Basic Frame, 2 Formal Print']; }
+                                                    else if (pkgName.includes('thematic basic')) { detailLines = ['1 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Semua Soft Files Hitam Putih']; isBw = true }
+                                                    else if (pkgName.includes('thematic package')) { detailLines = ['2 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 1 Print - Basic Frame', 'Semua Soft Files']; }
+
+                                                    return (
+                                                        <button key={pkg.id} onClick={() => setState(p => ({
+                                                            ...p, selectedPackage: pkg, selectedVariant: null, selectedAddons: []
+                                                        }))}
+                                                            style={{
+                                                                background: '#F8F6F0',
+                                                                border: `2px solid ${selected ? '#333' : 'transparent'}`,
+                                                                borderRadius: 24, padding: '16px 24px', textAlign: 'left', cursor: 'pointer',
+                                                                display: 'flex', flexDirection: 'column', gap: 8,
+                                                                boxShadow: selected ? '0 12px 24px rgba(0,0,0,0.2)' : '0 4px 12px rgba(0,0,0,0.1)',
+                                                                transform: selected ? 'scale(1.02)' : 'scale(1)',
+                                                                transition: 'all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1)',
+                                                            }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
+                                                                <h3 style={{ fontSize: TYPE.md, fontWeight: 900, color: '#333', margin: 0, letterSpacing: TRACK.tight, lineHeight: 1.1, flex: 1 }}>{pkg.nama}</h3>
                                                                 <div style={{
-                                                                    width: 48, height: 48, borderRadius: 12,
-                                                                    background: variant.hex,
-                                                                    border: `2px solid ${sel ? '#FFF' : 'rgba(255,255,255,0.2)'}`,
-                                                                    boxShadow: sel ? '0 0 0 2px rgba(255,255,255,0.4), inset 0 2px 4px rgba(0,0,0,0.2)' : 'inset 0 2px 4px rgba(0,0,0,0.1)'
-                                                                }} />
-                                                                <span style={{ fontSize: TYPE.micro, fontWeight: 700, color: sel ? '#FFF' : 'rgba(255,255,255,0.6)', letterSpacing: TRACK.soft }}>
-                                                                    {variant.label}
-                                                                </span>
-                                                            </button>
+                                                                    background: '#622128',
+                                                                    color: '#FFFFFF', borderRadius: 999, padding: '6px 14px', flexShrink: 0,
+                                                                    fontWeight: 800, fontSize: TYPE.xs, letterSpacing: TRACK.base, display: 'inline-flex', alignItems: 'center', gap: 4
+                                                                }}>
+                                                                    Rp {pkg.harga_dasar.toLocaleString('id-ID')}
+                                                                </div>
+                                                            </div>
+
+                                                            <ul style={{ margin: 0, paddingLeft: 18, color: '#555', fontSize: TYPE.xs, letterSpacing: TRACK.soft, fontWeight: 500, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                                {detailLines.map((line, idx) => (
+                                                                    <li key={idx}>{line}</li>
+                                                                ))}
+                                                            </ul>
+
+                                                            {selected && (
+                                                                <div style={{ position: 'absolute', bottom: 16, right: 16, width: 20, height: 20, borderRadius: '50%', border: '1px solid #333', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', fontSize: 12, fontWeight: 800 }}>✓</div>
+                                                            )}
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+
+                                            {/* Options Container (Shown when a package is selected) */}
+                                            {state.selectedPackage && (
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 8 }}>
+
+                                                    {/* Warning Banner */}
+                                                    {showAddonSelector && (
+                                                        <div style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 100, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                                                            <span style={{ fontSize: TYPE.md }}>⚠️</span>
+                                                            <p style={{ fontSize: TYPE.micro, letterSpacing: TRACK.soft, color: '#FFFFFF', margin: 0, lineHeight: 1.4 }}>
+                                                                Paket foto ini menghasilkan foto dalam format <strong>Hitam Putih</strong>.<br />
+                                                                Tambah <strong>Add-Ons</strong> dibawah untuk hasil <strong>ter-edit</strong> & <strong>berwarna</strong>.
+                                                            </p>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Add-On Pill */}
+                                                    {showAddonSelector && (
+                                                        <label
+                                                            onClick={() => setState(p => ({ ...p, selectedAddons: p.selectedAddons.includes(ADDON_EDITED_COLORED) ? p.selectedAddons.filter(a => a !== ADDON_EDITED_COLORED) : [...p.selectedAddons, ADDON_EDITED_COLORED] }))}
+                                                            style={{
+                                                                display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderRadius: 100,
+                                                                background: '#F8F6F0', cursor: 'pointer',
+                                                                border: `2px solid ${state.selectedAddons.includes(ADDON_EDITED_COLORED) ? '#333' : 'transparent'}`,
+                                                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                                            }}>
+                                                            <div style={{
+                                                                width: 20, height: 20, borderRadius: '50%', border: '1px solid #333',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                background: state.selectedAddons.includes(ADDON_EDITED_COLORED) ? '#333' : 'transparent'
+                                                            }}>
+                                                                {state.selectedAddons.includes(ADDON_EDITED_COLORED) && <span style={{ color: '#FFF', fontSize: 12, fontWeight: 800 }}>✓</span>}
+                                                            </div>
+                                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                                                <span style={{ fontSize: TYPE.micro, fontWeight: 700, color: '#888', letterSpacing: TRACK.soft }}>Add-On</span>
+                                                                <span style={{ fontSize: TYPE.xs, fontWeight: 900, color: '#333', letterSpacing: TRACK.tight }}>Edited & Colored Photo</span>
+                                                            </div>
+                                                            <div style={{
+                                                                background: '#622128', color: '#FFFFFF', borderRadius: 999, padding: '6px 14px',
+                                                                fontWeight: 800, fontSize: TYPE.xs, letterSpacing: TRACK.soft
+                                                            }}>
+                                                                +{formatIDR(ADDON_PRICE)}
+                                                            </div>
+                                                        </label>
+                                                    )}
+
+                                                    {/* Pax Config (Add Person) */}
+                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 4 }}>
+                                                        <span style={{ fontSize: TYPE.xs, color: '#FFFFFF', fontWeight: 700, letterSpacing: TRACK.soft }}>Jumlah Orang :</span>
+                                                        <div style={{ display: 'flex', alignItems: 'center', background: '#FFFFFF', borderRadius: 100, padding: '4px 6px' }}>
+                                                            <button onClick={() => setState(p => ({ ...p, pax: Math.max(1, p.pax - 1) }))}
+                                                                style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#EAE8E0', color: '#333', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                                                            <span style={{ fontSize: TYPE.sm, fontWeight: 900, width: 32, textAlign: 'center', color: '#333' }}>{state.pax}</span>
+                                                            <button onClick={() => setState(p => {
+                                                                const n = p.selectedPackage?.nama.toLowerCase() || ''
+                                                                let maxLimit = p.selectedPackage?.max_orang || 20
+                                                                if (n.includes('party')) maxLimit = 20
+                                                                if (n.includes('pas photo package')) maxLimit = 2
+                                                                if (n.includes('thematic package')) maxLimit = 8
+                                                                return { ...p, pax: Math.min(maxLimit, p.pax + 1) }
+                                                            })} style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#EAE8E0', color: '#333', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                                                        </div>
+                                                        <span style={{ fontSize: TYPE.sm, fontWeight: 800, color: '#FFF' }}></span>
+                                                    </div>
+
+                                                    {/* Background Selection */}
+                                                    {(state.selectedRoom === 'Basic Studio' || state.selectedRoom === 'Pas Photo') && (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 16 }}>
+                                                            <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft, marginBottom: 12 }}>
+                                                                Background Color :
+                                                            </span>
+                                                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                                {VARIANTS['Basic Studio'].map(variant => {
+                                                                    const sel = state.selectedVariant === variant.code
+                                                                    return (
+                                                                        <button key={variant.code} onClick={() => setState(p => ({ ...p, selectedVariant: variant.code }))}
+                                                                            style={{
+                                                                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+                                                                                background: 'none', border: 'none', cursor: 'pointer',
+                                                                                transform: sel ? 'scale(1.1) translateY(-4px)' : 'scale(1)',
+                                                                                transition: 'all 0.2s', padding: 0
+                                                                            }}>
+                                                                            <div style={{
+                                                                                width: 48, height: 48, borderRadius: 12,
+                                                                                background: variant.hex,
+                                                                                border: `2px solid ${sel ? '#FFF' : 'rgba(255,255,255,0.2)'}`,
+                                                                                boxShadow: sel ? '0 0 0 2px rgba(255,255,255,0.4), inset 0 2px 4px rgba(0,0,0,0.2)' : 'inset 0 2px 4px rgba(0,0,0,0.1)'
+                                                                            }} />
+                                                                            <span style={{ fontSize: TYPE.micro, fontWeight: 700, color: sel ? '#FFF' : 'rgba(255,255,255,0.6)', letterSpacing: TRACK.soft }}>
+                                                                                {variant.label}
+                                                                            </span>
+                                                                        </button>
+                                                                    )
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Bottom Action Footer */}
+                                                    <div style={{
+                                                        position: 'fixed', bottom: 0, left: 0, right: 0,
+                                                        background: '#F8F6F0', padding: '16px 24px 32px',
+                                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                        boxShadow: '0 -10px 30px rgba(0,0,0,0.3)', zIndex: 50
+                                                    }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                            <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', letterSpacing: TRACK.soft }}>Total Payment</span>
+                                                            <span style={{ fontSize: TYPE.lg, fontWeight: 900, color: '#333', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
+                                                        </div>
+                                                        <button onClick={() => { setStep('datetime'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                                                            disabled={!isPackageStepComplete}
+                                                            style={{
+                                                                background: isPackageStepComplete ? '#622128' : '#CCC',
+                                                                color: '#FFF', padding: '14px 32px', borderRadius: 999, border: 'none',
+                                                                fontSize: TYPE.sm, fontWeight: 700, letterSpacing: TRACK.soft, cursor: isPackageStepComplete ? 'pointer' : 'not-allowed',
+                                                                boxShadow: isPackageStepComplete ? '0 4px 12px rgba(93,34,39,0.3)' : 'none',
+                                                                transition: 'all 0.2s'
+                                                            }}>
+                                                            Continue &rarr;
+                                                        </button>
+                                                    </div>
+
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Step 3: Date & Time ─────────────── */}
+                        {step === 'datetime' && (
+                            <div style={{ padding: '40px 20px', maxWidth: 900, margin: '0 auto' }}>
+                                <button onClick={() => setStep('packages')} style={backBtnStyle}></button>
+
+                                {/* Selected package summary banner */}
+                                <div style={{
+                                    background: '#1C1C1E', borderRadius: 14, border: '1px solid #2C2C2E', padding: '14px 18px', marginBottom: 28,
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+                                }}>
+                                    <div>
+                                        <p style={{ fontSize: TYPE.xs, color: '#AAAAAA', letterSpacing: TRACK.soft, marginBottom: 2 }}>Summary</p>
+                                        <p style={{ fontSize: TYPE.md, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.tight }}>{state.selectedRoom} : <br /> {state.selectedPackage?.nama}</p>
+                                    </div>
+                                    <p style={{ fontSize: TYPE.md, fontWeight: 800, color: '#ffffffff', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</p>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+                                    <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: 24 }}>
+                                        <MiniCalendar value={state.preferredDate} viewDate={calendarDate} onViewChange={setCalendarDate}
+                                            onChange={d => setState(p => ({ ...p, preferredDate: d, preferredTime: '' }))} />
+                                    </div>
+
+                                    <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: 24 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                                            <p style={{ fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, color: '#AAAAAA' }}>Available Slot</p>
+                                            <span style={{ fontSize: TYPE.micro, background: '#2C2C2E', color: '#AAAAAA', padding: '3px 8px', borderRadius: 4, fontWeight: 600, letterSpacing: TRACK.soft }}>
+                                                {state.preferredDate ? (new Date(state.preferredDate).getDay() === 0 || new Date(state.preferredDate).getDay() === 6 ? 'Weekend' : 'Weekday') : 'Pilih Tanggal'}
+                                            </span>
+                                        </div>
+                                        {!state.preferredDate ? (
+                                            <div style={{ padding: '30px 0', textAlign: 'center', color: '#555555', fontSize: TYPE.sm, letterSpacing: TRACK.soft }}>Pilih tanggal terlebih dahulu</div>
+                                        ) : (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                                {availableSlots.map(t => (
+                                                    <button key={t} onClick={() => setState(p => ({ ...p, preferredTime: t }))}
+                                                        style={{
+                                                            padding: '10px 0', fontSize: TYPE.sm, fontWeight: 600, letterSpacing: TRACK.soft, border: '1px solid',
+                                                            borderColor: state.preferredTime === t ? '#8f0700ff' : '#333333',
+                                                            background: state.preferredTime === t ? '#8f0700ff' : '#2C2C2E',
+                                                            color: state.preferredTime === t ? '#FFFFFF' : '#888888',
+                                                            borderRadius: 10, cursor: 'pointer', transition: 'all 0.15s', fontFamily: FONT,
+                                                        }}>
+                                                        {t}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div style={{ marginTop: 24, textAlign: 'right' }}>
+                                    <button onClick={() => { setStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                                        disabled={!state.preferredDate || !state.preferredTime}
+                                        style={{
+                                            padding: '14px 36px', fontSize: TYPE.sm, fontWeight: 700, letterSpacing: TRACK.soft,
+                                            background: state.preferredDate && state.preferredTime ? '#FFFFFF' : '#ffffff',
+                                            color: state.preferredDate && state.preferredTime ? '#000000' : '#ffffff',
+                                            borderRadius: 12, border: 'none',
+                                            cursor: state.preferredDate && state.preferredTime ? 'pointer' : 'not-allowed', fontFamily: FONT,
+                                        }}>
+                                        Next →
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Step 4: Booking Form ─────────────── */}
+                        {step === 'form' && (
+                            <div style={{ padding: '16px 16px 32px', margin: '0 auto', width: '100%' }}>
+                                <button onClick={() => setStep('datetime')} style={backBtnStyle}></button>
+
+                                <div className="form-layout">
+                                    {/* Form main */}
+                                    <div className="form-main">
+
+                                        <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: '20px 18px' }}>
+                                            <h2 style={{ fontSize: TYPE.md, fontWeight: 700, marginBottom: 18, color: '#FFFFFF', letterSpacing: TRACK.tight }}>Personal Information</h2>
+
+                                            <FormField label="Nama*">
+                                                <input style={inputStyle} placeholder="Nama..."
+                                                    value={state.customerName}
+                                                    onChange={e => setState(p => ({ ...p, customerName: e.target.value }))} />
+                                            </FormField>
+
+                                            <FormField label="Instagram*">
+                                                <div style={{ position: 'relative', width: '100%' }}>
+                                                    <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: '#666666', fontSize: TYPE.sm, pointerEvents: 'none', userSelect: 'none' }}>@</span>
+                                                    <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="username"
+                                                        value={state.instagramHandle.replace('@', '')}
+                                                        onChange={e => setState(p => ({ ...p, instagramHandle: e.target.value }))} />
+                                                </div>
+                                                <p style={{ fontSize: TYPE.xs, color: '#666666', marginTop: 5, letterSpacing: TRACK.soft }}>Pastikan username Instagram kamu benar dan aktif. <br /> Konfirmasi booking, mengirim hasil foto dan komunikasi lainnya akan dilakukan melalui DM @mera.selfstudio.</p>
+                                            </FormField>
+
+                                            <FormField label="Payment Method*">
+                                                <div style={{ display: 'flex', color: '#FFFFFF', flexDirection: 'column', gap: 10 }}>
+                                                    {(Object.keys(BOOKING_TYPE_LABELS) as BookingType[]).map(bt => {
+                                                        const { icon, label, desc } = BOOKING_TYPE_LABELS[bt]
+                                                        const checked = state.bookingType === bt
+                                                        return (
+                                                            <label key={bt} style={{
+                                                                display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 12,
+                                                                border: `1.5px solid ${checked ? '#FF3B30' : '#2C2C2E'}`,
+                                                                background: checked ? '#1A0000' : '#2C2C2E', cursor: 'pointer', transition: 'all 0.15s',
+                                                            }}>
+                                                                <input type="radio" name="booking_type" checked={checked}
+                                                                    onChange={() => setState(p => ({ ...p, bookingType: bt }))} style={{ marginTop: 3 }} />
+                                                                <div>
+                                                                    <p style={{ fontWeight: 600, fontSize: TYPE.sm, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{icon} {label}</p>
+                                                                    <p style={{ fontSize: TYPE.xs, color: '#888888', marginTop: 2, letterSpacing: TRACK.soft }}>{desc}</p>
+                                                                </div>
+                                                            </label>
                                                         )
                                                     })}
                                                 </div>
+                                            </FormField>
+
+                                            {/* KEEPSLOT expiry warning */}
+                                            {state.bookingType === 'ONLINE_KEEPSLOT' && (
+                                                <div style={{ background: '#2B2200', border: '1px solid #ffc400ff', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+                                                    <p style={{ fontSize: TYPE.xs, color: '#ffffffff', letterSpacing: TRACK.soft }}>⏰ Booking <strong>EXPIRED otomatis dalam 6 JAM</strong> jika tidak konfirmasi dan datang ke Studio.</p>
+                                                </div>
+                                            )}
+
+                                            <button onClick={handleSubmit} disabled={loading || !formValid}
+                                                style={{
+                                                    width: '100%', padding: '15px', fontSize: TYPE.md, fontWeight: 700, letterSpacing: TRACK.soft,
+                                                    background: formValid ? '#FFFFFF' : '#2C2C2E',
+                                                    color: formValid ? '#000000' : '#555555', borderRadius: 12, border: 'none',
+                                                    cursor: formValid ? 'pointer' : 'not-allowed', marginTop: 8, fontFamily: FONT,
+                                                }}>
+                                                {loading ? 'Loading...' : 'Konfirmasi Booking →'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Compact Summary */}
+                                    <div className="form-summary">
+                                        <div style={{ background: '#1C1C1E', borderRadius: 14, border: '1px solid #2C2C2E', padding: '16px 18px' }}>
+                                            <p style={{ fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, color: '#666666', marginBottom: 12 }}>Ringkasan</p>
+
+                                            <p style={{ fontSize: TYPE.xs, color: '#666666', marginBottom: 2, letterSpacing: TRACK.soft }}>{state.selectedRoom}</p>
+                                            <p style={{ fontSize: TYPE.md, fontWeight: 800, marginBottom: 2, color: '#FFFFFF', letterSpacing: TRACK.tight }}>{state.selectedPackage?.nama}</p>
+                                            <p style={{ fontSize: TYPE.xs, color: '#AAAAAA', marginBottom: 8, letterSpacing: TRACK.soft }}>{state.pax} Orang</p>
+
+                                            {state.selectedVariant && (
+                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: '#2C2C2E', borderRadius: 8, marginBottom: 8 }}>
+                                                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.hex }} />
+                                                    <span style={{ fontSize: TYPE.xs, fontWeight: 600, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.label}</span>
+                                                </div>
+                                            )}
+
+                                            {state.selectedAddons.includes(ADDON_EDITED_COLORED) && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+                                                    <span style={{ fontSize: TYPE.xs, color: '#30D158', fontWeight: 600, letterSpacing: TRACK.soft }}>✨ Edited + Colored</span>
+                                                </div>
+                                            )}
+
+                                            <div style={{ borderTop: '1px solid #2C2C2E', paddingTop: 10, marginTop: 4 }}>
+                                                <SummaryRow label="Tanggal" value={state.preferredDate ? new Date(state.preferredDate + 'T00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
+                                                <SummaryRow label="Jam" value={state.preferredTime || '—'} />
+                                            </div>
+
+                                            <div style={{ borderTop: '1px solid #2C2C2E', paddingTop: 10, marginTop: 4 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft }}>Total</span>
+                                                    <span style={{ fontSize: TYPE.md, fontWeight: 800, color: '#ffffffff', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Step 5: Confirmation ─────────────── */}
+                        {step === 'confirm' && (
+                            <div style={{ padding: '40px 20px', maxWidth: 460, margin: '0 auto', textAlign: 'center' }}>
+                                <div style={{ fontSize: TYPE.xl, marginBottom: 8 }}>📸</div>
+                                <h1 style={{ fontSize: TYPE.lg, fontWeight: 800, marginBottom: 8, color: '#FFFFFF', letterSpacing: TRACK.tight }}>Booking Berhasil!</h1>
+                                <p style={{ fontSize: TYPE.sm, color: '#FFFFFF', fontWeight: 700, marginBottom: 24, lineHeight: 1.5, letterSpacing: TRACK.soft }}>
+                                    Screenshot tiket ini dan kirimkan via <strong>Instagram DM</strong> untuk konfirmasi bookingmu.
+                                </p>
+
+                                {/* RECEIPT TICKET */}
+                                <div style={{
+                                    background: state.bookingType === 'ONLINE_KEEPSLOT' ? '#fff3cd' :
+                                        state.bookingType === 'ONLINE_QRIS' ? '#ffccbc' : '#111111',
+                                    borderRadius: 20,
+                                    border: `1px solid ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#ffeeba' : state.bookingType === 'ONLINE_QRIS' ? '#ffab91' : '#333333'}`,
+                                    marginBottom: 24,
+                                    textAlign: 'left',
+                                    position: 'relative',
+                                    overflow: 'hidden'
+                                }} className="receipt-ticket">
+
+                                    {/* Ticket Header */}
+                                    <div style={{ padding: '24px 24px 16px', borderBottom: `2px dashed ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#333'}`, position: 'relative' }}>
+                                        <div style={{ position: 'absolute', bottom: -10, left: -10, width: 20, height: 20, borderRadius: '50%', background: '#000' }} />
+                                        <div style={{ position: 'absolute', bottom: -10, right: -10, width: 20, height: 20, borderRadius: '50%', background: '#000' }} />
+
+                                        <p style={{ fontSize: TYPE.xs, color: state.bookingType ? 'rgba(0,0,0,0.5)' : '#888', letterSpacing: TRACK.soft, marginBottom: 4 }}>Booking Id</p>
+                                        <p style={{ fontSize: TYPE.lg, fontFamily: 'monospace', fontWeight: 800, color: state.bookingType ? '#000' : '#FFF', letterSpacing: TRACK.soft }}>{state.sessionId}</p>
+                                        <p style={{ fontSize: TYPE.xs, color: state.bookingType ? 'rgba(0,0,0,0.6)' : '#AAA', marginTop: 4, letterSpacing: TRACK.soft }}>a.n. {state.customerName} (@{state.instagramHandle.replace('@', '')})</p>
+                                    </div>
+
+                                    {/* Ticket Body */}
+                                    <div style={{ padding: '20px 24px 24px' }}>
+                                        <SummaryRowDark label="Studio" value={state.selectedRoom ?? '—'} bookingType={state.bookingType} />
+                                        <SummaryRowDark label="Paket" value={state.selectedPackage?.nama ?? '—'} bookingType={state.bookingType} />
+                                        <SummaryRowDark label="Jumlah Orang" value={`${state.pax} Orang`} bookingType={state.bookingType} />
+                                        {state.selectedVariant && <SummaryRowDark label="Warna" value={VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.label} bookingType={state.bookingType} />}
+                                        {state.selectedAddons.includes(ADDON_EDITED_COLORED) && <SummaryRowDark label="Add On" value="Edited + Colored" bookingType={state.bookingType} />}
+                                        <div style={{ marginTop: 12, marginBottom: 12, borderTop: `1px solid ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#222'}` }} />
+                                        <SummaryRowDark label="Tanggal" value={state.preferredDate ? new Date(state.preferredDate).toLocaleDateString('id-ID', { dateStyle: 'long' }) : '—'} bookingType={state.bookingType} />
+                                        <SummaryRowDark label="Jam Sesi" value={state.preferredTime || '—'} bookingType={state.bookingType} />
+                                        <SummaryRowDark label="Tipe Pembayaran" value={BOOKING_TYPE_LABELS[state.bookingType]?.label || '—'} bookingType={state.bookingType} />
+                                        <div style={{ marginTop: 12, marginBottom: 16, borderTop: `1px solid ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#222'}` }} />
+
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontSize: TYPE.sm, color: state.bookingType ? 'rgba(0,0,0,0.6)' : '#AAA', letterSpacing: TRACK.soft }}>Total Tagihan</span>
+                                            <span style={{ fontSize: TYPE.lg, fontWeight: 800, color: state.bookingType ? '#000' : '#FFF', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
+                                        </div>
+
+                                        {state.bookingType === 'ONLINE_KEEPSLOT' && (
+                                            <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(0,0,0,0.05)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)' }}>
+                                                <p style={{ fontSize: TYPE.xs, color: '#7A5C00', lineHeight: 1.4, fontWeight: 600, letterSpacing: TRACK.soft }}>
+                                                    ⏰ Tiket booking EXPIRED dalam 6 jam. Harap segera konfirmasi pembayaran via DM.
+                                                </p>
                                             </div>
                                         )}
 
-                                        {/* Bottom Action Footer */}
-                                        <div style={{ 
-                                            position: 'fixed', bottom: 0, left: 0, right: 0, 
-                                            background: '#F8F6F0', padding: '16px 24px 32px', 
-                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                            boxShadow: '0 -10px 30px rgba(0,0,0,0.3)', zIndex: 50
-                                        }}>
-                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', letterSpacing: TRACK.soft }}>Total Payment</span>
-                                                <span style={{ fontSize: TYPE.lg, fontWeight: 900, color: '#333', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
+                                        {state.bookingType === 'ONLINE_QRIS' && (
+                                            <div style={{ marginTop: 24, padding: '24px', background: '#FFFFFF', borderRadius: 16, textAlign: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+                                                <p style={{ fontSize: TYPE.sm, fontWeight: 700, color: '#000000', marginBottom: 16, letterSpacing: TRACK.soft }}>Scan QRIS untuk Membayar</p>
+                                                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                                                    <QRCode value={generateDynamicQRIS(displayPrice)} size={200} />
+                                                </div>
+                                                <p style={{ fontSize: TYPE.xs, color: '#666', lineHeight: 1.4, letterSpacing: TRACK.soft }}>
+                                                    Nominal <strong>{formatIDR(displayPrice)}</strong> sudah terisi otomatis.
+                                                    Setelah berhasil bayar, kirimkan screenshot ke DM kami.
+                                                </p>
+                                                <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(0,0,0,0.04)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.08)' }}>
+                                                    <p style={{ fontSize: TYPE.xs, color: '#555', lineHeight: 1.4, letterSpacing: TRACK.soft }}>
+                                                        Ingin ubah jadwal? Gunakan tombol <strong>Reschedule</strong> di bawah. Sudah tiba di studio? Tap <strong>Self Check-in</strong>.
+                                                    </p>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                                                    <button
+                                                        onClick={() => {
+                                                            setRescDate(state.preferredDate)
+                                                            setRescTime(state.preferredTime)
+                                                            setRescCalDate(new Date())
+                                                            setShowReschedule(true)
+                                                        }}
+                                                        style={{ flex: 1, padding: '10px', background: '#F2F2F7', color: '#000', border: 'none', borderRadius: 8, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer' }}>📅 Reschedule</button>
+                                                    <a
+                                                        href={`/checkin?sid=${encodeURIComponent(state.sessionId ?? '')}`}
+                                                        target="_blank" rel="noopener noreferrer"
+                                                        style={{ flex: 1, padding: '10px', background: '#000', color: '#FFF', border: 'none', borderRadius: 8, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>📷 Self Check-in</a>
+                                                </div>
                                             </div>
-                                            <button onClick={() => { setStep('datetime'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                                                disabled={!isPackageStepComplete}
-                                                style={{
-                                                    background: isPackageStepComplete ? '#5D2227' : '#CCC',
-                                                    color: '#FFF', padding: '14px 32px', borderRadius: 999, border: 'none',
-                                                    fontSize: TYPE.sm, fontWeight: 700, letterSpacing: TRACK.soft, cursor: isPackageStepComplete ? 'pointer' : 'not-allowed',
-                                                    boxShadow: isPackageStepComplete ? '0 4px 12px rgba(93,34,39,0.3)' : 'none',
-                                                    transition: 'all 0.2s'
-                                                }}>
-                                                Continue &rarr;
-                                            </button>
-                                        </div>
-
+                                        )}
                                     </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+                                </div>
 
-            {/* ── Step 3: Date & Time ─────────────── */}
-            {step === 'datetime' && (
-                <div style={{ padding: '40px 20px', maxWidth: 900, margin: '0 auto' }}>
-                    <button onClick={() => setStep('packages')} style={backBtnStyle}></button>
+                                {/* Studio Rules */}
+                                <div style={{ background: 'hsl(33, 24%, 93%)', borderRadius: 16, padding: '20px 22px', marginBottom: 20, textAlign: 'left', border: '1px solid rgba(98,33,40,0.15)' }}>
+                                    <p style={{ fontSize: 15, fontWeight: 700, color: '#622128', marginBottom: 12, letterSpacing: TRACK.soft }}>📋 Peraturan Studio</p>
+                                    {[
+                                        '⏰ Datang minimal 10 menit sebelum jadwal sesi. Keterlambatan mengurangi durasi sesi.',
+                                        '👥 Paket Self Photo Session maks 4 orang. Lebih dari itu, wajib Pilih Paket Party Photo Session (maks 8 orang).',
+                                        '👗 Pakai outfit terbaik sesuai tema fotomu untuk hasil terbaik.',
+                                        '🚫 Dilarang membawa makanan, minuman ke dalam studio.',
+                                        '🚭 Dilarang merokok di dalam area studio.',
+                                        '📸 Jangan menyentuh atau memindahkan peralatan dalam studio.',
+                                        '🔄 Booking 2 sesi atau lebih harus dilakukan secara terpisah (satu per satu).',
+                                        '👶 Anak di bawah 2 tahun Gratis!.',
+                                        '👶 Anak di bawah 10 tahun wajib didampingi orang dewasa.',
+                                        '🧹 Jaga kebersihan studio. Buang sampah pada tempatnya.',
+                                        '💳 Pembayaran QRIS bersifat final — tidak bisa di-refund.',
+                                        '🕒 Keep Slot hangus otomatis jika tidak dikonfirmasi dalam 6 jam.',
+                                        '📅 Untuk Reschedule H-1  konfirmasi via DM instagram.',
+                                        '📱 Hasil foto langsung bisa diakses via Google Drive setelah sesi. Link aktif 5 hari.',
+                                        '💰 Kerusakan properti/peralatan studio menjadi tanggung jawab customer.'
 
-                    {/* Selected package summary banner */}
-                    <div style={{
-                        background: '#1C1C1E', borderRadius: 14, border: '1px solid #2C2C2E', padding: '14px 18px', marginBottom: 28,
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8,
-                    }}>
-                        <div>
-                            <p style={{ fontSize: TYPE.xs, color: '#AAAAAA', letterSpacing: TRACK.soft, marginBottom: 2 }}>Summary</p>
-                            <p style={{ fontSize: TYPE.md, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.tight }}>{state.selectedRoom} : <br/> {state.selectedPackage?.nama}</p>
-                        </div>
-                        <p style={{ fontSize: TYPE.md, fontWeight: 800, color: '#ffffffff', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</p>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
-                        <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: 24 }}>
-                            <MiniCalendar value={state.preferredDate} viewDate={calendarDate} onViewChange={setCalendarDate}
-                                onChange={d => setState(p => ({ ...p, preferredDate: d, preferredTime: '' }))} />
-                        </div>
-
-                        <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: 24 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                                <p style={{ fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, color: '#AAAAAA' }}>Available Slot</p>
-                                <span style={{ fontSize: TYPE.micro, background: '#2C2C2E', color: '#AAAAAA', padding: '3px 8px', borderRadius: 4, fontWeight: 600, letterSpacing: TRACK.soft }}>
-                                    {state.preferredDate ? (new Date(state.preferredDate).getDay() === 0 || new Date(state.preferredDate).getDay() === 6 ? 'Weekend' : 'Weekday') : 'Pilih Tanggal'}
-                                </span>
-                            </div>
-                            {!state.preferredDate ? (
-                                <div style={{ padding: '30px 0', textAlign: 'center', color: '#555555', fontSize: TYPE.sm, letterSpacing: TRACK.soft }}>Pilih tanggal terlebih dahulu</div>
-                            ) : (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                                    {availableSlots.map(t => (
-                                        <button key={t} onClick={() => setState(p => ({ ...p, preferredTime: t }))}
-                                            style={{
-                                                padding: '10px 0', fontSize: TYPE.sm, fontWeight: 600, letterSpacing: TRACK.soft, border: '1px solid',
-                                                borderColor: state.preferredTime === t ? '#8f0700ff' : '#333333',
-                                                background: state.preferredTime === t ? '#8f0700ff' : '#2C2C2E',
-                                                color: state.preferredTime === t ? '#FFFFFF' : '#888888',
-                                                borderRadius: 10, cursor: 'pointer', transition: 'all 0.15s', fontFamily: FONT,
-                                            }}>
-                                            {t}
-                                        </button>
+                                    ].map((rule, i) => (
+                                        <p key={i} style={{ fontSize: 13, color: '#4a3438', lineHeight: 1.7, margin: '0 0 4px', letterSpacing: TRACK.soft }}>{rule}</p>
                                     ))}
+                                    <p style={{ fontSize: 13, color: '#622128', fontWeight: 600, marginTop: 12, lineHeight: 1.6, letterSpacing: TRACK.soft }}>📅 Untuk reschedule, konfirmasi via DM Instagram minimal H-1</p>
                                 </div>
-                            )}
-                        </div>
-                    </div>
 
-                    <div style={{ marginTop: 24, textAlign: 'right' }}>
-                        <button onClick={() => { setStep('form'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                            disabled={!state.preferredDate || !state.preferredTime}
-                            style={{
-                                padding: '14px 36px', fontSize: TYPE.sm, fontWeight: 700, letterSpacing: TRACK.soft,
-                                background: state.preferredDate && state.preferredTime ? '#FFFFFF' : '#ffffff',
-                                color: state.preferredDate && state.preferredTime ? '#000000' : '#ffffff',
-                                borderRadius: 12, border: 'none',
-                                cursor: state.preferredDate && state.preferredTime ? 'pointer' : 'not-allowed', fontFamily: FONT,
-                            }}>
-                            Next →
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* ── Step 4: Booking Form ─────────────── */}
-            {step === 'form' && (
-                <div style={{ padding: '16px 16px 32px', margin: '0 auto', width: '100%' }}>
-                    <button onClick={() => setStep('datetime')} style={backBtnStyle}></button>
-
-                    <div className="form-layout">
-                        {/* Form main */}
-                        <div className="form-main">
-
-                            <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: '20px 18px' }}>
-                                <h2 style={{ fontSize: TYPE.md, fontWeight: 700, marginBottom: 18, color: '#FFFFFF', letterSpacing: TRACK.tight }}>Personal Information</h2>
-
-                                <FormField label="Nama*">
-                                    <input style={inputStyle} placeholder="Nama..."
-                                        value={state.customerName}
-                                        onChange={e => setState(p => ({ ...p, customerName: e.target.value }))} />
-                                </FormField>
-
-                                <FormField label="Instagram*">
-                                    <div style={{ position: 'relative', width: '100%' }}>
-                                        <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: '#666666', fontSize: TYPE.sm, pointerEvents: 'none', userSelect: 'none' }}>@</span>
-                                        <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="username"
-                                            value={state.instagramHandle.replace('@', '')}
-                                            onChange={e => setState(p => ({ ...p, instagramHandle: e.target.value }))} />
-                                    </div>
-                                    <p style={{ fontSize: TYPE.xs, color: '#666666', marginTop: 5, letterSpacing: TRACK.soft }}>Pastikan username Instagram kamu benar dan aktif. <br/> Konfirmasi booking, mengirim hasil foto dan komunikasi lainnya akan dilakukan melalui DM @mera.selfstudio.</p>
-                                </FormField>
-
-                                <FormField label="Payment Method*">
-                                    <div style={{ display: 'flex', color: '#FFFFFF', flexDirection: 'column', gap: 10 }}>
-                                        {(Object.keys(BOOKING_TYPE_LABELS) as BookingType[]).map(bt => {
-                                            const { icon, label, desc } = BOOKING_TYPE_LABELS[bt]
-                                            const checked = state.bookingType === bt
-                                            return (
-                                                <label key={bt} style={{
-                                                    display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 12,
-                                                    border: `1.5px solid ${checked ? '#FF3B30' : '#2C2C2E'}`,
-                                                    background: checked ? '#1A0000' : '#2C2C2E', cursor: 'pointer', transition: 'all 0.15s',
-                                                }}>
-                                                    <input type="radio" name="booking_type" checked={checked}
-                                                        onChange={() => setState(p => ({ ...p, bookingType: bt }))} style={{ marginTop: 3 }} />
-                                                    <div>
-                                                        <p style={{ fontWeight: 600, fontSize: TYPE.sm, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{icon} {label}</p>
-                                                        <p style={{ fontSize: TYPE.xs, color: '#888888', marginTop: 2, letterSpacing: TRACK.soft }}>{desc}</p>
-                                                    </div>
-                                                </label>
-                                            )
-                                        })}
-                                    </div>
-                                </FormField>
-
-                                {/* KEEPSLOT expiry warning */}
-                                {state.bookingType === 'ONLINE_KEEPSLOT' && (
-                                    <div style={{ background: '#2B2200', border: '1px solid #ffc400ff', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
-                                        <p style={{ fontSize: TYPE.xs, color: '#ffffffff', letterSpacing: TRACK.soft }}>⏰ Booking <strong>EXPIRED otomatis dalam 6 JAM</strong> jika tidak konfirmasi dan datang ke Studio.</p>
-                                    </div>
-                                )}
-
-                                <button onClick={handleSubmit} disabled={loading || !formValid}
+                                {/* Instagram DM button */}
+                                <a
+                                    href={`https://ig.me/m/${INSTAGRAM_DM_TARGET}`}
+                                    target="_blank" rel="noopener noreferrer"
                                     style={{
-                                        width: '100%', padding: '15px', fontSize: TYPE.md, fontWeight: 700, letterSpacing: TRACK.soft,
-                                        background: formValid ? '#FFFFFF' : '#2C2C2E',
-                                        color: formValid ? '#000000' : '#555555', borderRadius: 12, border: 'none',
-                                        cursor: formValid ? 'pointer' : 'not-allowed', marginTop: 8, fontFamily: FONT,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                                        padding: '16px 28px',
+                                        background: 'linear-gradient(135deg, #833AB4, #FD1D1D, #F77737)',
+                                        color: '#fff', borderRadius: 14, fontWeight: 700, fontSize: TYPE.md, letterSpacing: TRACK.soft, marginBottom: 16, textDecoration: 'none',
                                     }}>
-                                    {loading ? 'Loading...' : 'Konfirmasi Booking →'}
-                                </button>
+                                    <InstagramIcon /> Konfirmasi Booking
+                                </a>
+
+                                <Link href="/" style={{ display: 'block', fontSize: TYPE.sm, color: '#ffffffff', padding: '10px 0', letterSpacing: TRACK.soft, textDecoration: 'none' }}>
+                                    ← Home
+                                </Link>
                             </div>
-                        </div>
-
-                        {/* Compact Summary */}
-                        <div className="form-summary">
-                            <div style={{ background: '#1C1C1E', borderRadius: 14, border: '1px solid #2C2C2E', padding: '16px 18px' }}>
-                                <p style={{ fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, color: '#666666', marginBottom: 12 }}>Ringkasan</p>
-
-                                <p style={{ fontSize: TYPE.xs, color: '#666666', marginBottom: 2, letterSpacing: TRACK.soft }}>{state.selectedRoom}</p>
-                                <p style={{ fontSize: TYPE.md, fontWeight: 800, marginBottom: 2, color: '#FFFFFF', letterSpacing: TRACK.tight }}>{state.selectedPackage?.nama}</p>
-                                <p style={{ fontSize: TYPE.xs, color: '#AAAAAA', marginBottom: 8, letterSpacing: TRACK.soft }}>{state.pax} Orang</p>
-
-                                {state.selectedVariant && (
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: '#2C2C2E', borderRadius: 8, marginBottom: 8 }}>
-                                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.hex }} />
-                                        <span style={{ fontSize: TYPE.xs, fontWeight: 600, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.label}</span>
-                                    </div>
-                                )}
-
-                                {state.selectedAddons.includes(ADDON_EDITED_COLORED) && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
-                                        <span style={{ fontSize: TYPE.xs, color: '#30D158', fontWeight: 600, letterSpacing: TRACK.soft }}>✨ Edited + Colored</span>
-                                    </div>
-                                )}
-
-                                <div style={{ borderTop: '1px solid #2C2C2E', paddingTop: 10, marginTop: 4 }}>
-                                    <SummaryRow label="Tanggal" value={state.preferredDate ? new Date(state.preferredDate + 'T00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
-                                    <SummaryRow label="Jam" value={state.preferredTime || '—'} />
-                                </div>
-
-                                <div style={{ borderTop: '1px solid #2C2C2E', paddingTop: 10, marginTop: 4 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft }}>Total</span>
-                                        <span style={{ fontSize: TYPE.md, fontWeight: 800, color: '#ffffffff', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ── Step 5: Confirmation ─────────────── */}
-            {step === 'confirm' && (
-                <div style={{ padding: '40px 20px', maxWidth: 460, margin: '0 auto', textAlign: 'center' }}>
-                    <div style={{ fontSize: TYPE.xl, marginBottom: 8 }}>📸</div>
-                    <h1 style={{ fontSize: TYPE.lg, fontWeight: 800, marginBottom: 8, color: '#FFFFFF', letterSpacing: TRACK.tight }}>Booking Berhasil!</h1>
-                    <p style={{ fontSize: TYPE.sm, color: '#AAAAAA', marginBottom: 24, lineHeight: 1.5, letterSpacing: TRACK.soft }}>
-                        Screenshot tiket ini dan kirimkan via <strong>Instagram DM</strong> untuk konfirmasi bookingmu.
-                    </p>
-
-                    {/* RECEIPT TICKET */}
-                    <div style={{
-                        background: state.bookingType === 'ONLINE_KEEPSLOT' ? '#fff3cd' :
-                            state.bookingType === 'ONLINE_QRIS' ? '#ffccbc' : '#111111',
-                        borderRadius: 20,
-                        border: `1px solid ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#ffeeba' : state.bookingType === 'ONLINE_QRIS' ? '#ffab91' : '#333333'}`,
-                        marginBottom: 24,
-                        textAlign: 'left',
-                        position: 'relative',
-                        overflow: 'hidden'
-                    }} className="receipt-ticket">
-
-                        {/* Ticket Header */}
-                        <div style={{ padding: '24px 24px 16px', borderBottom: `2px dashed ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#333'}`, position: 'relative' }}>
-                            <div style={{ position: 'absolute', bottom: -10, left: -10, width: 20, height: 20, borderRadius: '50%', background: '#000' }} />
-                            <div style={{ position: 'absolute', bottom: -10, right: -10, width: 20, height: 20, borderRadius: '50%', background: '#000' }} />
-
-                            <p style={{ fontSize: TYPE.xs, color: state.bookingType ? 'rgba(0,0,0,0.5)' : '#888', letterSpacing: TRACK.soft, marginBottom: 4 }}>Booking Id</p>
-                            <p style={{ fontSize: TYPE.lg, fontFamily: 'monospace', fontWeight: 800, color: state.bookingType ? '#000' : '#FFF', letterSpacing: TRACK.soft }}>{state.sessionId}</p>
-                            <p style={{ fontSize: TYPE.xs, color: state.bookingType ? 'rgba(0,0,0,0.6)' : '#AAA', marginTop: 4, letterSpacing: TRACK.soft }}>a.n. {state.customerName} (@{state.instagramHandle.replace('@', '')})</p>
-                        </div>
-
-                        {/* Ticket Body */}
-                        <div style={{ padding: '20px 24px 24px' }}>
-                            <SummaryRowDark label="Studio" value={state.selectedRoom ?? '—'} bookingType={state.bookingType} />
-                            <SummaryRowDark label="Paket" value={state.selectedPackage?.nama ?? '—'} bookingType={state.bookingType} />
-                            <SummaryRowDark label="Jumlah Orang" value={`${state.pax} Orang`} bookingType={state.bookingType} />
-                            {state.selectedVariant && <SummaryRowDark label="Warna" value={VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.label} bookingType={state.bookingType} />}
-                            {state.selectedAddons.includes(ADDON_EDITED_COLORED) && <SummaryRowDark label="Add On" value="Edited + Colored" bookingType={state.bookingType} />}
-                            <div style={{ marginTop: 12, marginBottom: 12, borderTop: `1px solid ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#222'}` }} />
-                            <SummaryRowDark label="Tanggal" value={state.preferredDate ? new Date(state.preferredDate).toLocaleDateString('id-ID', { dateStyle: 'long' }) : '—'} bookingType={state.bookingType} />
-                            <SummaryRowDark label="Jam Sesi" value={state.preferredTime || '—'} bookingType={state.bookingType} />
-                            <SummaryRowDark label="Tipe Pembayaran" value={BOOKING_TYPE_LABELS[state.bookingType]?.label || '—'} bookingType={state.bookingType} />
-                            <div style={{ marginTop: 12, marginBottom: 16, borderTop: `1px solid ${state.bookingType === 'ONLINE_KEEPSLOT' ? '#E6DCB8' : state.bookingType === 'ONLINE_QRIS' ? '#EAB8B2' : '#222'}` }} />
-
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: TYPE.sm, color: state.bookingType ? 'rgba(0,0,0,0.6)' : '#AAA', letterSpacing: TRACK.soft }}>Total Tagihan</span>
-                                <span style={{ fontSize: TYPE.lg, fontWeight: 800, color: state.bookingType ? '#000' : '#FFF', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
-                            </div>
-
-                            {state.bookingType === 'ONLINE_KEEPSLOT' && (
-                                <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(0,0,0,0.05)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)' }}>
-                                    <p style={{ fontSize: TYPE.xs, color: '#7A5C00', lineHeight: 1.4, fontWeight: 600, letterSpacing: TRACK.soft }}>
-                                        ⏰ Tiket booking EXPIRED dalam 6 jam. Harap segera konfirmasi pembayaran via DM.
-                                    </p>
-                                </div>
-                            )}
-
-                            {state.bookingType === 'ONLINE_QRIS' && (
-                                <div style={{ marginTop: 24, padding: '24px', background: '#FFFFFF', borderRadius: 16, textAlign: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-                                    <p style={{ fontSize: TYPE.sm, fontWeight: 700, color: '#000000', marginBottom: 16, letterSpacing: TRACK.soft }}>Scan QRIS untuk Membayar</p>
-                                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-                                        <QRCode value={generateDynamicQRIS(displayPrice)} size={200} />
-                                    </div>
-                                    <p style={{ fontSize: TYPE.xs, color: '#666', lineHeight: 1.4, letterSpacing: TRACK.soft }}>
-                                        Nominal <strong>{formatIDR(displayPrice)}</strong> sudah terisi otomatis.
-                                        Setelah berhasil bayar, kirimkan screenshot ke DM kami.
-                                    </p>
-                                    <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(0,0,0,0.04)', borderRadius: 10, border: '1px solid rgba(0,0,0,0.08)' }}>
-                                        <p style={{ fontSize: TYPE.xs, color: '#555', lineHeight: 1.4, letterSpacing: TRACK.soft }}>
-                                            Ingin ubah jadwal? Gunakan tombol <strong>Reschedule</strong> di bawah. Sudah tiba di studio? Tap <strong>Self Check-in</strong>.
-                                        </p>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-                                        <button
-                                            onClick={() => {
-                                                setRescDate(state.preferredDate)
-                                                setRescTime(state.preferredTime)
-                                                setRescCalDate(new Date())
-                                                setShowReschedule(true)
-                                            }}
-                                            style={{ flex: 1, padding: '10px', background: '#F2F2F7', color: '#000', border: 'none', borderRadius: 8, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer' }}>📅 Reschedule</button>
-                                        <a
-                                            href={`/checkin?sid=${encodeURIComponent(state.sessionId ?? '')}`}
-                                            target="_blank" rel="noopener noreferrer"
-                                            style={{ flex: 1, padding: '10px', background: '#000', color: '#FFF', border: 'none', borderRadius: 8, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>📷 Self Check-in</a>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Instagram DM button */}
-                    <a
-                        href={`https://ig.me/m/${INSTAGRAM_DM_TARGET}`}
-                        target="_blank" rel="noopener noreferrer"
-                        style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                            padding: '16px 28px',
-                            background: 'linear-gradient(135deg, #833AB4, #FD1D1D, #F77737)',
-                            color: '#fff', borderRadius: 14, fontWeight: 700, fontSize: TYPE.md, letterSpacing: TRACK.soft, marginBottom: 16, textDecoration: 'none',
-                        }}>
-                        <InstagramIcon /> Konfirmasi Booking
-                    </a>
-
-                    <Link href="/" style={{ display: 'block', fontSize: TYPE.sm, color: '#ffffffff', padding: '10px 0', letterSpacing: TRACK.soft, textDecoration: 'none' }}>
-                        ← Home
-                    </Link>
-                </div>
-                            )}
-                        </>
-                    )
-                })()}
+                        )}
+                    </>
+                )
+            })()}
 
             {/* ── Reschedule Modal ────────────────────────────────── */}
             {showReschedule && (

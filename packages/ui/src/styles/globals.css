@@ -19,9 +19,9 @@
   --mera-text-tertiary: #71717A;
   --mera-text-inverse: #1C1C1E; /* Example: text color on maroon buttons */
 
-  --mera-accent: #8B1A1A; /* Maroon Logo */
-  --mera-accent-hover: #721515;
-  --mera-accent-light: rgba(139, 26, 26, 0.15); /* Soft maroon for badges/active states */
+  --mera-accent: #622128; /* Maroon Logo */
+  --mera-accent-hover: #4e1a20;
+  --mera-accent-light: rgba(98, 33, 40, 0.15); /* Soft maroon for badges/active states */
 
   /* Reduced contrast for semantic colors in Dark Mode */
   --mera-success: #30D158;

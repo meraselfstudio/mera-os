@@ -24,7 +24,7 @@ export default function PhotoStrip({ photos }: { photos: Photo[] }) {
             <div className={styles.photoRow}>
                 <div
                     className={`${styles.photoTrack} photo-track-anim`}
-                    style={{ animation: 'mera-photo-slide 12s linear infinite' }}
+                    style={{ animation: 'mera-photo-slide 35s linear infinite' }}
                 >
                     {doubled.map((photo, index) => {
                         const rot = ROTATIONS[index % ROTATIONS.length];
@@ -37,7 +37,7 @@ export default function PhotoStrip({ photos }: { photos: Photo[] }) {
                                 height={175}
                                 sizes="(max-width: 768px) 33vw, 156px"
                                 className={styles.photoImage}
-                                style={{ borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                style={{ borderRadius: 8 }}
                             />
                         </div>
                         )
