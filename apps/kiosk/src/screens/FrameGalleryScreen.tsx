@@ -11,11 +11,11 @@ const FRAMES = [
 
 export default function FrameGalleryScreen() {
   const { selectedPhoto, selectFrame, selectedFrame } = useKioskStore();
-  const [previewFrame, setPreviewFrame] = useState(null);
+  const [previewFrame, setPreviewFrame] = useState<any>(null);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [pendingFrame, setPendingFrame] = useState(null);
+  const [pendingFrame, setPendingFrame] = useState<any>(null);
 
-  const handleFrameClick = (frame) => {
+  const handleFrameClick = (frame: any) => {
     if (frame.type === 'special') {
       setPendingFrame(frame);
       setShowConfirm(true);
@@ -53,7 +53,7 @@ export default function FrameGalleryScreen() {
       {previewFrame && selectedPhoto && (
         <div className="live-preview">
           <div className="preview-container">
-            <img src={selectedPhoto} alt="Preview" className="photo-preview" />
+            <img src={selectedPhoto.rawUrl || selectedPhoto.thumbUrl} alt="Preview" className="photo-preview" />
             <img src={previewFrame.image} alt="Frame Overlay" className="frame-overlay" style={{ opacity: previewFrame.type === 'special' ? 0.7 : 1 }} />
             {previewFrame.type === 'special' && <div className="watermark">PREVIEW</div>}
           </div>

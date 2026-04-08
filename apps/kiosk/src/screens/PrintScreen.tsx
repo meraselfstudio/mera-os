@@ -12,7 +12,7 @@ import { api, type PrintPayload } from "../lib/api";
 
 type Phase = "rendering" | "success" | "error";
 
-export default function PrintScreen() {
+export function PrintScreen() {
   const {
     currentSession,
     selectedPhoto,
@@ -182,7 +182,6 @@ export default function PrintScreen() {
       )}
     </div>
   );
-}
 }
 
 const styles: Record<string, CSSProperties> = {

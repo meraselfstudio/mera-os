@@ -12,6 +12,8 @@ export interface Frame {
   id: string;
   name: string;
   url: string;
+  type?: "regular" | "special" | string;
+  price?: number;
 }
 
 export interface PrintPayload {
