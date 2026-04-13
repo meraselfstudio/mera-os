@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@mera/supabase/client'
 import type { Product, BookingType } from '@mera/supabase'
-import { hitungHargaBertingkat } from '@mera/supabase'
+import { calcBookingLineItems } from '@mera/supabase'
 import QRCode from 'react-qr-code'
 
 // ── Constants ───────────────────────────────────────────────────
@@ -83,7 +83,6 @@ const BOOKING_TYPE_LABELS: Record<BookingType, { label: string; desc: string; ic
 }
 
 const ADDON_EDITED_COLORED = 'EDITED_COLORED'
-const ADDON_PRICE = 20000
 
 const MONTH_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
 const DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
@@ -315,20 +314,44 @@ export default function BookingFlow() {
         })
     }, [state.selectedRoom, allProducts])
 
-    // Dynamic Time Slots based on Date
+    // Dynamic Time Slots based on Date, with shared studio logic for Basic Studio and Pas Photo
+    const [bookedSlots, setBookedSlots] = useState<string[]>([])
+    useEffect(() => {
+        if (!state.preferredDate) {
+            setBookedSlots([])
+            return
+        }
+        // Fetch all bookings for this date where room is Basic Studio or Pas Photo
+        supabase.from('registrations')
+            .select('preferred_time, addons')
+            .eq('preferred_date', state.preferredDate)
+            .in('status', ['PENDING', 'VERIFIED', 'PROCESSED'])
+            .then(({ data }) => {
+                if (!data) { setBookedSlots([]); return }
+                // Block if room is Basic Studio or Pas Photo
+                const blocked = data.filter((row: any) => {
+                    const room = row.addons?.room
+                    return room === 'Basic Studio' || room === 'Pas Photo'
+                }).map((row: any) => row.preferred_time)
+                setBookedSlots(blocked)
+            })
+    }, [state.preferredDate])
+
     const availableSlots = useMemo(() => {
         if (!state.preferredDate) return []
         const d = new Date(state.preferredDate)
         const day = d.getDay()
         const baseSlots = (day === 0 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS
         const todayStr = todayISO()
+        let slots = baseSlots
         if (state.preferredDate === todayStr) {
             const now = new Date()
             const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-            return baseSlots.filter(slot => slot > currentTimeStr)
+            slots = baseSlots.filter(slot => slot > currentTimeStr)
         }
-        return baseSlots
-    }, [state.preferredDate])
+        // Remove slots that are already booked for Basic Studio or Pas Photo
+        return slots.filter(slot => !bookedSlots.includes(slot))
+    }, [state.preferredDate, bookedSlots])
 
     // Reschedule — available slots for new date
     const rescAvailableSlots = useMemo(() => {
@@ -361,26 +384,25 @@ export default function BookingFlow() {
         }
     }
 
-    // Price calculation — base + add-ons
-    const basePrice = state.selectedPackage
-        ? (state.selectedPackage.tipe_harga === 'bertingkat'
-            ? hitungHargaBertingkat(state.selectedPackage, state.pax)
-            : state.selectedPackage.harga_dasar)
-        : 0
+    // Price calculation — uses the shared calcBookingLineItems so the total
+    // shown to the customer is computed with the exact same logic as the POS.
+    const bookingLineItems = state.selectedPackage
+        ? calcBookingLineItems([...allProducts, ...addonProducts], {
+              room: state.selectedRoom,
+              selected_addons: state.selectedAddons,
+              pax: state.pax,
+              product_id: state.selectedPackage.id,
+          })
+        : []
+    const displayPrice = bookingLineItems.reduce((sum, item) => sum + item.price, 0)
 
-    const getBaseCapacity = () => {
-        if (!state.selectedPackage) return 1
-        const n = state.selectedPackage.nama.toLowerCase()
-        if (n.includes('party')) return 8
-        if (n.includes('pas photo package') || n.includes('thematic package')) return 2
-        if (state.selectedRoom === 'Basic Studio') return 2
-        return 1
-    }
-    const extraPax = Math.max(0, state.pax - getBaseCapacity())
-    const extraPaxPrice = extraPax * 25000 // Add Person fee is 25000
-
-    const addonPrice = state.selectedAddons.length * ADDON_PRICE
-    const displayPrice = basePrice + addonPrice + extraPaxPrice
+    // Addon display price — read from Supabase product data, not a hardcoded constant
+    const addonProductData = addonProducts.find(
+        p =>
+            p.nama.toLowerCase().replace(/[\s_]+/g, '') === 'editedcolored' ||
+            p.nama.toLowerCase().includes('edit'),
+    )
+    const addonDisplayPrice = addonProductData?.harga_dasar ?? 20_000
 
     // Package step complete: needs package + variant if Basic Studio or Pas Photo
     const needsVariant = state.selectedRoom === 'Basic Studio' || state.selectedRoom === 'Pas Photo'
@@ -439,6 +461,7 @@ export default function BookingFlow() {
                     variant: state.selectedVariant,
                     selected_addons: state.selectedAddons,
                     pax: state.pax,
+                    product_id: state.selectedPackage?.id ?? null,
                     computed_price: displayPrice,
                 }
             }
@@ -737,7 +760,7 @@ export default function BookingFlow() {
                                                                 background: '#622128', color: '#FFFFFF', borderRadius: 999, padding: '6px 14px',
                                                                 fontWeight: 800, fontSize: TYPE.xs, letterSpacing: TRACK.soft
                                                             }}>
-                                                                +{formatIDR(ADDON_PRICE)}
+                                                                +{formatIDR(addonDisplayPrice)}
                                                             </div>
                                                         </label>
                                                     )}
@@ -895,107 +918,99 @@ export default function BookingFlow() {
 
                         {/* ── Step 4: Booking Form ─────────────── */}
                         {step === 'form' && (
-                            <div style={{ padding: '16px 16px 32px', margin: '0 auto', width: '100%' }}>
+                            <div style={{ padding: '16px 8px 32px', margin: '0 auto', width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'center', justifyContent: 'center' }}>
                                 <button onClick={() => setStep('datetime')} style={backBtnStyle}></button>
 
-                                <div className="form-layout">
-                                    {/* Form main */}
-                                    <div className="form-main">
+                                <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: '20px 18px', width: '100%', maxWidth: 360 }}>
+                                    <h2 style={{ fontSize: TYPE.md, fontWeight: 700, marginBottom: 18, color: '#FFFFFF', letterSpacing: TRACK.tight }}>Personal Information</h2>
 
-                                        <div style={{ background: '#1C1C1E', borderRadius: 16, border: '1px solid #2C2C2E', padding: '20px 18px' }}>
-                                            <h2 style={{ fontSize: TYPE.md, fontWeight: 700, marginBottom: 18, color: '#FFFFFF', letterSpacing: TRACK.tight }}>Personal Information</h2>
+                                    <FormField label="Nama*">
+                                        <input style={inputStyle} placeholder="Nama..."
+                                            value={state.customerName}
+                                            onChange={e => setState(p => ({ ...p, customerName: e.target.value }))} />
+                                    </FormField>
 
-                                            <FormField label="Nama*">
-                                                <input style={inputStyle} placeholder="Nama..."
-                                                    value={state.customerName}
-                                                    onChange={e => setState(p => ({ ...p, customerName: e.target.value }))} />
-                                            </FormField>
-
-                                            <FormField label="Instagram*">
-                                                <div style={{ position: 'relative', width: '100%' }}>
-                                                    <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: '#666666', fontSize: TYPE.sm, pointerEvents: 'none', userSelect: 'none' }}>@</span>
-                                                    <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="username"
-                                                        value={state.instagramHandle.replace('@', '')}
-                                                        onChange={e => setState(p => ({ ...p, instagramHandle: e.target.value }))} />
-                                                </div>
-                                                <p style={{ fontSize: TYPE.xs, color: '#666666', marginTop: 5, letterSpacing: TRACK.soft }}>Pastikan username Instagram kamu benar dan aktif. <br /> Konfirmasi booking, mengirim hasil foto dan komunikasi lainnya akan dilakukan melalui DM @mera.selfstudio.</p>
-                                            </FormField>
-
-                                            <FormField label="Payment Method*">
-                                                <div style={{ display: 'flex', color: '#FFFFFF', flexDirection: 'column', gap: 10 }}>
-                                                    {(Object.keys(BOOKING_TYPE_LABELS) as BookingType[]).map(bt => {
-                                                        const { icon, label, desc } = BOOKING_TYPE_LABELS[bt]
-                                                        const checked = state.bookingType === bt
-                                                        return (
-                                                            <label key={bt} style={{
-                                                                display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 12,
-                                                                border: `1.5px solid ${checked ? '#FF3B30' : '#2C2C2E'}`,
-                                                                background: checked ? '#1A0000' : '#2C2C2E', cursor: 'pointer', transition: 'all 0.15s',
-                                                            }}>
-                                                                <input type="radio" name="booking_type" checked={checked}
-                                                                    onChange={() => setState(p => ({ ...p, bookingType: bt }))} style={{ marginTop: 3 }} />
-                                                                <div>
-                                                                    <p style={{ fontWeight: 600, fontSize: TYPE.sm, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{icon} {label}</p>
-                                                                    <p style={{ fontSize: TYPE.xs, color: '#888888', marginTop: 2, letterSpacing: TRACK.soft }}>{desc}</p>
-                                                                </div>
-                                                            </label>
-                                                        )
-                                                    })}
-                                                </div>
-                                            </FormField>
-
-                                            {/* KEEPSLOT expiry warning */}
-                                            {state.bookingType === 'ONLINE_KEEPSLOT' && (
-                                                <div style={{ background: '#2B2200', border: '1px solid #ffc400ff', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
-                                                    <p style={{ fontSize: TYPE.xs, color: '#ffffffff', letterSpacing: TRACK.soft }}>⏰ Booking <strong>EXPIRED otomatis dalam 6 JAM</strong> jika tidak konfirmasi dan datang ke Studio.</p>
-                                                </div>
-                                            )}
-
-                                            <button onClick={handleSubmit} disabled={loading || !formValid}
-                                                style={{
-                                                    width: '100%', padding: '15px', fontSize: TYPE.md, fontWeight: 700, letterSpacing: TRACK.soft,
-                                                    background: formValid ? '#FFFFFF' : '#2C2C2E',
-                                                    color: formValid ? '#000000' : '#555555', borderRadius: 12, border: 'none',
-                                                    cursor: formValid ? 'pointer' : 'not-allowed', marginTop: 8, fontFamily: FONT,
-                                                }}>
-                                                {loading ? 'Loading...' : 'Konfirmasi Booking →'}
-                                            </button>
+                                    <FormField label="Instagram*">
+                                        <div style={{ position: 'relative', width: '100%' }}>
+                                            <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: '#666666', fontSize: TYPE.sm, pointerEvents: 'none', userSelect: 'none' }}>@</span>
+                                            <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="username"
+                                                value={state.instagramHandle.replace('@', '')}
+                                                onChange={e => setState(p => ({ ...p, instagramHandle: e.target.value }))} />
                                         </div>
+                                        <p style={{ fontSize: TYPE.xs, color: '#666666', marginTop: 5, letterSpacing: TRACK.soft }}>Pastikan username Instagram kamu benar dan aktif. <br /> Konfirmasi booking, mengirim hasil foto dan komunikasi lainnya akan dilakukan melalui DM @mera.selfstudio.</p>
+                                    </FormField>
+
+                                    <FormField label="Payment Method*">
+                                        <div style={{ display: 'flex', color: '#FFFFFF', flexDirection: 'column', gap: 10 }}>
+                                            {(Object.keys(BOOKING_TYPE_LABELS) as BookingType[]).map(bt => {
+                                                const { icon, label, desc } = BOOKING_TYPE_LABELS[bt]
+                                                const checked = state.bookingType === bt
+                                                return (
+                                                    <label key={bt} style={{
+                                                        display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 12,
+                                                        border: `1.5px solid ${checked ? '#FF3B30' : '#2C2C2E'}`,
+                                                        background: checked ? '#1A0000' : '#2C2C2E', cursor: 'pointer', transition: 'all 0.15s',
+                                                    }}>
+                                                        <input type="radio" name="booking_type" checked={checked}
+                                                            onChange={() => setState(p => ({ ...p, bookingType: bt }))} style={{ marginTop: 3 }} />
+                                                        <div>
+                                                            <p style={{ fontWeight: 600, fontSize: TYPE.sm, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{icon} {label}</p>
+                                                            <p style={{ fontSize: TYPE.xs, color: '#888888', marginTop: 2, letterSpacing: TRACK.soft }}>{desc}</p>
+                                                        </div>
+                                                    </label>
+                                                )
+                                            })}
+                                        </div>
+                                    </FormField>
+
+                                    {/* KEEPSLOT expiry warning */}
+                                    {state.bookingType === 'ONLINE_KEEPSLOT' && (
+                                        <div style={{ background: '#2B2200', border: '1px solid #ffc400ff', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+                                            <p style={{ fontSize: TYPE.xs, color: '#ffffffff', letterSpacing: TRACK.soft }}>⏰ Booking <strong>EXPIRED otomatis dalam 6 JAM</strong> jika tidak konfirmasi dan datang ke Studio.</p>
+                                        </div>
+                                    )}
+
+                                    <button onClick={handleSubmit} disabled={loading || !formValid}
+                                        style={{
+                                            width: '100%', padding: '15px', fontSize: TYPE.md, fontWeight: 700, letterSpacing: TRACK.soft,
+                                            background: formValid ? '#FFFFFF' : '#2C2C2E',
+                                            color: formValid ? '#000000' : '#555555', borderRadius: 12, border: 'none',
+                                            cursor: formValid ? 'pointer' : 'not-allowed', marginTop: 8, fontFamily: FONT,
+                                        }}>
+                                        {loading ? 'Loading...' : 'Konfirmasi Booking →'}
+                                    </button>
+                                </div>
+
+                                {/* Compact Summary below form, full width */}
+                                <div style={{ background: '#1C1C1E', borderRadius: 14, border: '1px solid #2C2C2E', padding: '16px 18px', width: '100%', maxWidth: 360, margin: '0 auto' }}>
+                                    <p style={{ fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, color: '#666666', marginBottom: 12 }}>Ringkasan</p>
+
+                                    <p style={{ fontSize: TYPE.xs, color: '#666666', marginBottom: 2, letterSpacing: TRACK.soft }}>{state.selectedRoom}</p>
+                                    <p style={{ fontSize: TYPE.md, fontWeight: 800, marginBottom: 2, color: '#FFFFFF', letterSpacing: TRACK.tight }}>{state.selectedPackage?.nama}</p>
+                                    <p style={{ fontSize: TYPE.xs, color: '#AAAAAA', marginBottom: 8, letterSpacing: TRACK.soft }}>{state.pax} Orang</p>
+
+                                    {state.selectedVariant && (
+                                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: '#2C2C2E', borderRadius: 8, marginBottom: 8 }}>
+                                            <div style={{ width: 10, height: 10, borderRadius: '50%', background: VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.hex }} />
+                                            <span style={{ fontSize: TYPE.xs, fontWeight: 600, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.label}</span>
+                                        </div>
+                                    )}
+
+                                    {state.selectedAddons.includes(ADDON_EDITED_COLORED) && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+                                            <span style={{ fontSize: TYPE.xs, color: '#30D158', fontWeight: 600, letterSpacing: TRACK.soft }}>✨ Edited + Colored</span>
+                                        </div>
+                                    )}
+
+                                    <div style={{ borderTop: '1px solid #2C2C2E', paddingTop: 10, marginTop: 4 }}>
+                                        <SummaryRow label="Tanggal" value={state.preferredDate ? new Date(state.preferredDate + 'T00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
+                                        <SummaryRow label="Jam" value={state.preferredTime || '—'} />
                                     </div>
 
-                                    {/* Compact Summary */}
-                                    <div className="form-summary">
-                                        <div style={{ background: '#1C1C1E', borderRadius: 14, border: '1px solid #2C2C2E', padding: '16px 18px' }}>
-                                            <p style={{ fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, color: '#666666', marginBottom: 12 }}>Ringkasan</p>
-
-                                            <p style={{ fontSize: TYPE.xs, color: '#666666', marginBottom: 2, letterSpacing: TRACK.soft }}>{state.selectedRoom}</p>
-                                            <p style={{ fontSize: TYPE.md, fontWeight: 800, marginBottom: 2, color: '#FFFFFF', letterSpacing: TRACK.tight }}>{state.selectedPackage?.nama}</p>
-                                            <p style={{ fontSize: TYPE.xs, color: '#AAAAAA', marginBottom: 8, letterSpacing: TRACK.soft }}>{state.pax} Orang</p>
-
-                                            {state.selectedVariant && (
-                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', background: '#2C2C2E', borderRadius: 8, marginBottom: 8 }}>
-                                                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.hex }} />
-                                                    <span style={{ fontSize: TYPE.xs, fontWeight: 600, color: '#FFFFFF', letterSpacing: TRACK.soft }}>{VARIANTS['Basic Studio'].find(v => v.code === state.selectedVariant)?.label}</span>
-                                                </div>
-                                            )}
-
-                                            {state.selectedAddons.includes(ADDON_EDITED_COLORED) && (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
-                                                    <span style={{ fontSize: TYPE.xs, color: '#30D158', fontWeight: 600, letterSpacing: TRACK.soft }}>✨ Edited + Colored</span>
-                                                </div>
-                                            )}
-
-                                            <div style={{ borderTop: '1px solid #2C2C2E', paddingTop: 10, marginTop: 4 }}>
-                                                <SummaryRow label="Tanggal" value={state.preferredDate ? new Date(state.preferredDate + 'T00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
-                                                <SummaryRow label="Jam" value={state.preferredTime || '—'} />
-                                            </div>
-
-                                            <div style={{ borderTop: '1px solid #2C2C2E', paddingTop: 10, marginTop: 4 }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                    <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft }}>Total</span>
-                                                    <span style={{ fontSize: TYPE.md, fontWeight: 800, color: '#ffffffff', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
-                                                </div>
-                                            </div>
+                                    <div style={{ borderTop: '1px solid #2C2C2E', paddingTop: 10, marginTop: 4 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft }}>Total</span>
+                                            <span style={{ fontSize: TYPE.md, fontWeight: 800, color: '#ffffffff', letterSpacing: TRACK.tight }}>{formatIDR(displayPrice)}</span>
                                         </div>
                                     </div>
                                 </div>

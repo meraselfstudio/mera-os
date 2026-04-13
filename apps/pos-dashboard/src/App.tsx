@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { Banknote, BarChart3, Calendar, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock3, Copy, CreditCard, Delete, Download, ExternalLink, Layers3, LogOut, MessageCircle, Monitor, Plus, Receipt, Send, TrendingUp, Users, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import { supabase } from '@mera/supabase/client'
-import type { Attendance, Crew, Expense, Product, Registration, RegistrationStatus, Transaction, TransactionStatus, PaymentMethod } from '@mera/supabase'
-import { hitungHargaBertingkat } from '@mera/supabase'
+import type { Attendance, Crew, Expense, Product, Registration, RegistrationStatus, Transaction, TransactionStatus, PaymentMethod, BookingAddons } from '@mera/supabase'
+import { hitungHargaBertingkat, calcBookingLineItems } from '@mera/supabase'
 import AttendanceBoard from './components/AttendanceBoard'
 
 type ViewKey = 'schedule' | 'booking' | 'pos' | 'finance' | 'attendance' | 'monthly'
@@ -305,73 +305,11 @@ export default function App() {
   }
 
   // ─── Calculate total from registration + products ─
+  // Delegates to the shared calcBookingLineItems helper so the POS breakdown
+  // is always computed with the same logic as the customer portal.
   const calcLineItems = (reg: Registration | null): { label: string; price: number }[] => {
     if (!reg) return []
-    const items: { label: string; price: number }[] = []
-    const addons = reg.addons as { room?: string; variant?: string; selected_addons?: string[]; pax?: number; computed_price?: number } | null
-    const room = addons?.room
-    const selectedAddons = addons?.selected_addons ?? []
-    const pax = addons?.pax ?? 1
-
-    // Map room to product category
-    let kategori = 'Basic Studio'
-    if (room === 'Pas Photo') kategori = 'Pas Photo'
-    else if (room === 'Elevator Studio' || room === 'Majestic Studio') kategori = 'Thematic'
-
-    // Find main product by matching category
-    const candidates = products.filter(p => !p.is_addon && p.kategori === kategori)
-    // If multiple candidates, pick the one whose max_orang fits pax best
-    const mainProduct = candidates.length === 1
-      ? candidates[0]
-      : candidates.sort((a, b) => {
-          // Prefer the product that best fits pax (smallest max_orang >= pax, or largest)
-          const fitA = a.max_orang >= pax ? a.max_orang : 999
-          const fitB = b.max_orang >= pax ? b.max_orang : 999
-          return fitA - fitB
-        })[0] ?? null
-
-    if (mainProduct) {
-      const basePrice = mainProduct.tipe_harga === 'bertingkat' 
-        ? hitungHargaBertingkat(mainProduct, pax) 
-        : mainProduct.harga_dasar
-      items.push({ label: mainProduct.nama, price: basePrice })
-
-      let baseCapacity = 1
-      const n = mainProduct.nama.toLowerCase()
-      if (n.includes('party')) baseCapacity = 8
-      else if (n.includes('pas photo package') || n.includes('thematic package')) baseCapacity = 2
-      else if (room === 'Basic Studio') baseCapacity = 2
-
-      const extraPax = Math.max(0, pax - baseCapacity)
-      if (extraPax > 0) {
-        items.push({ label: `Add Person (${extraPax}x)`, price: extraPax * 25000 })
-      }
-    }
-
-    // Add-ons
-    for (const addonName of selectedAddons) {
-      const normalized = addonName.toLowerCase().replace(/[\s_]+/g, '')
-      const addonProduct = products.find(p => 
-        p.is_addon && (
-          p.nama.toLowerCase().replace(/[\s_]+/g, '') === normalized ||
-          (normalized === 'editedcolored' && p.nama.toLowerCase().includes('edit'))
-        )
-      )
-      if (addonProduct) {
-        items.push({ label: addonProduct.nama, price: addonProduct.harga_dasar })
-      } else if (addonName === 'EDITED_COLORED') {
-        items.push({ label: 'Edited & Colored Photo', price: 20000 })
-      } else {
-        items.push({ label: addonName.replace(/_/g, ' '), price: 20000 }) // generic fallback
-      }
-    }
-
-    // Fallback: if no products matched but computed_price exists, show it as a single line
-    if (items.length === 0 && addons?.computed_price) {
-      items.push({ label: room ?? 'Session', price: addons.computed_price })
-    }
-
-    return items
+    return calcBookingLineItems(products, reg.addons as BookingAddons | null)
   }
 
   // ─── Transaction payment ─────────────────────────
@@ -2454,9 +2392,42 @@ export default function App() {
                 style={{ width: '100%', padding: '10px 14px', background: 'var(--mera-surface-raised)', border: '1px solid var(--mera-border)', borderRadius: 10, color: 'var(--mera-text-primary)' }}
               >
                 <option value="">Select Time</option>
-                {TIME_SLOTS.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
+                {/* Use real slot logic: weekday/weekend, filter out booked slots for shared studios */}
+                {(() => {
+                  const d = new Date(editDateInput)
+                  const day = d.getDay()
+                  // These should match customer portal logic
+                  const WEEKDAY_SLOTS = [
+                    "12:00", "12:30", "13:00", "13:30", "14:00",
+                    "14:30", "15:00", "15:30", "16:00", "16:30",
+                    "17:00", "17:30", "18:00", "18:30", "19:00",
+                    "19:30", "20:00", "20:30", "21:00"
+                  ];
+                  const WEEKEND_SLOTS = [
+                    "09:00", "09:30", "10:00", "10:30",
+                    "11:00", "11:30", "12:00", "12:30",
+                    "13:00", "13:30", "14:00", "14:30",
+                    "15:00", "15:30", "16:00", "16:30",
+                    "17:00", "17:30", "18:00", "18:30",
+                    "19:00", "19:30", "20:00", "20:30", "21:00"
+                  ];
+                  const baseSlots = (day === 0 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
+                  // Find all bookings for this date for Basic Studio or Pas Photo
+                  const booked = registrations
+                    .filter(r => r.preferred_date === editDateInput && (r.addons?.room === 'Basic Studio' || r.addons?.room === 'Pas Photo') && ['PENDING','VERIFIED','PROCESSED'].includes(r.status))
+                    .map(r => r.preferred_time);
+                  // If today, filter out past slots
+                  const todayStr = new Date().toISOString().slice(0,10);
+                  let slots = baseSlots;
+                  if (editDateInput === todayStr) {
+                    const now = new Date();
+                    const cur = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                    slots = baseSlots.filter(s => s > cur);
+                  }
+                  return slots.filter(s => !booked.includes(s)).map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ));
+                })()}
               </select>
             </div>
             

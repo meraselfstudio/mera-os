@@ -111,7 +111,7 @@
 
 .photoboothSection {
     text-align: center;
-    padding: 2.5rem 1.5rem 2.5rem;
+    padding: 0.75rem 1.5rem 2.5rem;
     background: #622128;
 }
 
@@ -217,10 +217,10 @@
 .scallop {
     display: block;
     width: 100%;
-    height: 56px;
-    margin-top: -36px;
+    height: 80px;
+    margin-top: -48px;
     position: relative;
-    z-index: 2;
+    z-index: 3;
     pointer-events: none;
 }
 
@@ -233,7 +233,7 @@
     .stripShowcase { gap: 20px; }
     .stripImg { width: 130px; border-radius: 4px; }
     .stripLabel { font-size: var(--mera-step--1); margin-top: 10px; }
-    .scallop { height: 72px; margin-top: -48px; }
+    .scallop { height: 96px; margin-top: -56px; }
     .photoTrack { animation-duration: 20s; }
 }
 

@@ -21,7 +21,13 @@ export type {
     PayrollResult,
     StatusGaji,
     Expense,
+    // Booking price calculation
+    BookingAddons,
+    BookingLineItem,
 } from './types/database.types'
 
 // Tiered pricing calculator (pure util)
 export { hitungHargaBertingkat } from './types/database.types'
+
+// Canonical booking line-item calculator — use this in BOTH customer portal and POS
+export { calcBookingLineItems } from './types/database.types'

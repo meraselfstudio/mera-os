@@ -80,6 +80,130 @@ export function hitungHargaBertingkat(product: Product, jumlahOrang: number): nu
     return total
 }
 
+// ── Booking Price Calculation (Shared) ───────────────────────
+// This is the SINGLE source of truth for price calculation.
+// Used by BOTH customer-portal (BookingFlow) and pos-dashboard (payment modal).
+// Never duplicate this logic in individual apps.
+
+/** Shape of the addons JSON column stored in registrations */
+export interface BookingAddons {
+    room?: string | null
+    variant?: string | null
+    selected_addons?: string[]
+    pax?: number
+    product_id?: number | null   // main product id — stored since v2.1, absent in older bookings
+    computed_price?: number       // price snapshot at booking time
+}
+
+export interface BookingLineItem {
+    label: string
+    price: number
+}
+
+/** Internal helper — derive how many people the base package covers */
+function getProductBaseCapacity(product: Product, room?: string | null): number {
+    const n = product.nama.toLowerCase()
+    if (n.includes('party')) return 8
+    if (n.includes('pas photo package') || n.includes('thematic package')) return 2
+    if ((room ?? '').toLowerCase().includes('basic')) return 2
+    return 1
+}
+
+/**
+ * Derive the itemised price breakdown for a booking.
+ *
+ * Rules:
+ *  - Prefers product_id when present (exact match, most accurate).
+ *  - Falls back to room → kategori inference for bookings that predate v2.1
+ *    (category comparison is always case-insensitive).
+ *  - Add-on prices come from product.harga_dasar; falls back to 20 000 IDR
+ *    only when no matching add-on product is found in the catalogue.
+ *
+ * @param products All active products from Supabase (addon + non-addon).
+ * @param addons   The addons JSON field from the registration row.
+ */
+export function calcBookingLineItems(
+    products: Product[],
+    addons: BookingAddons | null | undefined,
+): BookingLineItem[] {
+    if (!addons) return []
+
+    const items: BookingLineItem[] = []
+    const room = addons.room
+    const selectedAddons = addons.selected_addons ?? []
+    const pax = addons.pax ?? 1
+
+    // ── 1. Find main product ─────────────────────────────────────
+    let mainProduct: Product | null = null
+
+    if (addons.product_id != null) {
+        // Exact match — most reliable path (v2.1+)
+        mainProduct = products.find(p => p.id === addons.product_id && !p.is_addon) ?? null
+    }
+
+    if (!mainProduct) {
+        // Fallback: infer from room label → kategori
+        // Always compare lowercase so DB storage case doesn't matter.
+        const roomLower = (room ?? '').toLowerCase()
+        let kategori = ''
+        if (roomLower === 'pas photo') kategori = 'pas photo'
+        else if (roomLower === 'elevator studio' || roomLower === 'majestic studio') kategori = 'thematic'
+        else if (roomLower === 'basic studio') kategori = 'basic studio'
+
+        const candidates = products.filter(
+            p => !p.is_addon && p.kategori.toLowerCase() === kategori,
+        )
+        mainProduct =
+            candidates.length === 1
+                ? candidates[0]
+                : candidates.sort((a, b) => {
+                      const fitA = a.max_orang >= pax ? a.max_orang : 999
+                      const fitB = b.max_orang >= pax ? b.max_orang : 999
+                      return fitA - fitB
+                  })[0] ?? null
+    }
+
+    if (mainProduct) {
+        const basePrice =
+            mainProduct.tipe_harga === 'bertingkat'
+                ? hitungHargaBertingkat(mainProduct, pax)
+                : mainProduct.harga_dasar
+        items.push({ label: mainProduct.nama, price: basePrice })
+
+        const baseCapacity = getProductBaseCapacity(mainProduct, room)
+        const extraPax = Math.max(0, pax - baseCapacity)
+        if (extraPax > 0) {
+            items.push({ label: `Add Person (${extraPax}×)`, price: extraPax * 25_000 })
+        }
+    }
+
+    // ── 2. Selected add-ons ──────────────────────────────────────
+    for (const addonName of selectedAddons) {
+        const normalized = addonName.toLowerCase().replace(/[\s_]+/g, '')
+        const addonProduct = products.find(
+            p =>
+                p.is_addon &&
+                (p.nama.toLowerCase().replace(/[\s_]+/g, '') === normalized ||
+                    (normalized === 'editedcolored' && p.nama.toLowerCase().includes('edit'))),
+        )
+        if (addonProduct) {
+            items.push({ label: addonProduct.nama, price: addonProduct.harga_dasar })
+        } else if (addonName === 'EDITED_COLORED') {
+            items.push({ label: 'Edited & Colored Photo', price: 20_000 })
+        } else {
+            items.push({ label: addonName.replace(/_/g, ' '), price: 20_000 })
+        }
+    }
+
+    // ── 3. Fallback ──────────────────────────────────────────────
+    // Old booking with no matching product — show the snapshotted price as one line.
+    if (items.length === 0 && addons.computed_price) {
+        items.push({ label: room ?? 'Session', price: addons.computed_price })
+    }
+
+    return items
+}
+
 // ── Registrations ─────────────────────────────────────────────
 export type BookingType = 'ONLINE_QRIS' | 'ONLINE_KEEPSLOT'
 export type RegistrationStatus = 'PENDING' | 'VERIFIED' | 'PROCESSED' | 'EXPIRED'

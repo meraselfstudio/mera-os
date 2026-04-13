@@ -22,7 +22,6 @@ const FILTERS: { id: FilterType; label: string }[] = [
   { id: "vintage", label: "Vintage" },
 ];
 
-export function EditorScreen() {
   const {
     selectedPhoto,
     editor,
@@ -57,6 +56,17 @@ export function EditorScreen() {
     img.src = selectedPhoto.rawUrl;
   }, [selectedPhoto]);
 
+  // Load frame overlay
+  useEffect(() => {
+    if (!selectedFrame) {
+      frameImgRef.current = null;
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => { frameImgRef.current = img; draw(); };
+    img.src = selectedFrame.url;
+  }, [selectedFrame, draw]);
 
   // Canvas drawing
   const draw = useCallback(() => {
@@ -129,19 +139,7 @@ export function EditorScreen() {
       ctx.fillText('PREVIEW', cw - 24, ch - 24);
       ctx.restore();
     }
-  }, [editor, updateEditor, selectedFrame?.type]);
-
-  // Load frame overlay
-  useEffect(() => {
-    if (!selectedFrame) {
-      frameImgRef.current = null;
-      return;
-    }
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => { frameImgRef.current = img; draw(); };
-    img.src = selectedFrame.url;
-  }, [selectedFrame, draw]);
+  }, [editor, updateEditor]);
 
   // Redraw when editor state or image changes
   useEffect(() => {
