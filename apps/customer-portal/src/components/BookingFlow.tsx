@@ -329,10 +329,11 @@ export default function BookingFlow() {
             .then(({ data }) => {
                 if (!data) { setBookedSlots([]); return }
                 // Block if room is Basic Studio or Pas Photo
-                const blocked = data.filter((row: any) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const blocked = (data as any[]).filter(row => {
                     const room = row.addons?.room
                     return room === 'Basic Studio' || room === 'Pas Photo'
-                }).map((row: any) => row.preferred_time)
+                }).map((row: { preferred_time: string }) => row.preferred_time)
                 setBookedSlots(blocked)
             })
     }, [state.preferredDate])
