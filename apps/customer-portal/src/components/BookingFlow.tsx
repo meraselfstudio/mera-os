@@ -321,22 +321,32 @@ export default function BookingFlow() {
             setBookedSlots([])
             return
         }
-        // Fetch all bookings for this date where room is Basic Studio or Pas Photo
+        // Fetch all bookings for this date for all studios
         supabase.from('registrations')
             .select('preferred_time, addons')
             .eq('preferred_date', state.preferredDate)
             .in('status', ['PENDING', 'VERIFIED', 'PROCESSED'])
             .then(({ data }) => {
                 if (!data) { setBookedSlots([]); return }
-                // Block if room is Basic Studio or Pas Photo
+                // Only block slots for the same studio (not the whole group)
+                const selected = state.selectedRoom
+                let blockRooms: string[] = []
+                if (selected === 'Basic Studio' || selected === 'Pas Photo') {
+                    blockRooms = ['Basic Studio', 'Pas Photo']
+                } else if (selected === 'Elevator Studio' || selected === 'Majestic Studio') {
+                    blockRooms = ['Elevator Studio', 'Majestic Studio']
+                } else {
+                    blockRooms = [selected || '']
+                }
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const blocked = (data as any[]).filter(row => {
                     const room = row.addons?.room
-                    return room === 'Basic Studio' || room === 'Pas Photo'
+                    // Only block if the booking is for the same physical studio (not across groups)
+                    return blockRooms.includes(room)
                 }).map((row: { preferred_time: string }) => row.preferred_time)
                 setBookedSlots(blocked)
             })
-    }, [state.preferredDate])
+    }, [state.preferredDate, state.selectedRoom])
 
     const availableSlots = useMemo(() => {
         if (!state.preferredDate) return []

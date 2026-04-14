@@ -178,7 +178,12 @@ export function calcBookingLineItems(
     }
 
     // ── 2. Selected add-ons ──────────────────────────────────────
+    // Group selected_addons by name to get quantity for each
+    const addonCounts: Record<string, number> = {}
     for (const addonName of selectedAddons) {
+        addonCounts[addonName] = (addonCounts[addonName] || 0) + 1
+    }
+    for (const [addonName, qty] of Object.entries(addonCounts)) {
         const normalized = addonName.toLowerCase().replace(/[\s_]+/g, '')
         const addonProduct = products.find(
             p =>
@@ -187,11 +192,17 @@ export function calcBookingLineItems(
                     (normalized === 'editedcolored' && p.nama.toLowerCase().includes('edit'))),
         )
         if (addonProduct) {
-            items.push({ label: addonProduct.nama, price: addonProduct.harga_dasar })
+            let price = 0
+            if (addonProduct.tipe_harga === 'bertingkat') {
+                price = hitungHargaBertingkat(addonProduct, qty)
+            } else {
+                price = addonProduct.harga_dasar * qty
+            }
+            items.push({ label: `${addonProduct.nama}${qty > 1 ? ` ×${qty}` : ''}`, price })
         } else if (addonName === 'EDITED_COLORED') {
-            items.push({ label: 'Edited & Colored Photo', price: 20_000 })
+            items.push({ label: 'Edited & Colored Photo', price: 20_000 * qty })
         } else {
-            items.push({ label: addonName.replace(/_/g, ' '), price: 20_000 })
+            items.push({ label: addonName.replace(/_/g, ' '), price: 20_000 * qty })
         }
     }
 
@@ -206,13 +217,21 @@ export function calcBookingLineItems(
 
 // ── Registrations ─────────────────────────────────────────────
 export type BookingType = 'ONLINE_QRIS' | 'ONLINE_KEEPSLOT'
-export type RegistrationStatus = 'PENDING' | 'VERIFIED' | 'PROCESSED' | 'EXPIRED'
+export type RegistrationStatus = 'PENDING' | 'VERIFIED' | 'PROCESSED' | 'COMPLETED' | 'EXPIRED'
 
 export interface Registration {
     id: string
     customer_name: string
     instagram_handle: string   // For follow-up via IG DM, e.g. "@ayubudi"
     booking_type: BookingType
+    /**
+     * Status:
+     * - PENDING: Awaiting staff verification
+     * - VERIFIED: Verified, not yet started
+     * - PROCESSED: In studio/session started
+     * - COMPLETED: Session finished and paid
+     * - EXPIRED: Booking expired (no-show, not paid, or KEEPSLOT expired)
+     */
     status: RegistrationStatus
     session_id: string | null  // DD-SANITIZEDNAME-CODE format
     preferred_date: string | null

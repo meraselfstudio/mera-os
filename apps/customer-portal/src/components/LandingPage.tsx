@@ -102,14 +102,14 @@ export default function LandingPage({ photos, fontClassName }: LandingPageProps)
                             <div style={{ textAlign: 'center', marginBottom: 16 }}>
                                 <p style={{ margin: 30, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}></p>
                                 <h2 style={{ margin: '4px 0 2px', fontFamily: 'Times New Roman Condensed, Times New Roman, Times, serif', fontStyle: 'italic', fontSize: 22, fontWeight: 800, color: '#622128', lineHeight: 1.2 }}>Our Location</h2>
-                                <p style={{ margin: 10, fontSize: 10, color: '#622128' }}>Jalan Jayanegera 175A, Puri, Kab. Mojokerto, Jawa Timur</p>
+                                <p style={{ margin: 10, fontSize: 10, color: '#622128' }}>Jalan Jayanegara 175A, Kecamatan Puri, Mojokerto</p>
                             </div>
 
                             {/* Map card */}
                             <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.08)' }}>
                                 <iframe
                                     title="Méra Self Studio Location"
-                                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3955.234370448899!2d112.43412331533247!3d-7.478857875370899!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2e7809e2e2e2e2e3%3A0x7e7e7e7e7e7e7e7e!2sMera%20Self%20Studio!5e0!3m2!1sen!2sid!4v1680000000000!5m2!1sen!2sid"
+                                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3955.805668331364!2d112.4400146!3d-7.486698199999999!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2e780d7da3e1e85d%3A0x6ac2f354ab61a4f4!2sMera%20Selfstudio!5e0!3m2!1sid!2sid!4v1776132096243!5m2!1sid!2sid"
                                     width="100%"
                                     height="240"
                                     style={{ border: 0, display: 'block' }}
@@ -121,7 +121,7 @@ export default function LandingPage({ photos, fontClassName }: LandingPageProps)
 
                             {/* OTW button */}
                             <a
-                                href="https://www.google.com/maps/dir/?api=1&destination=-7.478857875370899,112.43412331533247"
+                                href="https://www.google.com/maps/dir/?api=1&destination=-7.486698199999999,112.4400146&destination_place_id=0x2e780d7da3e1e85d:0x6ac2f354ab61a4f4"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 style={{
