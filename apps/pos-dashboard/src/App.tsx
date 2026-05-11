@@ -76,6 +76,35 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
 }
 
+// Parse machine-readable split note: "[Split: METHOD1:AMOUNT1 + METHOD2:AMOUNT2]"
+function parseSplitNote(reason: string | null): { baseMethod: string; baseAmount: number; addonMethod: string; addonAmount: number } | null {
+  if (!reason) return null
+  const m = reason.match(/\[Split: (\w+):(\d+) \+ (\w+):(\d+)\]/)
+  if (!m) return null
+  return { baseMethod: m[1], baseAmount: Number(m[2]), addonMethod: m[3], addonAmount: Number(m[4]) }
+}
+
+// Compute cash vs QRIS/transfer totals correctly, handling split ONLINE_QRIS+CASH payments
+function calcMethodTotals(txList: Transaction[]) {
+  let cash = 0, qris = 0
+  for (const t of txList) {
+    const split = parseSplitNote(t.discount_reason)
+    const net = t.total_amount - (t.discount_amount ?? 0)
+    if (split) {
+      // Split payment: each method gets its actual portion
+      const methods: [string, number][] = [[split.baseMethod, split.baseAmount], [split.addonMethod, split.addonAmount]]
+      for (const [method, amount] of methods) {
+        if (method === 'CASH') cash += amount
+        else if (['QRIS', 'ONLINE_QRIS', 'TRANSFER'].includes(method)) qris += amount
+      }
+    } else {
+      if (t.payment_method === 'CASH') cash += net
+      else if (['QRIS', 'ONLINE_QRIS', 'TRANSFER'].includes(t.payment_method ?? '')) qris += net
+    }
+  }
+  return { cash, qris }
+}
+
 function toStudioBucket(reg: Registration): StudioBucket {
   const addons = reg.addons
   const room = `${addons?.room ?? ''}`.toLowerCase()
@@ -146,6 +175,13 @@ export default function App() {
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [receiptTx, setReceiptTx] = useState<Transaction | null>(null)
   const [receiptReg, setReceiptReg] = useState<Registration | null>(null)
+  const [txEditMethod, setTxEditMethod] = useState<PaymentMethod | null>(null)
+  const [txEditDiscount, setTxEditDiscount] = useState('')
+  const [txEditDiscountReason, setTxEditDiscountReason] = useState('')
+  const [txEditAddons, setTxEditAddons] = useState<Record<string, number>>({})
+  const [txEditSaveState, setTxEditSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const txEditSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const txAddonsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [paymentMethodPick, setPaymentMethodPick] = useState<PaymentMethod | null>(null)
   const [addonPaymentPick, setAddonPaymentPick] = useState<PaymentMethod | null>(null)
   const [showPayModal, setShowPayModal] = useState(false)
@@ -157,6 +193,10 @@ export default function App() {
   const [editRegTarget, setEditRegTarget] = useState<Registration | null>(null)
   const [editDateInput, setEditDateInput] = useState('')
   const [editTimeInput, setEditTimeInput] = useState('')
+  const [timeSaveState, setTimeSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [dateSaveState, setDateSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [addonsSaveState, setAddonsSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const addonsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Booking details edit state
   const [editPackageId, setEditPackageId] = useState<number | null>(null)
   // Use object: { [addonName]: number }
@@ -175,12 +215,27 @@ export default function App() {
   const [expenseItem, setExpenseItem] = useState('')
   const [expensePrice, setExpensePrice] = useState('')
   const [expenseCategory, setExpenseCategory] = useState('')
+  const [expenseMetode, setExpenseMetode] = useState<'CASH' | 'QRIS'>('CASH')
   const [expenseLoading, setExpenseLoading] = useState(false)
   // ─── Booking detail drawer ───────────────────────
   const [detailReg, setDetailReg] = useState<Registration | null>(null)
+  // ─── Booking mobile tab ──────────────────────────
+  const [bookingTab, setBookingTab] = useState<'lobby' | 'studio' | 'active' | 'paid'>('lobby')
+
+  // ─── Schedule calendar state ─────────────────────
+  const [calViewMode, setCalViewMode] = useState<'month' | 'week'>('month')
+  const [calMonthKey, setCalMonthKey] = useState(() => todayKey().slice(0, 7))
+  const [calMonthRegs, setCalMonthRegs] = useState<Registration[]>([])
+  const [calSelectedDate, setCalSelectedDate] = useState<string | null>(todayKey())
+  const [calMonthLoading, setCalMonthLoading] = useState(false)
 
   // ─── Monthly recap state (Owner only) ────────────
   const [monthKey, setMonthKey] = useState(() => new Date().toISOString().slice(0, 7)) // 'YYYY-MM'
+  // Recap mode: 'monthly' (26-25 cutoff) | 'weekly' | 'custom'
+  const [recapMode, setRecapMode] = useState<'monthly' | 'weekly' | 'custom'>('monthly')
+  const [weekOffset, setWeekOffset] = useState(0) // 0 = current week, -1 = last week, etc.
+  const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10))
+  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10))
   const [monthTx, setMonthTx] = useState<Transaction[]>([])
   const [monthExp, setMonthExp] = useState<Expense[]>([])
   const [monthAtt, setMonthAtt] = useState<Attendance[]>([])
@@ -190,15 +245,12 @@ export default function App() {
   const [monthExpItem, setMonthExpItem] = useState('')
   const [monthExpPrice, setMonthExpPrice] = useState('')
   const [monthExpCategory, setMonthExpCategory] = useState('')
+  const [monthExpMetode, setMonthExpMetode] = useState<'CASH' | 'QRIS'>('CASH')
   const [monthExpDate, setMonthExpDate] = useState(() => todayKey())
 
-  const loadMonthData = useCallback(async (ym: string) => {
+  // Core loader — accepts explicit ISO date range
+  const loadRecapRange = useCallback(async (start: string, end: string) => {
     setMonthLoading(true)
-    const [year, month] = ym.split('-').map(Number)
-    const start = `${ym}-01`
-    const endDate = new Date(year, month, 0) // last day of month
-    const end = endDate.toISOString().slice(0, 10)
-
     const [{ data: txD }, { data: expD }, { data: attD }, { data: crewD }] = await Promise.all([
       supabase.from('transactions').select('*').gte('created_at', `${start}T00:00:00`).lte('created_at', `${end}T23:59:59`).order('created_at', { ascending: false }),
       supabase.from('expenses').select('*').gte('tanggal', start).lte('tanggal', end).order('tanggal', { ascending: false }),
@@ -213,8 +265,73 @@ export default function App() {
     setMonthLoaded(true)
   }, [])
 
+  // Monthly wrapper: 26th prev → 25th current (billing cycle)
+  const loadMonthData = useCallback(async (ym: string) => {
+    const [year, month] = ym.split('-').map(Number)
+    const startDate = new Date(year, month - 2, 26)
+    const endDate   = new Date(year, month - 1, 25)
+    await loadRecapRange(
+      startDate.toISOString().slice(0, 10),
+      endDate.toISOString().slice(0, 10),
+    )
+  }, [loadRecapRange])
+
+  // Week helper: Monday–Sunday of (today + weekOffset*7)
+  const getWeekRange = useCallback((offset: number): { start: string; end: string; label: string } => {
+    const now = new Date(Date.now() + 7 * 3600 * 1000) // WIB
+    const day = now.getUTCDay() // 0=Sun
+    const diffToMon = (day === 0 ? -6 : 1 - day)
+    const mon = new Date(now)
+    mon.setUTCDate(now.getUTCDate() + diffToMon + offset * 7)
+    const sun = new Date(mon)
+    sun.setUTCDate(mon.getUTCDate() + 6)
+    const fmt = (d: Date) => d.toISOString().slice(0, 10)
+    const fmtLabel = (d: Date) => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+    return { start: fmt(mon), end: fmt(sun), label: `${fmtLabel(mon)} – ${fmtLabel(sun)}` }
+  }, [])
+
+  // ─── Fetch registrations for the schedule month calendar ─
+  useEffect(() => {
+    if (view !== 'schedule' || calViewMode !== 'month') return
+    let cancelled = false
+    setCalMonthLoading(true)
+    const [yr, mo] = calMonthKey.split('-').map(Number)
+    const daysInMonth = new Date(yr, mo, 0).getDate()
+    const start = `${calMonthKey}-01`
+    const end = `${calMonthKey}-${daysInMonth.toString().padStart(2, '0')}`
+    supabase.from('registrations').select('*')
+      .gte('preferred_date', start)
+      .lte('preferred_date', end)
+      .neq('status', 'EXPIRED')
+      .order('preferred_time', { ascending: true })
+      .then(({ data }) => {
+        if (!cancelled) {
+          setCalMonthRegs((data ?? []) as Registration[])
+          setCalMonthLoading(false)
+        }
+      })
+    return () => { cancelled = true }
+  }, [calMonthKey, view, calViewMode])
+
   // ─── Booking status transitions ──────────────────
   const advanceBooking = async (reg: Registration, newStatus: RegistrationStatus) => {
+    // Warn if verifying a booking that conflicts with an existing time slot
+    if (newStatus === 'VERIFIED' && reg.preferred_date && reg.preferred_time) {
+      const studio = toStudioBucket(reg)
+      const conflict = registrations.find(r =>
+        r.id !== reg.id &&
+        r.preferred_date === reg.preferred_date &&
+        r.preferred_time === reg.preferred_time &&
+        toStudioBucket(r) === studio &&
+        ['VERIFIED', 'PROCESSED'].includes(r.status)
+      )
+      if (conflict) {
+        const proceed = window.confirm(
+          `⚠️ Konflik Jadwal!\n\n${conflict.customer_name} sudah booking di ${reg.preferred_date} jam ${reg.preferred_time} (${studio}).\n\nTetap verify booking ${reg.customer_name}?`
+        )
+        if (!proceed) return
+      }
+    }
     setActionLoading(true)
     const update: Partial<Registration> = { status: newStatus }
 
@@ -311,11 +428,31 @@ export default function App() {
     setEditPax((r.addons as any)?.pax ?? 1)
     setEditDateInput(r.preferred_date || '')
     setEditTimeInput(r.preferred_time || '')
+    setTimeSaveState('idle')
+    setDateSaveState('idle')
+    setAddonsSaveState('idle')
   }
 
   // ─── Save all booking details from drawer ────────
   const handleSaveAllDetails = async () => {
     if (!detailReg) return
+    // Check for time slot conflict before saving
+    if (editDateInput && editTimeInput) {
+      const newStudio = toStudioBucket(detailReg)
+      const conflict = registrations.find(r =>
+        r.id !== detailReg.id &&
+        r.preferred_date === editDateInput &&
+        r.preferred_time === editTimeInput &&
+        toStudioBucket(r) === newStudio &&
+        ['PENDING', 'VERIFIED', 'PROCESSED'].includes(r.status)
+      )
+      if (conflict) {
+        const proceed = window.confirm(
+          `⚠️ Konflik Jadwal!\n\n${conflict.customer_name} sudah booking di ${editDateInput} jam ${editTimeInput} (${newStudio}).\n\nTetap simpan?`
+        )
+        if (!proceed) return
+      }
+    }
     setActionLoading(true)
     // Convert editAddons (Record<string, number>) to string[] for selected_addons
     const selectedAddonsArr: string[] = [];
@@ -343,21 +480,102 @@ export default function App() {
     }
   }
 
-  // ─── Transaction payment ─────────────────────────
-  const markTxPaid = async (tx: Transaction, method: PaymentMethod, totalAmount: number, discountAmt: number, discountReason: string, splitInfo?: { baseAmount: number; baseMethod: PaymentMethod; addonAmount: number; addonMethod: PaymentMethod }) => {
+  // ─── Auto-save: addons JSON (package + pax + selected_addons) ─────────
+  const triggerAddonsSave = useCallback((
+    regId: string,
+    pax: number,
+    addons: Record<string, number>,
+    packageId: number | null,
+    baseAddons: BookingAddons | null,
+  ) => {
+    if (addonsSaveTimerRef.current) clearTimeout(addonsSaveTimerRef.current)
+    setAddonsSaveState('saving')
+    addonsSaveTimerRef.current = setTimeout(async () => {
+      const selectedAddonsArr: string[] = []
+      Object.entries(addons).forEach(([name, qty]) => {
+        for (let i = 0; i < qty; i++) selectedAddonsArr.push(name)
+      })
+      const newAddons: BookingAddons = { ...baseAddons, product_id: packageId, selected_addons: selectedAddonsArr, pax }
+      const { error } = await (supabase.from('registrations') as any)
+        .update({ addons: newAddons })
+        .eq('id', regId)
+      if (error) {
+        setAddonsSaveState('error')
+        setTimeout(() => setAddonsSaveState('idle'), 3000)
+      } else {
+        setAddonsSaveState('saved')
+        setRegistrations(prev => prev.map(r => r.id === regId ? { ...r, addons: newAddons } as Registration : r))
+        setDetailReg(prev => prev ? { ...prev, addons: newAddons } as Registration : null)
+        setTimeout(() => setAddonsSaveState('idle'), 2000)
+      }
+    }, 400)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Delete booking (hard delete from Supabase) ────────────────────────
+  const handleDeleteBooking = async () => {
+    if (!detailReg) return
+    const shouldDelete = window.confirm(
+      `Hapus booking "${detailReg.customer_name}" (${detailReg.preferred_date ?? ''} ${detailReg.preferred_time ?? ''})\n\nData akan dihapus permanen dari database. Tindakan ini tidak bisa dibatalkan.`
+    )
+    if (!shouldDelete) return
     setActionLoading(true)
 
-    // Always recalculate price from current products and registration
+    // Delete linked transaction (ACTIVE or VOID) first to avoid FK constraint issues
+    const linkedTx = transactions.find(t => t.registration_id === detailReg.id || t.session_id === detailReg.session_id)
+    if (linkedTx && linkedTx.status !== 'PAID') {
+      const { error: txErr } = await (supabase.from('transactions') as any).delete().eq('id', linkedTx.id)
+      if (txErr) {
+        alert('Gagal hapus transaksi terkait: ' + txErr.message)
+        setActionLoading(false)
+        return
+      }
+      setTransactions(prev => prev.filter(t => t.id !== linkedTx.id))
+    }
+
+    const { error: regErr } = await (supabase.from('registrations') as any).delete().eq('id', detailReg.id)
+    if (regErr) {
+      alert('Gagal hapus booking: ' + regErr.message)
+      setActionLoading(false)
+      return
+    }
+
+    setRegistrations(prev => prev.filter(r => r.id !== detailReg.id))
+    setDetailReg(null)
+    setActionLoading(false)
+  }
+
+  // ─── Transaction payment ─────────────────────────
+  const markTxPaid = async (
+    tx: Transaction,
+    method: PaymentMethod,
+    totalAmount: number,
+    discountAmt: number,
+    discountReason: string,
+    splitInfo?: { baseAmount: number; baseMethod: PaymentMethod; addonAmount: number; addonMethod: PaymentMethod },
+    mergedAddons?: BookingAddons | null,
+  ) => {
+    setActionLoading(true)
+
     const reg = registrations.find(r => r.id === tx.registration_id || r.session_id === tx.session_id) ?? null
-    const lineItems = calcBookingLineItems(products, reg?.addons as BookingAddons | null)
+
+    // Use merged addons (booking + session add-ons) if provided, else fall back to reg.addons
+    const effectiveAddons = mergedAddons ?? (reg?.addons as BookingAddons | null)
+    const lineItems = calcBookingLineItems(products, effectiveAddons)
     const correctTotal = lineItems.reduce((sum, item) => sum + item.price, 0)
 
     // Build discount_reason: include split payment note if applicable
     let finalReason = discountReason || null
     if (splitInfo && splitInfo.addonAmount > 0) {
-      const splitNote = `[Split: ${splitInfo.baseMethod} ${fmtRp(splitInfo.baseAmount)} + ${splitInfo.addonMethod} ${fmtRp(splitInfo.addonAmount)}]`
+      const splitNote = `[Split: ${splitInfo.baseMethod}:${splitInfo.baseAmount} + ${splitInfo.addonMethod}:${splitInfo.addonAmount}]`
       finalReason = finalReason ? `${finalReason} ${splitNote}` : splitNote
     }
+
+    // If session add-ons were merged in, persist them to the registration first
+    if (mergedAddons && tx.registration_id) {
+      await supabase.from('registrations').update({ addons: mergedAddons } as never).eq('id', tx.registration_id)
+      setRegistrations(prev => prev.map(r => r.id === tx.registration_id ? { ...r, addons: mergedAddons } as Registration : r))
+    }
+
     const { error: payErr } = await supabase.from('transactions').update({
       status: 'PAID',
       payment_method: method,
@@ -379,8 +597,8 @@ export default function App() {
       setRegistrations(prev => prev.map(r => r.id === tx.registration_id ? { ...r, status: 'COMPLETED' as const } : r))
     }
 
-    // Optimistic update
-    const paidTx = { ...tx, status: 'PAID' as const, payment_method: method, total_amount: totalAmount, discount_amount: discountAmt, discount_reason: finalReason }
+    // Optimistic update — use correctTotal (gross pre-discount) to match DB
+    const paidTx = { ...tx, status: 'PAID' as const, payment_method: method, total_amount: correctTotal, discount_amount: discountAmt, discount_reason: finalReason }
     setTransactions(prev => prev.map(t => t.id === tx.id ? paidTx : t))
     setShowPayModal(false)
     setPayTx(null)
@@ -391,10 +609,11 @@ export default function App() {
     setSessionAddons({})
     setActionLoading(false)
 
-    // Auto-open receipt after payment
+    // Receipt: use updated reg so merged add-ons appear in line items
+    const receiptRegFinal = mergedAddons ? { ...reg, addons: mergedAddons } as Registration : reg
     setReceiptTx(paidTx)
-    setReceiptReg(reg)
-    setEditableDmMessage(buildDmMessage(paidTx, reg))
+    setReceiptReg(receiptRegFinal)
+    setEditableDmMessage(buildDmMessage(paidTx, receiptRegFinal))
     setShowReceiptModal(true)
     setDmCopied(false)
     setSessionIdCopied(false)
@@ -402,13 +621,70 @@ export default function App() {
 
   // ─── Complete session → open receipt ─────────────
   const openReceipt = (tx: Transaction) => {
-    const reg = registrations.find((r) => r.session_id === tx.session_id) ?? null
+    const reg = registrations.find((r) => r.id === tx.registration_id || r.session_id === tx.session_id) ?? null
     setReceiptTx(tx)
     setReceiptReg(reg)
     setEditableDmMessage(buildDmMessage(tx, reg))
     setShowReceiptModal(true)
     setDmCopied(false)
     setSessionIdCopied(false)
+    setTxEditMethod(tx.payment_method ?? null)
+    setTxEditDiscount(tx.discount_amount > 0 ? String(tx.discount_amount) : '')
+    setTxEditDiscountReason(tx.discount_reason ?? '')
+    setTxEditSaveState('idle')
+    // Init add-ons from the linked registration
+    const selectedArr = (reg?.addons as BookingAddons | null)?.selected_addons ?? []
+    const addonsObj: Record<string, number> = {}
+    selectedArr.forEach((name: string) => { addonsObj[name] = (addonsObj[name] || 0) + 1 })
+    setTxEditAddons(addonsObj)
+  }
+
+  // ─── Auto-save transaction fields ────────────────
+  const saveTxEdit = (txId: string, updates: Partial<Transaction>, debounceMs = 0) => {
+    if (txEditSaveTimerRef.current) clearTimeout(txEditSaveTimerRef.current)
+    setTxEditSaveState('saving')
+    const doSave = async () => {
+      const { error } = await (supabase.from('transactions') as any).update(updates).eq('id', txId)
+      if (error) {
+        setTxEditSaveState('error')
+        setTimeout(() => setTxEditSaveState('idle'), 3000)
+      } else {
+        setTxEditSaveState('saved')
+        setReceiptTx(prev => prev ? { ...prev, ...updates } as Transaction : null)
+        setTransactions(prev => prev.map(t => t.id === txId ? { ...t, ...updates } as Transaction : t))
+        setTimeout(() => setTxEditSaveState('idle'), 2000)
+      }
+    }
+    if (debounceMs > 0) {
+      txEditSaveTimerRef.current = setTimeout(doSave, debounceMs)
+    } else {
+      doSave()
+    }
+  }
+
+  // ─── Auto-save add-ons to linked registration (receipt modal) ───────────
+  const saveTxRegAddons = (regId: string, addons: Record<string, number>, baseAddons: BookingAddons | null) => {
+    if (txAddonsTimerRef.current) clearTimeout(txAddonsTimerRef.current)
+    setTxEditSaveState('saving')
+    txAddonsTimerRef.current = setTimeout(async () => {
+      const selectedArr: string[] = []
+      Object.entries(addons).forEach(([name, qty]) => {
+        for (let i = 0; i < qty; i++) selectedArr.push(name)
+      })
+      const newAddons: BookingAddons = { ...baseAddons, selected_addons: selectedArr }
+      const { error } = await (supabase.from('registrations') as any)
+        .update({ addons: newAddons })
+        .eq('id', regId)
+      if (error) {
+        setTxEditSaveState('error')
+        setTimeout(() => setTxEditSaveState('idle'), 3000)
+      } else {
+        setTxEditSaveState('saved')
+        setReceiptReg(prev => prev ? { ...prev, addons: newAddons } as Registration : null)
+        setRegistrations(prev => prev.map(r => r.id === regId ? { ...r, addons: newAddons } as Registration : r))
+        setTimeout(() => setTxEditSaveState('idle'), 2000)
+      }
+    }, 400)
   }
 
   // ─── Build template DM message ───────────────────
@@ -619,6 +895,8 @@ export default function App() {
   const txPaid = transactions.filter((t) => t.status === 'PAID' || t.payment_method === 'ONLINE_QRIS')
   const omzet = txPaid.reduce((sum, t) => sum + t.total_amount, 0)
   const expenseTotal = expenses.reduce((sum, e) => sum + e.jumlah, 0)
+  const expenseCash = expenses.filter(e => (e.metode_bayar ?? 'CASH') === 'CASH').reduce((s, e) => s + e.jumlah, 0)
+  const expenseQris = expenses.filter(e => e.metode_bayar === 'QRIS').reduce((s, e) => s + e.jumlah, 0)
   const navItems = role === 'owner' ? ownerNavItems : crewNavItems
 
   if (!role) {
@@ -879,6 +1157,7 @@ export default function App() {
 
   return (
     <div
+      className="pos-app-shell"
       style={{
         height: '100vh',
         background: '#000',
@@ -891,6 +1170,7 @@ export default function App() {
     >
       {/* ─── iOS-style header bar ────────────────────── */}
       <header
+        className="pos-header"
         style={{
           flexShrink: 0,
           padding: '12px 24px',
@@ -903,7 +1183,7 @@ export default function App() {
           borderBottom: '0.5px solid rgba(255,255,255,0.08)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="pos-header-logo" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <img src="/mera-logo-white.png" alt="Méra" style={{ height: 24 }} />
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', fontWeight: 500 }}>
             {role === 'owner' ? 'Owner' : 'Crew'}
@@ -911,7 +1191,7 @@ export default function App() {
         </div>
 
         {/* Segmented nav */}
-        <div style={{
+        <div className="pos-nav-segment" style={{
           display: 'flex',
           background: 'rgba(255,255,255,0.06)',
           borderRadius: 12,
@@ -923,6 +1203,7 @@ export default function App() {
             return (
               <button
                 key={item.key}
+                className={`pos-nav-btn${active ? ' pos-nav-btn-active' : ''}`}
                 onClick={() => setView(item.key)}
                 style={{
                   padding: '7px 14px',
@@ -939,15 +1220,15 @@ export default function App() {
                   transition: 'all 0.2s ease',
                 }}
               >
-                {item.icon}
-                {item.label}
+                <span className="pos-nav-icon">{item.icon}</span>
+                <span className="pos-nav-label">{item.label}</span>
               </button>
             )
           })}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
+        <div className="pos-header-right" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span className="pos-header-date" style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
             {new Date().toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' })}
           </span>
           <button
@@ -972,7 +1253,7 @@ export default function App() {
       </header>
 
       {/* ─── Main content ────────────────────────────── */}
-      <main style={{ flex: 1, overflow: 'auto', padding: '20px 24px', WebkitOverflowScrolling: 'touch' }}>
+      <main className="pos-main" style={{ flex: 1, overflow: 'auto', padding: '20px 24px', WebkitOverflowScrolling: 'touch' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.3)' }}>Loading...</p>
@@ -980,87 +1261,70 @@ export default function App() {
         ) : (
           <>
             {/* ═══════════════════════════════════════════════ */}
-            {/* 1. SCHEDULE — Two Studio Calendars              */}
+            {/* 1. SCHEDULE — Month & Week Calendars             */}
             {/* ═══════════════════════════════════════════════ */}
             {view === 'schedule' && (() => {
-              const days = weekDays()
-              const regsByDateSlotStudio = (date: string, slot: string, studios: StudioBucket[]) =>
-                weekRegistrations.filter((r) => {
-                  if (r.preferred_date !== date) return false
-                  if (!studios.includes(toStudioBucket(r))) return false
-                  const t = r.preferred_time ?? ''
-                  // Match bookings to hour slot (e.g. 12:00 and 12:30 both match slot 12:00)
-                  return t.slice(0, 2) === slot.slice(0, 2)
-                })
-              const todayRegs = registrations.filter((r) => r.status !== 'EXPIRED')
-              const basicWeek = weekRegistrations.filter((r) => toStudioBucket(r) === 'BASIC')
-              const thematicWeek = weekRegistrations.filter((r) => ['MAJESTIC', 'ELEVATOR'].includes(toStudioBucket(r)))
-
+              const today = todayKey()
               const statusColor = (s: string) => {
                 const m: Record<string, string> = { PENDING: '#E0B88A', VERIFIED: '#9BB8D0', PROCESSED: '#A8C5A0', COMPLETED: '#7FC29B', EXPIRED: '#C89696' }
                 return m[s] ?? 'rgba(255,255,255,0.3)'
               }
 
-              const calendarGrid = (title: string, studios: StudioBucket[], accent: string, count: number) => (
+              // ── Month view helpers ────────────────────────
+              const [calYr, calMo] = calMonthKey.split('-').map(Number)
+              const daysInCal = new Date(calYr, calMo, 0).getDate()
+              const firstDow = (new Date(calYr, calMo - 1, 1).getDay() + 6) % 7 // 0=Mon
+              const cells: (string | null)[] = Array(firstDow).fill(null)
+              for (let d = 1; d <= daysInCal; d++) cells.push(`${calMonthKey}-${d.toString().padStart(2, '0')}`)
+              while (cells.length % 7 !== 0) cells.push(null)
+
+              const prevCalMonth = (() => { const d = new Date(calYr, calMo - 2, 1); return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}` })()
+              const nextCalMonth = (() => { const d = new Date(calYr, calMo, 1); return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}` })()
+              const calMonthLabel = new Date(calYr, calMo - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+
+              const regsByDate = (date: string) => calMonthRegs.filter(r => r.preferred_date === date)
+              const selectedRegs = calSelectedDate ? regsByDate(calSelectedDate) : []
+              const totalThisMonth = calMonthRegs.length
+
+              // ── Week view helpers ─────────────────────────
+              const days = weekDays()
+              const regsByDateSlotStudio = (date: string, slot: string, studios: StudioBucket[]) =>
+                weekRegistrations.filter((r) => {
+                  if (r.preferred_date !== date) return false
+                  if (!studios.includes(toStudioBucket(r))) return false
+                  return (r.preferred_time ?? '').slice(0, 2) === slot.slice(0, 2)
+                })
+              const basicWeek = weekRegistrations.filter((r) => toStudioBucket(r) === 'BASIC')
+              const thematicWeek = weekRegistrations.filter((r) => ['MAJESTIC', 'ELEVATOR'].includes(toStudioBucket(r)))
+
+              const weekCalGrid = (title: string, studios: StudioBucket[], accent: string, count: number) => (
                 <Card style={{ overflow: 'hidden' }}>
                   <div style={{ padding: '16px 18px 0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ width: 8, height: 8, borderRadius: '50%', background: accent }} />
-                        <h3 style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em' }}>{title}</h3>
+                        <h3 style={{ fontSize: 15, fontWeight: 700 }}>{title}</h3>
                       </div>
                       <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.06)', padding: '3px 12px', borderRadius: 20 }}>{count} this week</span>
                     </div>
                   </div>
                   <div style={{ overflowX: 'auto', padding: '0 0 16px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: `56px repeat(7, minmax(110px, 1fr))`, minWidth: 850 }}>
-                      {/* Day headers */}
-                      <div style={{ padding: '0 8px 10px', fontSize: 10, color: 'rgba(255,255,255,0.25)', fontWeight: 500 }} />
+                      <div />
                       {days.map((d) => (
-                        <div key={d.date} style={{
-                          padding: '0 8px 10px',
-                          textAlign: 'center',
-                        }}>
-                          <span style={{
-                            fontSize: 11,
-                            fontWeight: d.isToday ? 700 : 500,
-                            color: d.isToday ? '#fff' : 'rgba(255,255,255,0.35)',
-                            ...(d.isToday ? { background: accent, padding: '3px 10px', borderRadius: 20 } : {}),
-                          }}>
-                            {d.label}
-                          </span>
+                        <div key={d.date} style={{ padding: '0 8px 10px', textAlign: 'center' }}>
+                          <span style={{ fontSize: 11, fontWeight: d.isToday ? 700 : 500, color: d.isToday ? '#fff' : 'rgba(255,255,255,0.35)', ...(d.isToday ? { background: accent, padding: '3px 10px', borderRadius: 20 } : {}) }}>{d.label}</span>
                         </div>
                       ))}
-
-                      {/* Time rows */}
                       {TIME_SLOTS.map((slot) => (
                         <React.Fragment key={slot}>
-                          <div style={{ padding: '6px 8px 6px 12px', fontSize: 10, color: 'rgba(255,255,255,0.2)', fontWeight: 500, borderTop: '0.5px solid rgba(255,255,255,0.04)', display: 'flex', alignItems: 'start' }}>
-                            {slot}
-                          </div>
+                          <div style={{ padding: '6px 8px 6px 12px', fontSize: 10, color: 'rgba(255,255,255,0.2)', fontWeight: 500, borderTop: '0.5px solid rgba(255,255,255,0.04)', display: 'flex', alignItems: 'start' }}>{slot}</div>
                           {days.map((d) => {
                             const regs = regsByDateSlotStudio(d.date, slot, studios)
                             return (
-                              <div key={d.date} style={{
-                                padding: '4px 4px',
-                                borderTop: '0.5px solid rgba(255,255,255,0.04)',
-                                minHeight: 32,
-                                background: d.isToday ? 'rgba(255,255,255,0.015)' : 'transparent',
-                              }}>
+                              <div key={d.date} style={{ padding: '4px 4px', borderTop: '0.5px solid rgba(255,255,255,0.04)', minHeight: 32, background: d.isToday ? 'rgba(255,255,255,0.015)' : 'transparent' }}>
                                 {regs.map((r) => (
-                                  <div
-                                    key={r.id}
-                                    onClick={() => openDetail(r)}
-                                    style={{
-                                      background: detailReg?.id === r.id ? `color-mix(in srgb, ${accent} 25%, transparent)` : `color-mix(in srgb, ${accent} 10%, transparent)`,
-                                      border: `0.5px solid color-mix(in srgb, ${accent} 25%, transparent)`,
-                                      borderRadius: 10,
-                                      padding: '5px 8px',
-                                      marginBottom: 3,
-                                      cursor: 'pointer',
-                                      transition: 'background 0.15s ease',
-                                    }}
-                                  >
+                                  <div key={r.id} onClick={() => openDetail(r)} style={{ background: detailReg?.id === r.id ? `color-mix(in srgb, ${accent} 25%, transparent)` : `color-mix(in srgb, ${accent} 10%, transparent)`, border: `0.5px solid color-mix(in srgb, ${accent} 25%, transparent)`, borderRadius: 10, padding: '5px 8px', marginBottom: 3, cursor: 'pointer' }}>
                                     <p style={{ fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'rgba(255,255,255,0.85)' }}>{r.customer_name}</p>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
                                       <span style={{ width: 5, height: 5, borderRadius: '50%', background: statusColor(r.status), flexShrink: 0 }} />
@@ -1078,22 +1342,199 @@ export default function App() {
                 </Card>
               )
 
+              const DOW_LABELS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']
+
               return (
-                <div style={{ display: 'grid', gap: 16 }}>
-                  {/* Summary pills */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
-                    <Pill label="Today" value={`${todayRegs.length} bookings`} />
-                    <Pill label="Pending" value={statusCount.PENDING} color="#E0B88A" />
-                    <Pill label="In Studio" value={statusCount.PROCESSED} color="#A8C5A0" />
-                    <Pill label="Completed" value={statusCount.COMPLETED} color="#7FC29B" />
-                    <Pill label="This Week" value={weekRegistrations.filter((r) => r.status !== 'EXPIRED').length} />
+                <div style={{ display: 'grid', gap: 14 }}>
+                  {/* Top bar: view toggle + navigation */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                    {/* View toggle */}
+                    <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 3, gap: 2 }}>
+                      {(['month', 'week'] as const).map(mode => (
+                        <button key={mode} onClick={() => setCalViewMode(mode)} style={{ border: 'none', borderRadius: 9, padding: '7px 18px', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: calViewMode === mode ? '#622128' : 'transparent', color: calViewMode === mode ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'all 0.15s' }}>
+                          {mode === 'month' ? 'Month' : 'Week'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Month navigation (only in month mode) */}
+                    {calViewMode === 'month' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button onClick={() => { setCalMonthKey(prevCalMonth); setCalSelectedDate(null) }} style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.6)', padding: '7px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <ChevronLeft size={14} />
+                        </button>
+                        <span style={{ fontSize: 15, fontWeight: 700, minWidth: 160, textAlign: 'center', letterSpacing: '-0.01em' }}>{calMonthLabel}</span>
+                        <button onClick={() => { setCalMonthKey(nextCalMonth); setCalSelectedDate(null) }} style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.6)', padding: '7px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <ChevronRight size={14} />
+                        </button>
+                        <button onClick={() => { setCalMonthKey(todayKey().slice(0, 7)); setCalSelectedDate(todayKey()) }} style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.5)', padding: '7px 14px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Today</button>
+                      </div>
+                    )}
+
+                    {/* Month summary pill */}
+                    {calViewMode === 'month' && (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.06)', padding: '6px 14px', borderRadius: 20, fontWeight: 600 }}>
+                          {calMonthLoading ? '…' : `${totalThisMonth} booking`}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Two calendars side by side */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    {calendarGrid('Studio Basic', ['BASIC', 'QUEUE'], '#622128', basicWeek.length)}
-                    {calendarGrid('Studio Thematic', ['MAJESTIC', 'ELEVATOR'], '#E0B88A', thematicWeek.length)}
-                  </div>
+                  {/* ── MONTH VIEW ── */}
+                  {calViewMode === 'month' && (
+                    <div style={{ display: 'grid', gap: 12 }}>
+                      <Card style={{ overflow: 'hidden' }}>
+                        {/* Day-of-week header */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '0.5px solid rgba(255,255,255,0.06)' }}>
+                          {DOW_LABELS.map(d => (
+                            <div key={d} style={{ padding: '10px 0', textAlign: 'center', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>{d}</div>
+                          ))}
+                        </div>
+
+                        {/* Calendar cells */}
+                        {calMonthLoading ? (
+                          <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'rgba(255,255,255,0.25)' }}>Memuat kalender…</div>
+                        ) : (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                            {cells.map((date, i) => {
+                              if (!date) return <div key={`empty-${i}`} style={{ minHeight: 90, borderBottom: '0.5px solid rgba(255,255,255,0.04)', borderRight: '0.5px solid rgba(255,255,255,0.04)', background: 'rgba(0,0,0,0.08)' }} />
+                              const dayRegs = regsByDate(date)
+                              const isToday = date === today
+                              const isSelected = date === calSelectedDate
+                              const dayNum = Number(date.slice(8))
+                              const maxShow = 3
+                              const overflow = dayRegs.length - maxShow
+
+                              return (
+                                <div
+                                  key={date}
+                                  onClick={() => setCalSelectedDate(isSelected ? null : date)}
+                                  style={{
+                                    minHeight: 90,
+                                    padding: '7px 6px 6px',
+                                    borderBottom: '0.5px solid rgba(255,255,255,0.04)',
+                                    borderRight: '0.5px solid rgba(255,255,255,0.04)',
+                                    background: isSelected ? 'rgba(98,33,40,0.18)' : isToday ? 'rgba(255,255,255,0.03)' : 'transparent',
+                                    cursor: 'pointer',
+                                    transition: 'background 0.1s',
+                                    position: 'relative',
+                                  }}
+                                >
+                                  {/* Day number */}
+                                  <div style={{ marginBottom: 5 }}>
+                                    <span style={{
+                                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                      width: 22, height: 22, borderRadius: '50%', fontSize: 11, fontWeight: isToday ? 800 : 500,
+                                      background: isToday ? '#622128' : 'transparent',
+                                      color: isToday ? '#fff' : isSelected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)',
+                                    }}>{dayNum}</span>
+                                  </div>
+
+                                  {/* Booking chips */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    {dayRegs.slice(0, maxShow).map(r => {
+                                      const sc = statusColor(r.status)
+                                      return (
+                                        <div
+                                          key={r.id}
+                                          onClick={e => { e.stopPropagation(); setCalSelectedDate(date); openDetail(r) }}
+                                          style={{
+                                            background: `color-mix(in srgb, ${sc} 14%, transparent)`,
+                                            borderLeft: `2.5px solid ${sc}`,
+                                            borderRadius: '0 5px 5px 0',
+                                            padding: '2px 5px',
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          <p style={{ fontSize: 9, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'rgba(255,255,255,0.8)', lineHeight: 1.3 }}>{r.preferred_time ? `${r.preferred_time} ` : ''}{r.customer_name}</p>
+                                        </div>
+                                      )
+                                    })}
+                                    {overflow > 0 && (
+                                      <p style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontWeight: 600, padding: '1px 5px' }}>+{overflow} lagi</p>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </Card>
+
+                      {/* Day detail panel */}
+                      {calSelectedDate && (
+                        <Card>
+                          <div style={{ padding: '14px 18px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <h3 style={{ fontSize: 14, fontWeight: 700 }}>
+                                  {new Date(calSelectedDate + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                                </h3>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.06)', padding: '2px 10px', borderRadius: 20 }}>{selectedRegs.length} booking</span>
+                              </div>
+                              <button onClick={() => setCalSelectedDate(null)} style={{ border: 'none', background: 'rgba(255,255,255,0.06)', borderRadius: 20, width: 26, height: 26, display: 'grid', placeItems: 'center', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}><X size={12} /></button>
+                            </div>
+
+                            {selectedRegs.length === 0 ? (
+                              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', padding: '12px 0' }}>Tidak ada booking di tanggal ini.</p>
+                            ) : (
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                                {selectedRegs.map(r => {
+                                  const sc = statusColor(r.status)
+                                  const studioLabel = (r.addons as BookingAddons | null)?.room ?? toStudioBucket(r)
+                                  return (
+                                    <div
+                                      key={r.id}
+                                      onClick={() => openDetail(r)}
+                                      style={{
+                                        background: `color-mix(in srgb, ${sc} 8%, rgba(255,255,255,0.03))`,
+                                        border: `1px solid color-mix(in srgb, ${sc} 20%, transparent)`,
+                                        borderRadius: 12,
+                                        padding: '10px 12px',
+                                        cursor: 'pointer',
+                                        transition: 'background 0.12s',
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                        <p style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.customer_name}</p>
+                                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: sc, flexShrink: 0, marginLeft: 6 }} />
+                                      </div>
+                                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                        {r.preferred_time && <span>{r.preferred_time}</span>}
+                                        <span>·</span>
+                                        <span>{studioLabel}</span>
+                                        {(r.addons as BookingAddons | null)?.pax && <><span>·</span><span>{(r.addons as BookingAddons | null)?.pax} pax</span></>}
+                                      </div>
+                                      {r.instagram_handle && <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 3 }}>@{r.instagram_handle.replace('@', '')}</p>}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </Card>
+                      )}
+
+                      {/* Status legend */}
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                        {[['PENDING', '#E0B88A', 'Pending'], ['VERIFIED', '#9BB8D0', 'Verified'], ['PROCESSED', '#A8C5A0', 'In Studio'], ['COMPLETED', '#7FC29B', 'Completed']].map(([, color, label]) => (
+                          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500 }}>{label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── WEEK VIEW ── */}
+                  {calViewMode === 'week' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      {weekCalGrid('Studio Basic', ['BASIC', 'QUEUE'], '#622128', basicWeek.length)}
+                      {weekCalGrid('Studio Thematic', ['MAJESTIC', 'ELEVATOR'], '#E0B88A', thematicWeek.length)}
+                    </div>
+                  )}
                 </div>
               )
             })()}
@@ -1107,8 +1548,7 @@ export default function App() {
               const processed = registrations.filter(r => r.status === 'PROCESSED')
               const activeTx = transactions.filter(t => t.status === 'ACTIVE')
               const paidTx = transactions.filter(t => t.status === 'PAID')
-              const cashTotal = paidTx.filter(t => t.payment_method === 'CASH').reduce((s, t) => s + t.total_amount, 0)
-              const qrisTotal = paidTx.filter(t => ['QRIS','ONLINE_QRIS','TRANSFER'].includes(t.payment_method ?? '')).reduce((s, t) => s + t.total_amount, 0)
+              const { cash: cashTotal, qris: qrisTotal } = calcMethodTotals(paidTx)
 
               const statusMap: Record<RegistrationStatus, { color: string; label: string }> = {
                 PENDING: { color: '#E0B88A', label: 'Pending' },
@@ -1199,9 +1639,20 @@ export default function App() {
 
               // Clickable transaction card
               const txCard = (t: Transaction) => {
-                const linkedReg = registrations.find(r => r.id === t.registration_id) ?? null
-                const items = calcLineItems(linkedReg)
-                const estimatedTotal = t.status === 'ACTIVE' && t.total_amount === 0 ? items.reduce((s, i) => s + i.price, 0) : t.total_amount
+                const linkedReg = registrations.find(r => r.id === t.registration_id || r.session_id === t.session_id) ?? null
+                // Include in-session add-ons in live price estimate for ACTIVE transactions
+                const txSessionArr: string[] = []
+                if (t.status === 'ACTIVE') {
+                  Object.entries(sessionAddons).forEach(([idStr, qty]) => {
+                    const prod = products.find(p => p.id === Number(idStr) && p.is_addon)
+                    if (prod) for (let i = 0; i < qty; i++) txSessionArr.push(prod.nama)
+                  })
+                }
+                const mergedRegForCalc = linkedReg && txSessionArr.length > 0
+                  ? { ...linkedReg, addons: { ...(linkedReg.addons as BookingAddons | null), selected_addons: [...((linkedReg.addons as BookingAddons | null)?.selected_addons ?? []), ...txSessionArr] } } as Registration
+                  : linkedReg
+                const items = calcLineItems(mergedRegForCalc)
+                const estimatedTotal = t.status === 'ACTIVE' ? items.reduce((s, i) => s + i.price, 0) : t.total_amount
                 return (
                   <div
                     key={t.id}
@@ -1264,6 +1715,13 @@ export default function App() {
                 </Card>
               )
 
+              const tabDefs: Array<{ key: typeof bookingTab; label: string; count: number; color: string }> = [
+                { key: 'lobby',  label: 'Lobby',     count: pending.length + verified.length, color: '#E0B88A' },
+                { key: 'studio', label: 'In Studio',  count: processed.length,                color: '#A8C5A0' },
+                { key: 'active', label: 'Active TXs', count: activeTx.length,                 color: '#E0B88A' },
+                { key: 'paid',   label: 'Paid',       count: paidTx.length,                   color: '#7FC29B' },
+              ]
+
               return (
                 <div style={{ display: 'grid', gap: 12 }}>
                   {sessionIdCopied && (
@@ -1271,24 +1729,59 @@ export default function App() {
                       Session ID copied!
                     </div>
                   )}
-                  {/* Summary pills */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
-                    <Pill label="Pending" value={pending.length} color="#E0B88A" />
-                    <Pill label="Verified" value={verified.length} color="#9BB8D0" />
-                    <Pill label="In Studio" value={processed.length} color="#A8C5A0" />
-                    <Pill label="Active TXs" value={activeTx.length} color="#E0B88A" />
-                    <Pill label="Cash" value={fmtRp(cashTotal)} />
-                    <Pill label="QRIS / Transfer" value={fmtRp(qrisTotal)} />
+
+                  {/* Summary pills — 6-col desktop, 3-col mobile */}
+                  <div className="gc-kpi-grid gc-booking-pills" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
+                    <Pill label="Pending"       value={pending.length}      color="#E0B88A" />
+                    <Pill label="Verified"      value={verified.length}     color="#9BB8D0" />
+                    <Pill label="In Studio"     value={processed.length}    color="#A8C5A0" />
+                    <Pill label="Active TXs"    value={activeTx.length}     color="#E0B88A" />
+                    <Pill label="Cash"          value={fmtRp(cashTotal)} />
+                    <Pill label="QRIS/Transfer" value={fmtRp(qrisTotal)} />
                   </div>
-                  {/* Bookings (left 3/5) + Transactions (right 2/5) */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, minHeight: 'calc(100vh - 230px)' }}>
+
+                  {/* ── Mobile tab strip (hidden on desktop) ── */}
+                  <div className="gc-booking-tab-strip" style={{ display: 'none', gap: 6 }}>
+                    {tabDefs.map(tab => {
+                      const active = bookingTab === tab.key
+                      return (
+                        <button
+                          key={tab.key}
+                          onClick={() => setBookingTab(tab.key)}
+                          style={{
+                            flex: 1, border: 'none', borderRadius: 12, padding: '10px 6px',
+                            background: active ? `color-mix(in srgb, ${tab.color} 20%, rgba(30,30,32,0.9))` : 'rgba(255,255,255,0.05)',
+                            color: active ? tab.color : 'rgba(255,255,255,0.4)',
+                            fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                            outline: active ? `1px solid color-mix(in srgb, ${tab.color} 35%, transparent)` : 'none',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <span style={{ fontSize: 16, fontWeight: 800 }}>{tab.count}</span>
+                          <span>{tab.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* ── Mobile single-panel view (hidden on desktop) ── */}
+                  <div className="gc-booking-mobile-panel" style={{ display: 'none' }}>
+                    {bookingTab === 'lobby'  && bookingCol('Lobby',     <Layers3 size={15}/>,  [...pending, ...verified], 'No bookings in lobby')}
+                    {bookingTab === 'studio' && bookingCol('In Studio', <Monitor size={15}/>,   processed,                'No active sessions')}
+                    {bookingTab === 'active' && txCol('Active TXs',     <CreditCard size={15}/>, activeTx,                'No active transactions')}
+                    {bookingTab === 'paid'   && txCol('Paid Today',     <Receipt size={15}/>,   paidTx,                  'No paid transactions')}
+                  </div>
+
+                  {/* ── Desktop 4-panel layout (hidden on mobile) ── */}
+                  <div className="gc-booking-desktop-layout" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, minHeight: 'calc(100vh - 230px)' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      {bookingCol('Lobby', <Layers3 size={15}/>, [...pending, ...verified], 'No bookings in lobby')}
-                      {bookingCol('In Studio', <Monitor size={15}/>, processed, 'No active sessions')}
+                      {bookingCol('Lobby',     <Layers3 size={15}/>, [...pending, ...verified], 'No bookings in lobby')}
+                      {bookingCol('In Studio', <Monitor size={15}/>, processed,                 'No active sessions')}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      {txCol('Active', <CreditCard size={15}/>, activeTx, 'No active transactions')}
-                      {txCol('Paid Today', <Receipt size={15}/>, paidTx, 'No paid transactions')}
+                      {txCol('Active',     <CreditCard size={15}/>, activeTx, 'No active transactions')}
+                      {txCol('Paid Today', <Receipt size={15}/>,   paidTx,   'No paid transactions')}
                     </div>
                   </div>
                 </div>
@@ -1299,8 +1792,7 @@ export default function App() {
             {/* 4. TODAY FINANCE RECAP                           */}
             {/* ═══════════════════════════════════════════════ */}
             {view === 'finance' && (() => {
-              const cashTotal = txPaid.filter((t) => t.payment_method === 'CASH').reduce((s, t) => s + t.total_amount, 0)
-              const qrisTotal = txPaid.filter((t) => ['QRIS', 'ONLINE_QRIS', 'TRANSFER'].includes(t.payment_method ?? '')).reduce((s, t) => s + t.total_amount, 0)
+              const { cash: cashTotal, qris: qrisTotal } = calcMethodTotals(txPaid)
               const discountTotal = transactions.filter((t) => t.status === 'PAID').reduce((s, t) => s + t.discount_amount, 0)
               const netRevenue = omzet - discountTotal
               const profit = netRevenue - expenseTotal
@@ -1315,25 +1807,31 @@ export default function App() {
               return (
                 <div style={{ display: 'grid', gap: 16 }}>
                   {/* KPI row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
+                  <div className="gc-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10 }}>
                     <Pill label="Gross Omzet" value={fmtRp(omzet)} />
                     <Pill label="Discounts" value={`−${fmtRp(discountTotal)}`} color={discountTotal > 0 ? '#C89696' : undefined} />
                     <Pill label="Net Revenue" value={fmtRp(netRevenue)} color="#A8C5A0" />
                     <Pill label="Expenses" value={fmtRp(expenseTotal)} color="#E0B88A" />
+                    <Pill label="Exp Cash" value={fmtRp(expenseCash)} color="#E0B88A" />
+                    <Pill label="Exp QRIS" value={fmtRp(expenseQris)} color="#9BB8D0" />
                     <Pill label="Profit" value={fmtRp(profit)} color={profit >= 0 ? '#A8C5A0' : '#C89696'} />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div className="gc-finance-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                     {/* Payment breakdown */}
                     <Card>
                       <div style={{ padding: '16px 18px' }}>
                         <SectionHeader title="Payment" icon={<Banknote size={16} />} />
                         <div>
-                          {finRow('Cash', fmtRp(cashTotal))}
-                          {finRow('QRIS / Transfer', fmtRp(qrisTotal))}
+                          {finRow('Cash In', fmtRp(cashTotal))}
+                          {finRow('QRIS / Transfer In', fmtRp(qrisTotal))}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0 4px' }}>
                             <span style={{ fontSize: 13, fontWeight: 600 }}>Total Paid</span>
                             <span style={{ fontSize: 16, fontWeight: 700 }}>{fmtRp(omzet)}</span>
+                          </div>
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '0.5px solid rgba(255,255,255,0.06)' }}>
+                            {finRow('Exp Cash Out', fmtRp(expenseCash))}
+                            {finRow('Exp QRIS Out', fmtRp(expenseQris))}
                           </div>
                         </div>
                         <div style={{ marginTop: 14, display: 'grid', gap: 4 }}>
@@ -1350,15 +1848,30 @@ export default function App() {
                       </div>
                       <div style={{ overflow: 'auto', flex: 1, maxHeight: 420 }}>
                         {txPaid.length === 0 && <p style={{ padding: '24px 18px', fontSize: 13, color: 'rgba(255,255,255,0.2)' }}>None yet</p>}
-                        {txPaid.map((t) => (
-                          <div key={t.id} style={{ padding: '10px 18px', borderBottom: '0.5px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                              <p style={{ fontSize: 13, fontWeight: 600 }}>{t.session_id}</p>
-                              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{fmtTime(t.created_at)} · {t.payment_method}</p>
+                        {txPaid.map((t) => {
+                          const txReg = registrations.find(r => r.id === t.registration_id || r.session_id === t.session_id) ?? null
+                          const txItems = calcLineItems(txReg)
+                          return (
+                            <div key={t.id} style={{ padding: '10px 18px', borderBottom: '0.5px solid rgba(255,255,255,0.06)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <p style={{ fontSize: 13, fontWeight: 600 }}>{t.session_id}</p>
+                                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{fmtTime(t.created_at)} · {t.payment_method}</p>
+                                </div>
+                                <span style={{ fontSize: 13, fontWeight: 700 }}>{fmtRp(t.total_amount)}</span>
+                              </div>
+                              {txItems.length > 0 && (
+                                <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                  {txItems.map((item, i) => (
+                                    <span key={i} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'rgba(168,197,160,0.08)', color: 'rgba(168,197,160,0.65)', fontWeight: 500 }}>
+                                      {item.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                            <span style={{ fontSize: 13, fontWeight: 700 }}>{fmtRp(t.total_amount)}</span>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </Card>
 
@@ -1370,7 +1883,7 @@ export default function App() {
 
                       {/* Expense input form */}
                       <div style={{ padding: '0 18px 12px', borderBottom: '0.5px solid rgba(255,255,255,0.06)' }}>
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                           <input
                             type="text"
                             placeholder="Item"
@@ -1385,6 +1898,8 @@ export default function App() {
                             onChange={e => setExpensePrice(e.target.value)}
                             style={{ flex: 1, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', padding: '8px 10px', fontSize: 12, outline: 'none' }}
                           />
+                        </div>
+                        <div className="gc-expense-form-row" style={{ display: 'flex', gap: 6 }}>
                           <select
                             value={expenseCategory}
                             onChange={e => setExpenseCategory(e.target.value)}
@@ -1397,6 +1912,17 @@ export default function App() {
                             <option value="Marketing">Marketing</option>
                             <option value="Lainnya">Lainnya</option>
                           </select>
+                          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                            {(['CASH', 'QRIS'] as const).map(m => (
+                              <button key={m} onClick={() => setExpenseMetode(m)}
+                                style={{ border: 'none', borderRadius: 8, padding: '8px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                  background: expenseMetode === m ? (m === 'CASH' ? 'rgba(168,197,160,0.2)' : 'rgba(155,184,208,0.2)') : 'rgba(255,255,255,0.05)',
+                                  color: expenseMetode === m ? (m === 'CASH' ? '#A8C5A0' : '#9BB8D0') : 'rgba(255,255,255,0.3)',
+                                }}>
+                                {m}
+                              </button>
+                            ))}
+                          </div>
                           <button
                             disabled={!expenseItem.trim() || !expensePrice || !expenseCategory || expenseLoading}
                             onClick={async () => {
@@ -1405,6 +1931,7 @@ export default function App() {
                                 tanggal: todayKey(),
                                 keterangan: expenseItem.trim(),
                                 kategori: expenseCategory,
+                                metode_bayar: expenseMetode,
                                 jumlah: parseInt(expensePrice, 10) || 0,
                               }
                               const { data, error } = await supabase.from('expenses').insert(payload as never).select('*').single()
@@ -1415,6 +1942,7 @@ export default function App() {
                                 setExpenseItem('')
                                 setExpensePrice('')
                                 setExpenseCategory('')
+                                setExpenseMetode('CASH')
                               }
                               setExpenseLoading(false)
                             }}
@@ -1438,7 +1966,10 @@ export default function App() {
                           <div key={e.id} style={{ padding: '10px 18px', borderBottom: '0.5px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                               <p style={{ fontSize: 13, fontWeight: 600 }}>{e.keterangan}</p>
-                              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>{e.kategori}</p>
+                              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
+                                {e.kategori}
+                                <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: e.metode_bayar === 'QRIS' ? 'rgba(155,184,208,0.15)' : 'rgba(168,197,160,0.15)', color: e.metode_bayar === 'QRIS' ? '#9BB8D0' : '#A8C5A0' }}>{e.metode_bayar ?? 'CASH'}</span>
+                              </p>
                             </div>
                             <span style={{ fontSize: 13, fontWeight: 700, color: '#E0B88A' }}>{fmtRp(e.jumlah)}</span>
                           </div>
@@ -1472,8 +2003,7 @@ export default function App() {
               const mExpTotal = monthExp.reduce((s, e) => s + e.jumlah, 0)
               const mNet = mGross - mDiscount
               const mProfit = mNet - mExpTotal
-              const mCash = monthPaid.filter(t => t.payment_method === 'CASH').reduce((s, t) => s + t.total_amount, 0)
-              const mQris = monthPaid.filter(t => ['QRIS', 'ONLINE_QRIS', 'TRANSFER'].includes(t.payment_method ?? '')).reduce((s, t) => s + t.total_amount, 0)
+              const { cash: mCash, qris: mQris } = calcMethodTotals(monthPaid)
 
               // ── Daily breakdown ──
               const dailyMap = new Map<string, { revenue: number; tx: number; expense: number }>()
@@ -1512,9 +2042,44 @@ export default function App() {
               for (const e of monthExp) {
                 expByCat.set(e.kategori, (expByCat.get(e.kategori) ?? 0) + e.jumlah)
               }
+              const mExpCash = monthExp.filter(e => (e.metode_bayar ?? 'CASH') === 'CASH').reduce((s, e) => s + e.jumlah, 0)
+              const mExpQris = monthExp.filter(e => e.metode_bayar === 'QRIS').reduce((s, e) => s + e.jumlah, 0)
 
-              // ── Month nav ──
+              // ── Recap navigation helpers ──
+              const recapWeek = getWeekRange(weekOffset)
+
+              const recapDateRange: { start: string; end: string } = (() => {
+                if (recapMode === 'weekly') return { start: recapWeek.start, end: recapWeek.end }
+                if (recapMode === 'custom') return { start: customStart, end: customEnd }
+                // monthly: 26th prev → 25th current
+                const [y, m] = monthKey.split('-').map(Number)
+                return {
+                  start: new Date(y, m - 2, 26).toISOString().slice(0, 10),
+                  end:   new Date(y, m - 1, 25).toISOString().slice(0, 10),
+                }
+              })()
+
+              const monthLabel = (() => {
+                if (recapMode === 'weekly') return recapWeek.label
+                if (recapMode === 'custom') {
+                  const fmt = (s: string) => new Date(s).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+                  return `${fmt(customStart)} – ${fmt(customEnd)}`
+                }
+                const [y, m] = monthKey.split('-').map(Number)
+                const fmt = (d: Date) => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+                return `${fmt(new Date(y, m - 2, 26))} – ${fmt(new Date(y, m - 1, 25))}`
+              })()
+
               const changeMonth = (delta: number) => {
+                if (recapMode === 'weekly') {
+                  const next = weekOffset + delta
+                  setWeekOffset(next)
+                  const wr = getWeekRange(next)
+                  setMonthTx([]); setMonthExp([]); setMonthAtt([]); setCrewList([])
+                  setMonthLoaded(false)
+                  loadRecapRange(wr.start, wr.end)
+                  return
+                }
                 const [y, m] = monthKey.split('-').map(Number)
                 const d = new Date(y, m - 1 + delta, 1)
                 const key = d.toISOString().slice(0, 7)
@@ -1524,10 +2089,12 @@ export default function App() {
                 loadMonthData(key)
               }
 
-              const monthLabel = (() => {
-                const [y, m] = monthKey.split('-').map(Number)
-                return new Date(y, m - 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
-              })()
+              const loadCustomRange = () => {
+                if (!customStart || !customEnd || customStart > customEnd) return
+                setMonthTx([]); setMonthExp([]); setMonthAtt([]); setCrewList([])
+                setMonthLoaded(false)
+                loadRecapRange(customStart, customEnd)
+              }
 
               if (monthLoading) {
                 return <div style={{ padding: 40, textAlign: 'center', color: 'rgba(255,255,255,0.3)' }}>Loading {monthLabel}…</div>
@@ -1535,28 +2102,95 @@ export default function App() {
 
               return (
                 <div style={{ display: 'grid', gap: 16 }}>
-                  {/* Month navigation */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                    <button onClick={() => changeMonth(-1)} style={{ border: 'none', background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 12px', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                      <ChevronLeft size={16} />
-                    </button>
-                    <h2 style={{ fontSize: 18, fontWeight: 700, minWidth: 180, textAlign: 'center' }}>{monthLabel}</h2>
-                    <button onClick={() => changeMonth(1)} style={{ border: 'none', background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 12px', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                      <ChevronRight size={16} />
-                    </button>
+                  {/* ── Recap mode picker + navigation ── */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {/* Mode toggle */}
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                      {(['monthly', 'weekly', 'custom'] as const).map(mode => (
+                        <button
+                          key={mode}
+                          onClick={() => {
+                            setRecapMode(mode)
+                            setMonthTx([]); setMonthExp([]); setMonthAtt([]); setCrewList([])
+                            setMonthLoaded(false)
+                            if (mode === 'monthly') loadMonthData(monthKey)
+                            else if (mode === 'weekly') {
+                              setWeekOffset(0)
+                              const wr = getWeekRange(0)
+                              loadRecapRange(wr.start, wr.end)
+                            }
+                            // custom: user picks range then clicks Load
+                          }}
+                          style={{
+                            border: 'none', borderRadius: 8, padding: '6px 14px',
+                            fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                            background: recapMode === mode ? 'rgba(98,33,40,0.7)' : 'rgba(255,255,255,0.06)',
+                            color: recapMode === mode ? '#fff' : 'rgba(255,255,255,0.45)',
+                          }}
+                        >
+                          {mode === 'monthly' ? 'Bulanan' : mode === 'weekly' ? 'Mingguan' : 'Manual'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Custom date-range picker */}
+                    {recapMode === 'custom' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <input
+                          type="date"
+                          value={customStart}
+                          onChange={e => setCustomStart(e.target.value)}
+                          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', padding: '6px 10px', fontSize: 13 }}
+                        />
+                        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>s/d</span>
+                        <input
+                          type="date"
+                          value={customEnd}
+                          onChange={e => setCustomEnd(e.target.value)}
+                          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#fff', padding: '6px 10px', fontSize: 13 }}
+                        />
+                        <button
+                          onClick={loadCustomRange}
+                          disabled={!customStart || !customEnd || customStart > customEnd}
+                          style={{ background: '#622128', border: 'none', borderRadius: 8, color: '#fff', padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Load
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Period navigation (monthly or weekly) */}
+                    {recapMode !== 'custom' && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+                        <button onClick={() => changeMonth(-1)} style={{ border: 'none', background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 12px', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <ChevronLeft size={16} />
+                        </button>
+                        <h2 style={{ fontSize: 16, fontWeight: 700, minWidth: 200, textAlign: 'center' }}>{monthLabel}</h2>
+                        <button onClick={() => changeMonth(1)} style={{ border: 'none', background: 'rgba(255,255,255,0.06)', borderRadius: 10, padding: '8px 12px', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Label for custom after load */}
+                    {recapMode === 'custom' && monthLoaded && (
+                      <div style={{ textAlign: 'center', fontSize: 14, fontWeight: 700, color: 'rgba(255,255,255,0.7)' }}>{monthLabel}</div>
+                    )}
                   </div>
 
                   {/* KPI row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
+                  <div className="gc-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 10 }}>
                     <Pill label="Gross" value={fmtRp(mGross)} />
                     <Pill label="Discounts" value={`−${fmtRp(mDiscount)}`} color={mDiscount > 0 ? '#C89696' : undefined} />
                     <Pill label="Net Revenue" value={fmtRp(mNet)} color="#A8C5A0" />
                     <Pill label="Expenses" value={fmtRp(mExpTotal)} color="#E0B88A" />
+                    <Pill label="Exp Cash" value={fmtRp(mExpCash)} color="#E0B88A" />
+                    <Pill label="Exp QRIS" value={fmtRp(mExpQris)} color="#9BB8D0" />
                     <Pill label="Payroll" value={fmtRp(totalPayroll)} color="#9BB8D0" />
                     <Pill label="Profit" value={fmtRp(mProfit - totalPayroll)} color={mProfit - totalPayroll >= 0 ? '#A8C5A0' : '#C89696'} />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="gc-monthly-main-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     {/* ── Daily Revenue Chart ── */}
                     <Card>
                       <div style={{ padding: '16px 18px' }}>
@@ -1607,9 +2241,9 @@ export default function App() {
                           <input type="text" placeholder="Item" value={monthExpItem} onChange={e => setMonthExpItem(e.target.value)}
                             style={{ flex: 2, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', padding: '7px 10px', fontSize: 11, outline: 'none' }} />
                         </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div className="gc-expense-form-row" style={{ display: 'flex', gap: 6 }}>
                           <input type="number" placeholder="Price" value={monthExpPrice} onChange={e => setMonthExpPrice(e.target.value)}
-                            style={{ flex: 1, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', padding: '7px 10px', fontSize: 11, outline: 'none' }} />
+                            style={{ flex: 1, minWidth: 80, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', padding: '7px 10px', fontSize: 11, outline: 'none' }} />
                           <select value={monthExpCategory} onChange={e => setMonthExpCategory(e.target.value)}
                             style={{ flex: 1, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: monthExpCategory ? '#fff' : 'rgba(255,255,255,0.35)', padding: '7px 6px', fontSize: 11, outline: 'none', appearance: 'none' }}>
                             <option value="" disabled>Category</option>
@@ -1619,6 +2253,17 @@ export default function App() {
                             <option value="Marketing">Marketing</option>
                             <option value="Lainnya">Lainnya</option>
                           </select>
+                          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                            {(['CASH', 'QRIS'] as const).map(m => (
+                              <button key={m} onClick={() => setMonthExpMetode(m)}
+                                style={{ border: 'none', borderRadius: 7, padding: '7px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                                  background: monthExpMetode === m ? (m === 'CASH' ? 'rgba(168,197,160,0.2)' : 'rgba(155,184,208,0.2)') : 'rgba(255,255,255,0.05)',
+                                  color: monthExpMetode === m ? (m === 'CASH' ? '#A8C5A0' : '#9BB8D0') : 'rgba(255,255,255,0.3)',
+                                }}>
+                                {m}
+                              </button>
+                            ))}
+                          </div>
                           <button
                             disabled={!monthExpItem.trim() || !monthExpPrice || !monthExpCategory || expenseLoading}
                             onClick={async () => {
@@ -1627,6 +2272,7 @@ export default function App() {
                                 tanggal: monthExpDate || todayKey(),
                                 keterangan: monthExpItem.trim(),
                                 kategori: monthExpCategory,
+                                metode_bayar: monthExpMetode,
                                 jumlah: parseInt(monthExpPrice, 10) || 0,
                               } as never).select('*').single()
                               if (error) { alert(`Gagal: ${error.message}`) }
@@ -1634,7 +2280,7 @@ export default function App() {
                                 setMonthExp(prev => [data as Expense, ...prev])
                                 // Also add to today's expenses if same day
                                 if ((data as Expense).tanggal === todayKey()) setExpenses(prev => [data as Expense, ...prev])
-                                setMonthExpItem(''); setMonthExpPrice(''); setMonthExpCategory('')
+                                setMonthExpItem(''); setMonthExpPrice(''); setMonthExpCategory(''); setMonthExpMetode('CASH')
                               }
                               setExpenseLoading(false)
                             }}
@@ -1658,7 +2304,10 @@ export default function App() {
                           <div key={e.id} style={{ padding: '8px 18px', borderBottom: '0.5px solid rgba(255,255,255,0.04)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                               <p style={{ fontSize: 12, fontWeight: 600 }}>{e.keterangan}</p>
-                              <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>{e.tanggal} · {e.kategori}</p>
+                              <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)' }}>
+                                {e.tanggal} · {e.kategori}
+                                <span style={{ marginLeft: 5, padding: '1px 5px', borderRadius: 3, fontSize: 9, fontWeight: 700, background: e.metode_bayar === 'QRIS' ? 'rgba(155,184,208,0.15)' : 'rgba(168,197,160,0.15)', color: e.metode_bayar === 'QRIS' ? '#9BB8D0' : '#A8C5A0' }}>{e.metode_bayar ?? 'CASH'}</span>
+                              </p>
                             </div>
                             <span style={{ fontSize: 12, fontWeight: 700, color: '#E0B88A' }}>{fmtRp(e.jumlah)}</span>
                           </div>
@@ -1676,88 +2325,115 @@ export default function App() {
                       </div>
 
                       {/* Table header */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 0.8fr 1fr 1fr 1fr 1fr 1.2fr 0.4fr', gap: 8, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                      <div className="gc-payroll-table-header" style={{ display: 'grid', gridTemplateColumns: '2fr 0.8fr 1fr 1fr 1fr 1fr 1.2fr 0.4fr', gap: 8, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                         {['Crew', 'Shifts', 'Base', 'Late', 'Penalty', 'Bonus', 'Net Pay', ''].map(h => (
                           <span key={h} style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
                         ))}
                       </div>
 
                       {/* Rows */}
-                      {payrollRows.map(r => (
-                        <div key={r.crew.id} style={{ display: 'grid', gridTemplateColumns: '2fr 0.8fr 1fr 1fr 1fr 1fr 1.2fr 0.4fr', gap: 8, padding: '10px 0', borderBottom: '0.5px solid rgba(255,255,255,0.04)', alignItems: 'center' }}>
-                          <div>
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>{r.crew.nama}</span>
-                            {r.crew.status_gaji === 'INTERN' && (
-                              <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 10, background: 'rgba(155,184,208,0.15)', color: '#9BB8D0' }}>INTERN</span>
-                            )}
-                          </div>
-                          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{r.shifts}</span>
-                          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{fmtRp(r.totalBase)}</span>
-                          <span style={{ fontSize: 12, color: r.totalLate > 0 ? '#E0B88A' : 'rgba(255,255,255,0.3)' }}>{r.totalLate}m</span>
-                          <span style={{ fontSize: 12, color: r.totalPenalty > 0 ? '#C89696' : 'rgba(255,255,255,0.3)' }}>{r.totalPenalty > 0 ? `−${fmtRp(r.totalPenalty)}` : '—'}</span>
-                          <span style={{ fontSize: 12, color: r.totalBonus > 0 ? '#A8C5A0' : 'rgba(255,255,255,0.3)' }}>{r.totalBonus > 0 ? `+${fmtRp(r.totalBonus)}` : '—'}</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: r.crew.status_gaji === 'INTERN' ? 'rgba(255,255,255,0.25)' : '#fff' }}>{fmtRp(r.net)}</span>
-                          <button
-                            onClick={async () => {
-                              // Render payslip content into hidden div, then capture
-                              const el = payslipRef.current
-                              if (!el) return
-                              const monthLabel = new Date(monthKey + '-01').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
-                              el.innerHTML = `
-                                <div style="width:400px;padding:32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff;color:#1C1C1E;">
-                                  <div style="text-align:center;margin-bottom:20px;">
-                                    <img src="/mera-logo-black.png" style="height:32px;margin-bottom:8px;" />
-                                    <h2 style="margin:0;font-size:16px;font-weight:700;">Slip Gaji</h2>
-                                    <p style="margin:4px 0 0;font-size:12px;color:#888;">${monthLabel}</p>
-                                  </div>
-                                  <div style="border-top:2px solid #622128;padding-top:16px;">
-                                    <p style="margin:0 0 12px;font-size:14px;font-weight:700;">${r.crew.nama}${r.crew.status_gaji === 'INTERN' ? ' <span style="font-size:10px;color:#9BB8D0;background:rgba(155,184,208,0.15);padding:2px 8px;border-radius:10px;margin-left:8px;">INTERN</span>' : ''}</p>
-                                    <table style="width:100%;border-collapse:collapse;font-size:13px;">
-                                      <tr style="border-bottom:1px solid #eee;">
-                                        <td style="padding:8px 0;color:#666;">Total Shift</td>
-                                        <td style="padding:8px 0;text-align:right;font-weight:600;">${r.shifts} shift</td>
-                                      </tr>
-                                      <tr style="border-bottom:1px solid #eee;">
-                                        <td style="padding:8px 0;color:#666;">Gaji Pokok</td>
-                                        <td style="padding:8px 0;text-align:right;font-weight:600;">${fmtRp(r.totalBase)}</td>
-                                      </tr>
-                                      <tr style="border-bottom:1px solid #eee;">
-                                        <td style="padding:8px 0;color:#666;">Keterlambatan</td>
-                                        <td style="padding:8px 0;text-align:right;color:${r.totalLate > 0 ? '#B8860B' : '#aaa'};">${r.totalLate} menit</td>
-                                      </tr>
-                                      <tr style="border-bottom:1px solid #eee;">
-                                        <td style="padding:8px 0;color:#666;">Potongan</td>
-                                        <td style="padding:8px 0;text-align:right;color:${r.totalPenalty > 0 ? '#C00' : '#aaa'};">${r.totalPenalty > 0 ? '−' + fmtRp(r.totalPenalty) : '—'}</td>
-                                      </tr>
-                                      <tr style="border-bottom:1px solid #eee;">
-                                        <td style="padding:8px 0;color:#666;">Bonus</td>
-                                        <td style="padding:8px 0;text-align:right;color:${r.totalBonus > 0 ? '#2E7D32' : '#aaa'};">${r.totalBonus > 0 ? '+' + fmtRp(r.totalBonus) : '—'}</td>
-                                      </tr>
-                                      <tr>
-                                        <td style="padding:12px 0;font-weight:700;font-size:14px;">Total Diterima</td>
-                                        <td style="padding:12px 0;text-align:right;font-weight:700;font-size:16px;color:#622128;">${fmtRp(r.net)}</td>
-                                      </tr>
-                                    </table>
-                                  </div>
-                                  <div style="margin-top:20px;padding-top:12px;border-top:1px solid #eee;text-align:center;">
-                                    <p style="margin:0;font-size:10px;color:#aaa;">Dicetak oleh Méra OS · ${new Date().toLocaleDateString('id-ID')}</p>
-                                  </div>
+                      {payrollRows.map(r => {
+                        const mLabel = new Date(monthKey + '-01').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+                        const handleDownload = async () => {
+                          const el = payslipRef.current
+                          if (!el) return
+                          el.innerHTML = `
+                            <div style="width:400px;padding:32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#fff;color:#1C1C1E;">
+                              <div style="text-align:center;margin-bottom:20px;">
+                                <img src="/mera-logo-black.png" style="height:32px;margin-bottom:8px;" />
+                                <h2 style="margin:0;font-size:16px;font-weight:700;">Slip Gaji</h2>
+                                <p style="margin:4px 0 0;font-size:12px;color:#888;">${mLabel}</p>
+                              </div>
+                              <div style="border-top:2px solid #622128;padding-top:16px;">
+                                <p style="margin:0 0 12px;font-size:14px;font-weight:700;">${r.crew.nama}${r.crew.status_gaji === 'INTERN' ? ' <span style="font-size:10px;color:#9BB8D0;background:rgba(155,184,208,0.15);padding:2px 8px;border-radius:10px;margin-left:8px;">INTERN</span>' : ''}</p>
+                                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                                  <tr style="border-bottom:1px solid #eee;">
+                                    <td style="padding:8px 0;color:#666;">Total Shift</td>
+                                    <td style="padding:8px 0;text-align:right;font-weight:600;">${r.shifts} shift</td>
+                                  </tr>
+                                  <tr style="border-bottom:1px solid #eee;">
+                                    <td style="padding:8px 0;color:#666;">Gaji Pokok</td>
+                                    <td style="padding:8px 0;text-align:right;font-weight:600;">${fmtRp(r.totalBase)}</td>
+                                  </tr>
+                                  <tr style="border-bottom:1px solid #eee;">
+                                    <td style="padding:8px 0;color:#666;">Keterlambatan</td>
+                                    <td style="padding:8px 0;text-align:right;color:${r.totalLate > 0 ? '#B8860B' : '#aaa'};">${r.totalLate} menit</td>
+                                  </tr>
+                                  <tr style="border-bottom:1px solid #eee;">
+                                    <td style="padding:8px 0;color:#666;">Potongan</td>
+                                    <td style="padding:8px 0;text-align:right;color:${r.totalPenalty > 0 ? '#C00' : '#aaa'};">${r.totalPenalty > 0 ? '−' + fmtRp(r.totalPenalty) : '—'}</td>
+                                  </tr>
+                                  <tr style="border-bottom:1px solid #eee;">
+                                    <td style="padding:8px 0;color:#666;">Bonus</td>
+                                    <td style="padding:8px 0;text-align:right;color:${r.totalBonus > 0 ? '#2E7D32' : '#aaa'};">${r.totalBonus > 0 ? '+' + fmtRp(r.totalBonus) : '—'}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style="padding:12px 0;font-weight:700;font-size:14px;">Total Diterima</td>
+                                    <td style="padding:12px 0;text-align:right;font-weight:700;font-size:16px;color:#622128;">${fmtRp(r.net)}</td>
+                                  </tr>
+                                </table>
+                              </div>
+                              <div style="margin-top:20px;padding-top:12px;border-top:1px solid #eee;text-align:center;">
+                                <p style="margin:0;font-size:10px;color:#aaa;">Dicetak oleh Méra OS · ${new Date().toLocaleDateString('id-ID')}</p>
+                              </div>
+                            </div>
+                          `
+                          const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 3, useCORS: true, logging: false })
+                          const link = document.createElement('a')
+                          link.download = `slip-gaji-${r.crew.nama.replace(/\s+/g, '-').toLowerCase()}-${monthKey}.png`
+                          link.href = canvas.toDataURL('image/png')
+                          link.click()
+                          el.innerHTML = ''
+                        }
+
+                        return (
+                          <div key={r.crew.id}>
+                            {/* Desktop: table row */}
+                            <div className="gc-payroll-row-desktop" style={{ display: 'grid', gridTemplateColumns: '2fr 0.8fr 1fr 1fr 1fr 1fr 1.2fr 0.4fr', gap: 8, padding: '10px 0', borderBottom: '0.5px solid rgba(255,255,255,0.04)', alignItems: 'center' }}>
+                              <div>
+                                <span style={{ fontSize: 13, fontWeight: 600 }}>{r.crew.nama}</span>
+                                {r.crew.status_gaji === 'INTERN' && (
+                                  <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 10, background: 'rgba(155,184,208,0.15)', color: '#9BB8D0' }}>INTERN</span>
+                                )}
+                              </div>
+                              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{r.shifts}</span>
+                              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{fmtRp(r.totalBase)}</span>
+                              <span style={{ fontSize: 12, color: r.totalLate > 0 ? '#E0B88A' : 'rgba(255,255,255,0.3)' }}>{r.totalLate}m</span>
+                              <span style={{ fontSize: 12, color: r.totalPenalty > 0 ? '#C89696' : 'rgba(255,255,255,0.3)' }}>{r.totalPenalty > 0 ? `−${fmtRp(r.totalPenalty)}` : '—'}</span>
+                              <span style={{ fontSize: 12, color: r.totalBonus > 0 ? '#A8C5A0' : 'rgba(255,255,255,0.3)' }}>{r.totalBonus > 0 ? `+${fmtRp(r.totalBonus)}` : '—'}</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: r.crew.status_gaji === 'INTERN' ? 'rgba(255,255,255,0.25)' : '#fff' }}>{fmtRp(r.net)}</span>
+                              <button onClick={handleDownload} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'rgba(255,255,255,0.3)' }} title="Download Slip Gaji">
+                                <Download size={14} />
+                              </button>
+                            </div>
+
+                            {/* Mobile: card layout */}
+                            <div className="gc-payroll-card-mobile" style={{ padding: '12px 0', borderBottom: '0.5px solid rgba(255,255,255,0.06)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                                <div>
+                                  <span style={{ fontSize: 14, fontWeight: 700 }}>{r.crew.nama}</span>
+                                  {r.crew.status_gaji === 'INTERN' && (
+                                    <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 10, background: 'rgba(155,184,208,0.15)', color: '#9BB8D0' }}>INTERN</span>
+                                  )}
                                 </div>
-                              `
-                              const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 3, useCORS: true, logging: false })
-                              const link = document.createElement('a')
-                              link.download = `slip-gaji-${r.crew.nama.replace(/\s+/g, '-').toLowerCase()}-${monthKey}.png`
-                              link.href = canvas.toDataURL('image/png')
-                              link.click()
-                              el.innerHTML = ''
-                            }}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'rgba(255,255,255,0.3)' }}
-                            title="Download Slip Gaji"
-                          >
-                            <Download size={14} />
-                          </button>
-                        </div>
-                      ))}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ fontSize: 15, fontWeight: 700, color: r.crew.status_gaji === 'INTERN' ? 'rgba(255,255,255,0.25)' : '#fff' }}>{fmtRp(r.net)}</span>
+                                  <button onClick={handleDownload} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: 8, cursor: 'pointer', padding: '6px 8px', color: 'rgba(255,255,255,0.4)', display: 'flex', alignItems: 'center' }} title="Download Slip Gaji">
+                                    <Download size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.04)', padding: '3px 8px', borderRadius: 6 }}>{r.shifts} shift</span>
+                                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.04)', padding: '3px 8px', borderRadius: 6 }}>Base {fmtRp(r.totalBase)}</span>
+                                {r.totalLate > 0 && <span style={{ fontSize: 11, color: '#E0B88A', background: 'rgba(224,184,138,0.08)', padding: '3px 8px', borderRadius: 6 }}>{r.totalLate}m late</span>}
+                                {r.totalPenalty > 0 && <span style={{ fontSize: 11, color: '#C89696', background: 'rgba(200,150,150,0.08)', padding: '3px 8px', borderRadius: 6 }}>−{fmtRp(r.totalPenalty)}</span>}
+                                {r.totalBonus > 0 && <span style={{ fontSize: 11, color: '#A8C5A0', background: 'rgba(168,197,160,0.08)', padding: '3px 8px', borderRadius: 6 }}>+{fmtRp(r.totalBonus)}</span>}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
 
                       {payrollRows.length === 0 && <p style={{ padding: '16px 0', fontSize: 13, color: 'rgba(255,255,255,0.2)' }}>No attendance records this month</p>}
 
@@ -1784,7 +2460,7 @@ export default function App() {
       {/* ═══════════════════════════════════════════════════ */}
       {showPayModal && payTx && (() => {
         const payReg = registrations.find(r => r.id === payTx.registration_id) ?? null
-        // Build a BookingAddons object from sessionAddons for preview
+        // Build merged addons: booking add-ons + any add-ons added during session
         const sessionAddonsArr: string[] = [];
         Object.entries(sessionAddons).forEach(([idStr, qty]) => {
           const prod = products.find(p => p.id === Number(idStr) && p.is_addon)
@@ -1792,11 +2468,12 @@ export default function App() {
             for (let i = 0; i < qty; i++) sessionAddonsArr.push(prod.nama)
           }
         })
-        const previewAddons: BookingAddons = {
+        const bookingSelected = (payReg?.addons as BookingAddons | null)?.selected_addons ?? []
+        const mergedAddons: BookingAddons = {
           ...(payReg?.addons as BookingAddons | null),
-          selected_addons: sessionAddonsArr,
+          selected_addons: [...bookingSelected, ...sessionAddonsArr],
         }
-        const allItems = calcBookingLineItems(products, previewAddons)
+        const allItems = calcBookingLineItems(products, mergedAddons)
         const subtotal = allItems.reduce((s, i) => s + i.price, 0)
         const discountAmt = Math.max(0, Math.min(subtotal, parseInt(discountInput || '0', 10) || 0))
         const grandTotal = subtotal - discountAmt
@@ -1989,9 +2666,9 @@ export default function App() {
                       baseMethod: 'ONLINE_QRIS',
                       addonAmount: remainingToPay,
                       addonMethod: addonPaymentPick ?? 'CASH',
-                    })
+                    }, mergedAddons)
                   } else if (paymentMethodPick) {
-                    markTxPaid(payTx, paymentMethodPick, grandTotal, discountAmt, discountReasonInput)
+                    markTxPaid(payTx, paymentMethodPick, grandTotal, discountAmt, discountReasonInput, undefined, mergedAddons)
                   }
                 }}
                 disabled={!canPay || actionLoading}
@@ -2029,7 +2706,10 @@ export default function App() {
         const igDmUrl = igHandle ? `https://ig.me/m/${igHandle}` : ''
         const receiptLineItems = calcLineItems(reg)
         const receiptSubtotal = receiptLineItems.reduce((s, i) => s + i.price, 0)
-        const splitNote = tx.discount_reason?.match(/\[Split: (.+?)\]/)?.[1] ?? null
+        const splitParsed = parseSplitNote(tx.discount_reason)
+        const splitNote = splitParsed
+          ? `${splitParsed.baseMethod} ${fmtRp(splitParsed.baseAmount)} + ${splitParsed.addonMethod} ${fmtRp(splitParsed.addonAmount)}`
+          : null
 
         const downloadReceiptPng = async () => {
           if (!receiptRef.current) return
@@ -2084,9 +2764,9 @@ export default function App() {
                     </p>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: 20, fontWeight: 800, color: '#A8C5A0', margin: 0 }}>{fmtRp(tx.total_amount)}</p>
+                    <p style={{ fontSize: 20, fontWeight: 800, color: '#A8C5A0', margin: 0 }}>{fmtRp(tx.total_amount - tx.discount_amount)}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end', marginTop: 2 }}>
-                      {tx.discount_amount > 0 && <span style={{ fontSize: 10, color: '#C89696' }}>−{fmtRp(tx.discount_amount)}</span>}
+                      {tx.discount_amount > 0 && <span style={{ fontSize: 10, color: '#C89696' }}>−{fmtRp(tx.discount_amount)} disc.</span>}
                       <StatusPill label={tx.payment_method ?? 'PAID'} color="#A8C5A0" />
                     </div>
                   </div>
@@ -2094,6 +2774,148 @@ export default function App() {
                 {splitNote && (
                   <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 6, textAlign: 'center' }}>Split: {splitNote}</p>
                 )}
+              </div>
+
+              {/* Line items breakdown */}
+              {receiptLineItems.length > 0 && (
+                <div style={{ padding: '10px 22px 0' }}>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 6, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Rincian Item</p>
+                  <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: '10px 14px', border: '0.5px solid rgba(255,255,255,0.06)' }}>
+                    {receiptLineItems.map((item, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: i < receiptLineItems.length - 1 ? 5 : 0 }}>
+                        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{item.label}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtRp(item.price)}</span>
+                      </div>
+                    ))}
+                    {receiptLineItems.length > 1 && (
+                      <div style={{ borderTop: '0.5px solid rgba(255,255,255,0.07)', marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>Subtotal</span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtRp(receiptSubtotal)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Edit Transaksi ── */}
+              <div style={{ padding: '12px 22px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', margin: 0 }}>Edit Transaksi</p>
+                  {txEditSaveState === 'saving' && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em' }}>Menyimpan…</span>}
+                  {txEditSaveState === 'saved'  && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
+                  {txEditSaveState === 'error'  && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 14, padding: '14px 16px', border: '0.5px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+                  {/* Payment method */}
+                  <div>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>Metode Bayar</p>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {(['CASH', 'TRANSFER', 'QRIS', 'ONLINE_QRIS'] as PaymentMethod[]).map(m => {
+                        const labels: Record<PaymentMethod, string> = { CASH: '💵 Cash', TRANSFER: '🏦 Transfer', QRIS: '📱 QRIS', ONLINE_QRIS: '🌐 Online QRIS' }
+                        const active = txEditMethod === m
+                        return (
+                          <button key={m}
+                            onClick={() => {
+                              setTxEditMethod(m)
+                              saveTxEdit(tx.id, { payment_method: m })
+                            }}
+                            style={{
+                              border: `1px solid ${active ? 'rgba(168,197,160,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                              borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                              background: active ? 'rgba(168,197,160,0.15)' : 'rgba(255,255,255,0.04)',
+                              color: active ? '#A8C5A0' : 'rgba(255,255,255,0.4)',
+                              transition: 'all 0.15s',
+                            }}
+                          >{labels[m]}</button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Discount */}
+                  <div>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>Diskon (Rp)</p>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={txEditDiscount}
+                      onChange={e => {
+                        const val = e.target.value
+                        setTxEditDiscount(val)
+                        const amt = parseInt(val, 10) || 0
+                        if (amt === 0) {
+                          saveTxEdit(tx.id, { discount_amount: 0, discount_reason: null }, 400)
+                        } else if (txEditDiscountReason.trim()) {
+                          saveTxEdit(tx.id, { discount_amount: amt, discount_reason: txEditDiscountReason.trim() }, 400)
+                        }
+                      }}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: 13, fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  </div>
+
+                  {/* Discount reason — wajib jika diskon > 0 (Rule 8) */}
+                  {(parseInt(txEditDiscount, 10) || 0) > 0 && (
+                    <div>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+                        Alasan Diskon <span style={{ color: '#C89696' }}>*wajib</span>
+                      </p>
+                      <input
+                        type="text"
+                        placeholder="Misal: Pelanggan setia / promo"
+                        value={txEditDiscountReason}
+                        onChange={e => {
+                          const reason = e.target.value
+                          setTxEditDiscountReason(reason)
+                          const amt = parseInt(txEditDiscount, 10) || 0
+                          if (reason.trim() && amt > 0) {
+                            saveTxEdit(tx.id, { discount_amount: amt, discount_reason: reason.trim() }, 400)
+                          }
+                        }}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: 10, border: `1px solid ${txEditDiscountReason.trim() ? 'rgba(255,255,255,0.1)' : 'rgba(200,150,150,0.4)'}`, background: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                      />
+                      {!txEditDiscountReason.trim() && (
+                        <p style={{ fontSize: 10, color: '#C89696', marginTop: 4 }}>Isi alasan diskon untuk menyimpan</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Add-ons — edit selected_addons di registrasi terkait */}
+                  {products.filter(p => p.is_addon && p.is_active).length > 0 && reg && (
+                    <div>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>Add-ons</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {products.filter(p => p.is_addon && p.is_active).map(addon => {
+                          const qty = txEditAddons[addon.nama] || 0
+                          return (
+                            <div key={addon.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '6px 12px', border: `1px solid ${qty > 0 ? '#A8C5A0' : 'rgba(255,255,255,0.1)'}` }}>
+                              <span style={{ flex: 1, fontSize: 13, color: qty > 0 ? '#A8C5A0' : 'rgba(255,255,255,0.5)', fontWeight: qty > 0 ? 600 : 400 }}>{addon.nama}</span>
+                              <button
+                                disabled={qty <= 0}
+                                onClick={() => {
+                                  const next = { ...txEditAddons, [addon.nama]: Math.max(0, qty - 1) }
+                                  setTxEditAddons(next)
+                                  saveTxRegAddons(reg.id, next, reg.addons as BookingAddons | null)
+                                }}
+                                style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 16, fontWeight: 700, cursor: qty > 0 ? 'pointer' : 'not-allowed', opacity: qty > 0 ? 1 : 0.3 }}
+                              >−</button>
+                              <span style={{ minWidth: 22, textAlign: 'center', fontSize: 14, fontWeight: 700, color: '#fff' }}>{qty}</span>
+                              <button
+                                disabled={qty >= 10}
+                                onClick={() => {
+                                  const next = { ...txEditAddons, [addon.nama]: qty + 1 }
+                                  setTxEditAddons(next)
+                                  saveTxRegAddons(reg.id, next, reg.addons as BookingAddons | null)
+                                }}
+                                style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 16, fontWeight: 700, cursor: qty < 10 ? 'pointer' : 'not-allowed', opacity: qty < 10 ? 1 : 0.3 }}
+                              >+</button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* ── Primary action: 1-tap DM flow ── */}
@@ -2237,7 +3059,7 @@ export default function App() {
                     )}
                   </div>
                   <p style={{ textAlign: 'center', fontSize: 10, color: '#999', margin: '6px 0', letterSpacing: 2 }}>━━━━━━━━━━━━━━━━━━━━</p>
-                  <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700 }}><span>TOTAL</span><span>{fmtRp(tx.total_amount)}</span></p>
+                  <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700 }}><span>TOTAL</span><span>{fmtRp(tx.total_amount - tx.discount_amount)}</span></p>
                   <p style={{ textAlign: 'center', fontSize: 10, color: '#999', margin: '6px 0', letterSpacing: 2 }}>━━━━━━━━━━━━━━━━━━━━</p>
                   <p style={{ margin: '4px 0', fontSize: 10, textAlign: 'center' }}>Payment: <strong>{tx.payment_method ?? 'PAID'}</strong> ✓</p>
                   {splitNote && <p style={{ margin: '2px 0', fontSize: 8, textAlign: 'center', color: '#888' }}>({splitNote})</p>}
@@ -2284,16 +3106,22 @@ export default function App() {
         const isPaid = linkedTx?.status === 'PAID'
         const isEditable = !['COMPLETED', 'EXPIRED'].includes(reg.status)
 
+        // Collect in-session add-ons for price preview
+        const drawerSessionArr: string[] = []
+        Object.entries(sessionAddons).forEach(([idStr, qty]) => {
+          const prod = products.find(p => p.id === Number(idStr) && p.is_addon)
+          if (prod) for (let i = 0; i < qty; i++) drawerSessionArr.push(prod.nama)
+        })
         const previewAddons: BookingAddons = {
           ...(reg.addons as BookingAddons | null),
           product_id: editPackageId,
-          // Convert editAddons to string[] for preview
+          // Convert editAddons to string[] for preview, merged with session add-ons
           selected_addons: (() => {
             const arr: string[] = [];
             Object.entries(editAddons).forEach(([name, qty]) => {
               for (let i = 0; i < qty; i++) arr.push(name)
             })
-            return arr
+            return [...arr, ...drawerSessionArr]
           })(),
           pax: editPax,
         }
@@ -2380,13 +3208,115 @@ export default function App() {
               {/* Scrollable edit fields */}
               <div style={{ flex: 1, overflow: 'auto', padding: '18px 22px' }}>
                 <div style={fieldSt}>
-                  <label style={labelSt}>Date</label>
-                  <input type="date" value={editDateInput} onChange={e => setEditDateInput(e.target.value)} style={{ ...inputSt, opacity: isEditable ? 1 : 0.5 }} disabled={!isEditable} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+                    <label style={{ ...labelSt, marginBottom: 0 }}>Date</label>
+                    {dateSaveState === 'saving' && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em' }}>Menyimpan…</span>}
+                    {dateSaveState === 'saved'  && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
+                    {dateSaveState === 'error'  && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
+                  </div>
+                  <input
+                    type="date"
+                    value={editDateInput}
+                    disabled={!isEditable || dateSaveState === 'saving'}
+                    style={{ ...inputSt, opacity: isEditable ? 1 : 0.5 }}
+                    onChange={async (e) => {
+                      const newDate = e.target.value
+                      setEditDateInput(newDate)
+                      if (!newDate || !detailReg || !isEditable) return
+
+                      // Conflict check with current time slot
+                      if (editTimeInput) {
+                        const studioKey = toStudioBucket(detailReg)
+                        const conflict = registrations.find(r =>
+                          r.id !== detailReg.id &&
+                          r.preferred_date === newDate &&
+                          r.preferred_time === editTimeInput &&
+                          toStudioBucket(r) === studioKey &&
+                          ['PENDING', 'VERIFIED', 'PROCESSED'].includes(r.status)
+                        )
+                        if (conflict) {
+                          const proceed = window.confirm(
+                            `⚠️ Konflik Jadwal!\n\n${conflict.customer_name} sudah booking tanggal ${newDate} jam ${editTimeInput} di studio yang sama.\n\nTetap simpan?`
+                          )
+                          if (!proceed) {
+                            setEditDateInput(detailReg.preferred_date || '')
+                            return
+                          }
+                        }
+                      }
+
+                      setDateSaveState('saving')
+                      const { error } = await (supabase.from('registrations') as any)
+                        .update({ preferred_date: newDate })
+                        .eq('id', detailReg.id)
+                      if (error) {
+                        setDateSaveState('error')
+                        setEditDateInput(detailReg.preferred_date || '')
+                        setTimeout(() => setDateSaveState('idle'), 3000)
+                      } else {
+                        setDateSaveState('saved')
+                        setRegistrations(prev => prev.map(r => r.id === detailReg.id ? { ...r, preferred_date: newDate } : r))
+                        setDetailReg(prev => prev ? { ...prev, preferred_date: newDate } : null)
+                        setTimeout(() => setDateSaveState('idle'), 2000)
+                      }
+                    }}
+                  />
                 </div>
 
                 <div style={fieldSt}>
-                  <label style={labelSt}>Time</label>
-                  <select value={editTimeInput} onChange={e => setEditTimeInput(e.target.value)} style={{ ...inputSt, opacity: isEditable ? 1 : 0.5 }} disabled={!isEditable}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+                    <label style={{ ...labelSt, marginBottom: 0 }}>Time</label>
+                    {timeSaveState === 'saving' && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em' }}>Menyimpan…</span>}
+                    {timeSaveState === 'saved'  && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
+                    {timeSaveState === 'error'  && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
+                  </div>
+                  <select
+                    value={editTimeInput}
+                    disabled={!isEditable || timeSaveState === 'saving'}
+                    style={{ ...inputSt, opacity: isEditable ? 1 : 0.5 }}
+                    onChange={async (e) => {
+                      const newTime = e.target.value
+                      setEditTimeInput(newTime)
+                      if (!newTime || !detailReg || !isEditable) return
+
+                      // Conflict check
+                      const studioKey = toStudioBucket(detailReg)
+                      const conflict = registrations.find(r =>
+                        r.id !== detailReg.id &&
+                        r.preferred_date === editDateInput &&
+                        r.preferred_time === newTime &&
+                        toStudioBucket(r) === studioKey &&
+                        ['PENDING', 'VERIFIED', 'PROCESSED'].includes(r.status)
+                      )
+                      if (conflict) {
+                        const proceed = window.confirm(
+                          `⚠️ Konflik Jadwal!\n\n${conflict.customer_name} sudah booking jam ${newTime} di studio yang sama.\n\nTetap simpan?`
+                        )
+                        if (!proceed) {
+                          setEditTimeInput(detailReg.preferred_time || '')
+                          return
+                        }
+                      }
+
+                      setTimeSaveState('saving')
+                      const { error } = await (supabase.from('registrations') as any)
+                        .update({ preferred_time: newTime })
+                        .eq('id', detailReg.id)
+
+                      if (error) {
+                        setTimeSaveState('error')
+                        setEditTimeInput(detailReg.preferred_time || '')
+                        setTimeout(() => setTimeSaveState('idle'), 3000)
+                      } else {
+                        setTimeSaveState('saved')
+                        setRegistrations(prev => prev.map(r =>
+                          r.id === detailReg.id ? { ...r, preferred_time: newTime } : r
+                        ))
+                        setDetailReg(prev => prev ? { ...prev, preferred_time: newTime } : null)
+                        setTimeout(() => setTimeSaveState('idle'), 2000)
+                      }
+                    }}
+                  >
                     <option value="">Select time</option>
                     {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -2394,7 +3324,18 @@ export default function App() {
 
                 <div style={fieldSt}>
                   <label style={labelSt}>Package</label>
-                  <select value={editPackageId ?? ''} onChange={e => setEditPackageId(Number(e.target.value) || null)} style={{ ...inputSt, opacity: isEditable ? 1 : 0.5 }} disabled={!isEditable}>
+                  <select
+                    value={editPackageId ?? ''}
+                    disabled={!isEditable}
+                    style={{ ...inputSt, opacity: isEditable ? 1 : 0.5 }}
+                    onChange={e => {
+                      const newId = Number(e.target.value) || null
+                      setEditPackageId(newId)
+                      if (detailReg && isEditable) {
+                        triggerAddonsSave(detailReg.id, editPax, editAddons, newId, detailReg.addons as BookingAddons | null)
+                      }
+                    }}
+                  >
                     <option value="">Select package</option>
                     {products.filter(p => !p.is_addon && p.is_active).map(p => (
                       <option key={p.id} value={p.id}>{p.nama}</option>
@@ -2407,39 +3348,25 @@ export default function App() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <button
                       type="button"
-                      onClick={() => isEditable && setEditPax(p => Math.max(1, p - 1))}
                       disabled={!isEditable || editPax <= 1}
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        border: 'none',
-                        background: 'rgba(255,255,255,0.08)',
-                        color: '#fff',
-                        fontSize: 20,
-                        fontWeight: 700,
-                        cursor: isEditable && editPax > 1 ? 'pointer' : 'not-allowed',
-                        opacity: isEditable && editPax > 1 ? 1 : 0.4,
-                        transition: 'opacity 0.15s',
+                      style={{ width: 32, height: 32, borderRadius: 16, border: 'none', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 20, fontWeight: 700, cursor: isEditable && editPax > 1 ? 'pointer' : 'not-allowed', opacity: isEditable && editPax > 1 ? 1 : 0.4, transition: 'opacity 0.15s' }}
+                      onClick={() => {
+                        if (!isEditable || editPax <= 1) return
+                        const n = editPax - 1
+                        setEditPax(n)
+                        if (detailReg) triggerAddonsSave(detailReg.id, n, editAddons, editPackageId, detailReg.addons as BookingAddons | null)
                       }}
                     >−</button>
                     <span style={{ minWidth: 32, textAlign: 'center', fontSize: 18, fontWeight: 700, color: '#fff' }}>{editPax}</span>
                     <button
                       type="button"
-                      onClick={() => isEditable && setEditPax(p => Math.min(20, p + 1))}
                       disabled={!isEditable || editPax >= 20}
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        border: 'none',
-                        background: 'rgba(255,255,255,0.08)',
-                        color: '#fff',
-                        fontSize: 20,
-                        fontWeight: 700,
-                        cursor: isEditable && editPax < 20 ? 'pointer' : 'not-allowed',
-                        opacity: isEditable && editPax < 20 ? 1 : 0.4,
-                        transition: 'opacity 0.15s',
+                      style={{ width: 32, height: 32, borderRadius: 16, border: 'none', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 20, fontWeight: 700, cursor: isEditable && editPax < 20 ? 'pointer' : 'not-allowed', opacity: isEditable && editPax < 20 ? 1 : 0.4, transition: 'opacity 0.15s' }}
+                      onClick={() => {
+                        if (!isEditable || editPax >= 20) return
+                        const n = editPax + 1
+                        setEditPax(n)
+                        if (detailReg) triggerAddonsSave(detailReg.id, n, editAddons, editPackageId, detailReg.addons as BookingAddons | null)
                       }}
                     >+</button>
                   </div>
@@ -2450,13 +3377,27 @@ export default function App() {
                     <label style={labelSt}>Add-ons</label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {products.filter(p => p.is_addon && p.is_active).map(addon => {
-                        const qty = (editAddons as any)[addon.nama] || 0;
+                        const qty = (editAddons as any)[addon.nama] || 0
                         return (
                           <div key={addon.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.04)', borderRadius: 10, padding: '6px 12px', border: `1px solid ${qty > 0 ? '#A8C5A0' : 'rgba(255,255,255,0.1)'}` }}>
                             <span style={{ flex: 1, color: qty > 0 ? '#A8C5A0' : 'rgba(255,255,255,0.55)', fontWeight: qty > 0 ? 600 : 400 }}>{addon.nama}</span>
-                            <button type="button" onClick={() => isEditable && setEditAddons((prev: any) => ({ ...prev, [addon.nama]: Math.max(0, (prev[addon.nama] || 0) - 1) }))} disabled={!isEditable || qty <= 0} style={{ width: 28, height: 28, borderRadius: 14, border: 'none', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 16, fontWeight: 700, cursor: isEditable && qty > 0 ? 'pointer' : 'not-allowed', opacity: isEditable && qty > 0 ? 1 : 0.4 }}>−</button>
+                            <button type="button" disabled={!isEditable || qty <= 0}
+                              style={{ width: 28, height: 28, borderRadius: 14, border: 'none', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 16, fontWeight: 700, cursor: isEditable && qty > 0 ? 'pointer' : 'not-allowed', opacity: isEditable && qty > 0 ? 1 : 0.4 }}
+                              onClick={() => {
+                                if (!isEditable || qty <= 0) return
+                                const next = { ...editAddons, [addon.nama]: Math.max(0, qty - 1) }
+                                setEditAddons(next)
+                                if (detailReg) triggerAddonsSave(detailReg.id, editPax, next, editPackageId, detailReg.addons as BookingAddons | null)
+                              }}>−</button>
                             <span style={{ minWidth: 24, textAlign: 'center', fontSize: 15, fontWeight: 700, color: '#fff' }}>{qty}</span>
-                            <button type="button" onClick={() => isEditable && setEditAddons((prev: any) => ({ ...prev, [addon.nama]: (prev[addon.nama] || 0) + 1 }))} disabled={!isEditable || qty >= 10} style={{ width: 28, height: 28, borderRadius: 14, border: 'none', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 16, fontWeight: 700, cursor: isEditable && qty < 10 ? 'pointer' : 'not-allowed', opacity: isEditable && qty < 10 ? 1 : 0.4 }}>+</button>
+                            <button type="button" disabled={!isEditable || qty >= 10}
+                              style={{ width: 28, height: 28, borderRadius: 14, border: 'none', background: 'rgba(255,255,255,0.08)', color: '#fff', fontSize: 16, fontWeight: 700, cursor: isEditable && qty < 10 ? 'pointer' : 'not-allowed', opacity: isEditable && qty < 10 ? 1 : 0.4 }}
+                              onClick={() => {
+                                if (!isEditable || qty >= 10) return
+                                const next = { ...editAddons, [addon.nama]: qty + 1 }
+                                setEditAddons(next)
+                                if (detailReg) triggerAddonsSave(detailReg.id, editPax, next, editPackageId, detailReg.addons as BookingAddons | null)
+                              }}>+</button>
                           </div>
                         )
                       })}
@@ -2468,7 +3409,12 @@ export default function App() {
                 {/* Price preview */}
                 {previewItems.length > 0 && (
                   <div style={{ padding: '14px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: 14, border: '0.5px solid rgba(255,255,255,0.07)' }}>
-                    <p style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>Price Preview</p>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <p style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: 0 }}>Price Preview</p>
+                      {addonsSaveState === 'saving' && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em' }}>Menyimpan…</span>}
+                      {addonsSaveState === 'saved'  && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
+                      {addonsSaveState === 'error'  && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
+                    </div>
                     {previewItems.map((item, i) => (
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                         <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{item.label}</span>
@@ -2485,11 +3431,6 @@ export default function App() {
 
               {/* Footer actions */}
               <div style={{ padding: '14px 22px', borderTop: '0.5px solid rgba(255,255,255,0.08)', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {isEditable && (
-                  <button onClick={handleSaveAllDetails} disabled={actionLoading} style={{ width: '100%', padding: '11px', border: 'none', borderRadius: 12, background: '#622128', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: actionLoading ? 0.6 : 1 }}>
-                    {actionLoading ? 'Saving...' : 'Save Changes'}
-                  </button>
-                )}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {reg.status === 'PENDING' && (
                     <button onClick={() => { advanceBooking(reg, 'VERIFIED'); setDetailReg(prev => prev ? { ...prev, status: 'VERIFIED' } : null) }} disabled={actionLoading} style={{ flex: 1, padding: '9px 12px', border: 'none', borderRadius: 10, background: 'rgba(155,184,208,0.18)', color: '#9BB8D0', fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
@@ -2512,6 +3453,16 @@ export default function App() {
                     </button>
                   )}
                 </div>
+                {/* Delete booking – available for any non-completed booking */}
+                {!isPaid && reg.status !== 'COMPLETED' && (
+                  <button
+                    onClick={handleDeleteBooking}
+                    disabled={actionLoading}
+                    style={{ width: '100%', padding: '9px', border: '1px solid rgba(200,150,150,0.2)', borderRadius: 10, background: 'rgba(200,150,150,0.05)', color: '#C89696', fontWeight: 600, fontSize: 12, cursor: actionLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, opacity: actionLoading ? 0.5 : 1 }}
+                  >
+                    <X size={12} /> Hapus Booking
+                  </button>
+                )}
               </div>
             </div>
           </div>

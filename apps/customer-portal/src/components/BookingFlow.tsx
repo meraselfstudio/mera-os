@@ -78,7 +78,7 @@ export const WEEKEND_SLOTS = [
 ]
 
 const BOOKING_TYPE_LABELS: Record<BookingType, { label: string; desc: string; icon: string }> = {
-    ONLINE_KEEPSLOT: { icon: '📌', label: 'Keep Slot', desc: 'Slot terkunci 6 jam setelah booking.' },
+    ONLINE_KEEPSLOT: { icon: '📌', label: 'Keep Slot', desc: 'Slot terkunci 6 jam setelah booking, Bayar Cash/QRIS langsung di Studio.' },
     ONLINE_QRIS: { icon: '💳', label: 'QRIS', desc: 'Bayar sekarang via QRIS — slot terjamin 100%' },
 }
 
@@ -258,6 +258,7 @@ export default function BookingFlow() {
     const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
 
     // ── Reschedule modal state ───────────────────────────────────
+    const [ticketLinkCopied, setTicketLinkCopied] = useState(false)
     const [showReschedule, setShowReschedule] = useState(false)
     const [rescDate, setRescDate] = useState('')
     const [rescTime, setRescTime] = useState('')
@@ -448,6 +449,42 @@ export default function BookingFlow() {
 
     const handleSubmit = async () => {
         setLoading(true)
+
+        // ── Final slot availability guard (race-condition prevention) ────────
+        // Re-query at submit time so two simultaneous browsers can't both book
+        // the same slot after the initial availability check passed for both.
+        if (state.preferredDate && state.preferredTime) {
+            const { data: slotCheck } = await supabase
+                .from('registrations')
+                .select('id, addons')
+                .eq('preferred_date', state.preferredDate)
+                .eq('preferred_time', state.preferredTime)
+                .in('status', ['PENDING', 'VERIFIED', 'PROCESSED'])
+
+            if (slotCheck && slotCheck.length > 0) {
+                const selected = state.selectedRoom
+                let blockRooms: string[] = []
+                if (selected === 'Basic Studio' || selected === 'Pas Photo') {
+                    blockRooms = ['Basic Studio', 'Pas Photo']
+                } else if (selected === 'Elevator Studio' || selected === 'Majestic Studio') {
+                    blockRooms = ['Elevator Studio', 'Majestic Studio']
+                } else {
+                    blockRooms = [selected || '']
+                }
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const conflict = (slotCheck as any[]).some(row =>
+                    blockRooms.includes(row.addons?.room)
+                )
+                if (conflict) {
+                    setLoading(false)
+                    alert('Maaf, slot waktu ini sudah tidak tersedia lagi. Silakan pilih waktu lain.')
+                    setStep('datetime')
+                    return
+                }
+            }
+        }
+        // ────────────────────────────────────────────────────────────────────
+
         const now = new Date()
         const expiresAt = state.bookingType === 'ONLINE_KEEPSLOT'
             ? new Date(now.getTime() + 6 * 60 * 60 * 1000).toISOString()
@@ -687,9 +724,10 @@ export default function BookingFlow() {
                                                     let isBw = false
                                                     const pkgName = pkg.nama.toLowerCase()
                                                     if (pkgName.includes('self photo')) { detailLines = ['1-2 Orang', '10 Menit Sesi foto', 'Unlimited Jepret', 'Free 1 Print - Basic Frame', 'Semua Soft Files Hitam Putih']; isBw = true }
+                                      
                                                     else if (pkgName.includes('party photo')) { detailLines = ['8 Orang', '15 Menit Sesi Foto', 'Unlimited Jepret', 'Free 2 Print - Basic Frame', 'Semua Soft Files Hitam Putih']; isBw = true }
-                                                    else if (pkgName.includes('pas photo basic')) { detailLines = ['1 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 2 Print', '1 Basic Frame, 1 Formal Print']; }
-                                                    else if (pkgName.includes('pas photo package')) { detailLines = ['2 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 3 Print', '1 Basic Frame, 2 Formal Print']; }
+                                                    else if (pkgName.includes('pas photo basic')) { detailLines = ['1 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 2 Print', '1 Basic Frame, 1 Formal Print (2x3, 3x4, 4x6)']; }
+                                                    else if (pkgName.includes('pas photo package')) { detailLines = ['2 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 3 Print', '2 Basic Frame, 1 Formal Print (2x3, 3x4, 4x6)']; }
                                                     else if (pkgName.includes('thematic basic')) { detailLines = ['1 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Semua Soft Files Hitam Putih']; isBw = true }
                                                     else if (pkgName.includes('thematic package')) { detailLines = ['2 Orang', '10 Menit Sesi Foto', 'Unlimited Jepret', 'Free 1 Print - Basic Frame', 'Semua Soft Files']; }
 
@@ -776,55 +814,72 @@ export default function BookingFlow() {
                                                         </label>
                                                     )}
 
-                                                    {/* Pax Config (Add Person) */}
-                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 4 }}>
-                                                        <span style={{ fontSize: TYPE.xs, color: '#FFFFFF', fontWeight: 700, letterSpacing: TRACK.soft }}>Jumlah Orang :</span>
-                                                        <div style={{ display: 'flex', alignItems: 'center', background: '#FFFFFF', borderRadius: 100, padding: '4px 6px' }}>
-                                                            <button onClick={() => setState(p => ({ ...p, pax: Math.max(1, p.pax - 1) }))}
-                                                                style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#EAE8E0', color: '#333', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-                                                            <span style={{ fontSize: TYPE.sm, fontWeight: 900, width: 32, textAlign: 'center', color: '#333' }}>{state.pax}</span>
-                                                            <button onClick={() => setState(p => {
-                                                                const n = p.selectedPackage?.nama.toLowerCase() || ''
-                                                                let maxLimit = p.selectedPackage?.max_orang || 20
-                                                                if (n.includes('party')) maxLimit = 20
-                                                                if (n.includes('pas photo package')) maxLimit = 2
-                                                                if (n.includes('thematic package')) maxLimit = 8
-                                                                return { ...p, pax: Math.min(maxLimit, p.pax + 1) }
-                                                            })} style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: '#EAE8E0', color: '#333', fontSize: 16, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                                                        </div>
-                                                        <span style={{ fontSize: TYPE.sm, fontWeight: 800, color: '#FFF' }}></span>
-                                                    </div>
+                                                    {/* Pax Config — single pill with embedded stepper */}
+                                                    {(() => {
+                                                        const pkgName = state.selectedPackage?.nama.toLowerCase() ?? ''
+                                                        const paxMax = pkgName.includes('party') ? 12
+                                                            : pkgName.includes('pas photo package') ? 2
+                                                            : pkgName.includes('thematic package') ? 8
+                                                            : 6
+                                                        return (
+                                                            <div style={{
+                                                                display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px',
+                                                                borderRadius: 100, background: '#F8F6F0',
+                                                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                                            }}>
+                                                                <div style={{
+                                                                    width: 20, height: 20, borderRadius: '50%', border: '1.5px solid #333',
+                                                                    background: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                                                                }}>
+                                                                    <span style={{ color: '#FFF', fontSize: 11, fontWeight: 800 }}>✓</span>
+                                                                </div>
+                                                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                                                                    <span style={{ fontSize: TYPE.micro, fontWeight: 700, color: '#888', letterSpacing: TRACK.soft }}>Pax</span>
+                                                                    <span style={{ fontSize: TYPE.xs, fontWeight: 900, color: '#333', letterSpacing: TRACK.tight }}>Jumlah Orang</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', alignItems: 'center', background: '#EAE8E0', borderRadius: 999, padding: '4px 6px', gap: 2 }}>
+                                                                    <button
+                                                                        onClick={() => setState(p => ({ ...p, pax: Math.max(1, p.pax - 1) }))}
+                                                                        style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: state.pax > 1 ? '#fff' : 'transparent', color: '#333', fontSize: 16, fontWeight: 800, cursor: state.pax > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: state.pax > 1 ? 1 : 0.3, transition: 'all 0.15s' }}>−</button>
+                                                                    <span style={{ fontSize: TYPE.sm, fontWeight: 900, width: 32, textAlign: 'center', color: '#333' }}>{state.pax}</span>
+                                                                    <button
+                                                                        onClick={() => setState(p => ({ ...p, pax: Math.min(paxMax, p.pax + 1) }))}
+                                                                        style={{ width: 28, height: 28, borderRadius: '50%', border: 'none', background: state.pax < paxMax ? '#fff' : 'transparent', color: '#333', fontSize: 16, fontWeight: 800, cursor: state.pax < paxMax ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: state.pax < paxMax ? 1 : 0.3, transition: 'all 0.15s' }}>+</button>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })()}
 
-                                                    {/* Background Selection */}
+                                                    {/* Background Selection — pill style, no outer heading */}
                                                     {(state.selectedRoom === 'Basic Studio' || state.selectedRoom === 'Pas Photo') && (
-                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 16 }}>
-                                                            <span style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#FFFFFF', letterSpacing: TRACK.soft, marginBottom: 12 }}>
-                                                                Background Color :
-                                                            </span>
-                                                            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                                                 {VARIANTS['Basic Studio'].map(variant => {
                                                                     const sel = state.selectedVariant === variant.code
                                                                     return (
-                                                                        <button key={variant.code} onClick={() => setState(p => ({ ...p, selectedVariant: variant.code }))}
+                                                                        <label key={variant.code} onClick={() => setState(p => ({ ...p, selectedVariant: variant.code }))}
                                                                             style={{
-                                                                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                                                                                background: 'none', border: 'none', cursor: 'pointer',
-                                                                                transform: sel ? 'scale(1.1) translateY(-4px)' : 'scale(1)',
-                                                                                transition: 'all 0.2s', padding: 0
+                                                                                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px',
+                                                                                borderRadius: 100, background: '#F8F6F0', cursor: 'pointer',
+                                                                                border: `2px solid ${sel ? '#333' : 'transparent'}`,
+                                                                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                                                                transform: sel ? 'scale(1.05) translateY(-2px)' : 'scale(1)',
+                                                                                transition: 'all 0.15s ease',
                                                                             }}>
+                                                                            {/* Color dot replaces checkbox */}
                                                                             <div style={{
-                                                                                width: 48, height: 48, borderRadius: 12,
+                                                                                width: 20, height: 20, borderRadius: '50%',
                                                                                 background: variant.hex,
-                                                                                border: `2px solid ${sel ? '#FFF' : 'rgba(255,255,255,0.2)'}`,
-                                                                                boxShadow: sel ? '0 0 0 2px rgba(255,255,255,0.4), inset 0 2px 4px rgba(0,0,0,0.2)' : 'inset 0 2px 4px rgba(0,0,0,0.1)'
+                                                                                border: `2px solid ${sel ? '#333' : 'rgba(0,0,0,0.15)'}`,
+                                                                                boxShadow: sel ? '0 0 0 2px rgba(0,0,0,0.1)' : 'none',
+                                                                                flexShrink: 0,
                                                                             }} />
-                                                                            <span style={{ fontSize: TYPE.micro, fontWeight: 700, color: sel ? '#FFF' : 'rgba(255,255,255,0.6)', letterSpacing: TRACK.soft }}>
-                                                                                {variant.label}
-                                                                            </span>
-                                                                        </button>
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+                                                                                <span style={{ fontSize: TYPE.micro, fontWeight: 700, color: '#888', letterSpacing: TRACK.soft }}>Background</span>
+                                                                                <span style={{ fontSize: TYPE.xs, fontWeight: 900, color: '#333', letterSpacing: TRACK.tight }}>{variant.label}</span>
+                                                                            </div>
+                                                                        </label>
                                                                     )
                                                                 })}
-                                                            </div>
                                                         </div>
                                                     )}
 
@@ -891,7 +946,7 @@ export default function BookingFlow() {
                                             </span>
                                         </div>
                                         {!state.preferredDate ? (
-                                            <div style={{ padding: '30px 0', textAlign: 'center', color: '#555555', fontSize: TYPE.sm, letterSpacing: TRACK.soft }}>Pilih tanggal terlebih dahulu</div>
+                                            <div style={{ padding: '30px 0', textAlign: 'center', color: '#555555', fontSize: TYPE.sm, letterSpacing: TRACK.soft }}>Pilih tanggal terlebih dulu</div>
                                         ) : (
                                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                                                 {availableSlots.map(t => (
@@ -948,7 +1003,7 @@ export default function BookingFlow() {
                                                 value={state.instagramHandle.replace('@', '')}
                                                 onChange={e => setState(p => ({ ...p, instagramHandle: e.target.value }))} />
                                         </div>
-                                        <p style={{ fontSize: TYPE.xs, color: '#666666', marginTop: 5, letterSpacing: TRACK.soft }}>Pastikan username Instagram kamu benar dan aktif. <br /> Konfirmasi booking, mengirim hasil foto dan komunikasi lainnya akan dilakukan melalui DM @mera.selfstudio.</p>
+                                        <p style={{ fontSize: TYPE.xs, color: '#ffffff', marginTop: 5, letterSpacing: TRACK.soft }}>Pastikan username Instagram kamu benar dan aktif. <br /> Konfirmasi booking, mengirim hasil foto dan komunikasi lainnya akan dilakukan melalui DM @mera.selfstudio.</p>
                                     </FormField>
 
                                     <FormField label="Payment Method*">
@@ -1031,11 +1086,43 @@ export default function BookingFlow() {
                         {/* ── Step 5: Confirmation ─────────────── */}
                         {step === 'confirm' && (
                             <div style={{ padding: '40px 20px', maxWidth: 460, margin: '0 auto', textAlign: 'center' }}>
-                                <div style={{ fontSize: TYPE.xl, marginBottom: 8 }}>📸</div>
+                                <div style={{ fontSize: TYPE.xl, marginBottom: 8 }}>🎉</div>
                                 <h1 style={{ fontSize: TYPE.lg, fontWeight: 800, marginBottom: 8, color: '#FFFFFF', letterSpacing: TRACK.tight }}>Booking Berhasil!</h1>
-                                <p style={{ fontSize: TYPE.sm, color: '#FFFFFF', fontWeight: 700, marginBottom: 24, lineHeight: 1.5, letterSpacing: TRACK.soft }}>
-                                    Screenshot tiket ini dan kirimkan via <strong>Instagram DM</strong> untuk konfirmasi bookingmu.
+                                <p style={{ fontSize: TYPE.sm, color: 'rgba(255,255,255,0.65)', marginBottom: 20, lineHeight: 1.6, letterSpacing: TRACK.soft }}>
+                                    Simpan link tiket di bawah — bisa dibuka kapan saja dari HP apapun.
                                 </p>
+
+                                {/* ── Tiket link banner ── */}
+                                {state.registrationId && (
+                                    <div style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 16, padding: '16px 18px', marginBottom: 20, textAlign: 'left' }}>
+                                        <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 600, marginBottom: 8 }}>Link Tiket</p>
+                                        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace', wordBreak: 'break-all', marginBottom: 12, lineHeight: 1.5 }}>
+                                            meraselfstudio.com/tiket/{state.registrationId.slice(0, 8)}…
+                                        </p>
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <button
+                                                onClick={() => {
+                                                    const url = `${window.location.origin}/tiket/${state.registrationId}`
+                                                    navigator.clipboard.writeText(url).then(() => {
+                                                        setTicketLinkCopied(true)
+                                                        setTimeout(() => setTicketLinkCopied(false), 2500)
+                                                    })
+                                                }}
+                                                style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', background: ticketLinkCopied ? '#2E7D32' : '#622128', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'background 0.2s' }}
+                                            >
+                                                {ticketLinkCopied ? '✓ Tersalin!' : '🔗 Salin Link'}
+                                            </button>
+                                            <a
+                                                href={`/tiket/${state.registrationId}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                            >
+                                                Buka Tiket →
+                                            </a>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* RECEIPT TICKET */}
                                 <div style={{

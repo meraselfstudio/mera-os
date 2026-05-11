@@ -1,129 +1,282 @@
 // Zustand store — Kiosk state management
+// Supports per-photo editing, frame add-ons, and PRD §6.9 inactivity timer
 
-import { create } from "zustand";
-import type { Photo, Frame } from "../lib/api";
+import { create } from 'zustand'
+import type { Photo } from '../lib/api'
+import type { FrameProduct } from '../lib/frames'
+import { hitungHargaFrame } from '../lib/frames'
 
-export type Screen = "idle" | "gallery" | "editor" | "printing";
-export type FilterType = "normal" | "grayscale" | "vintage";
+export type Screen = 'idle' | 'gallery' | 'editor' | 'printing'
 
-export interface EditorState {
-  filter: FilterType;
-  frameId: string | null;
-  zoom: number;
-  panX: number;
-  panY: number;
+// Per-photo pan/zoom/frame state — persists while session is active
+export interface PhotoEdit {
+  frameProductId: number | null  // null = Basic Frame (no overlay, included in pkg)
+  zoom: number
+  panX: number
+  panY: number
 }
+
+const DEFAULT_EDIT: PhotoEdit = { frameProductId: null, zoom: 1, panX: 0, panY: 0 }
+
+// ─── State shape ──────────────────────────────────────────────────────────────
 
 interface KioskState {
   // Session
-  currentSession: string | null;
-  timeLeft: number; // seconds
+  currentSession: string | null
+  pax: number          // influences inactivity timeout (PRD §6.9)
+  maxPhotos: number    // max selectable photos from registration addons
 
   // Navigation
-  screen: Screen;
+  screen: Screen
 
   // Data
-  photos: Photo[];
-  frames: Frame[];
-  selectedPhoto: Photo | null;
+  photos: Photo[]
+  frameProducts: FrameProduct[]
 
-  // Editor
-  editor: EditorState;
+  // Gallery selection
+  selectedPhotoIds: string[]   // ordered; max = maxPhotos
 
-  // Frame selection
-  selectedFrame: Frame | null;
-  specialFrameSelected: boolean;
-  specialFramePrice: number;
+  // Per-photo editing
+  photoEdits: Record<string, PhotoEdit>  // keyed by Photo.id
+  activePhotoIndex: number               // index into selectedPhotoIds
 
-  // Print result
-  printOutputUrl: string | null;
-  printError: string | null;
+  // Inactivity (PRD §6.9)
+  lastTouchTs: number
+  timeLeft: number      // seconds remaining; resets on touch
+  showTimeoutModal: boolean
 
-  // Inactivity
-  lastTouchTs: number;
+  // Print
+  printJobId: string | null
+  printError: string | null
 
-  // Actions
-  setSession: (id: string) => void;
-  setScreen: (s: Screen) => void;
-  setPhotos: (p: Photo[]) => void;
-  setFrames: (f: Frame[]) => void;
-  selectPhoto: (p: Photo) => void;
-  selectFrame: (frame: Frame) => void;
-  updateEditor: (partial: Partial<EditorState>) => void;
-  setPrintResult: (url: string | null, error: string | null) => void;
-  tickTimer: () => void;
-  touch: () => void;
-  reset: () => void;
+  // ─── Actions ────────────────────────────────────────────────────────────────
+
+  /** Called by IdleScreen after successful session validation */
+  setSession: (id: string, pax: number, maxPhotos: number) => void
+
+  setPhotos: (photos: Photo[]) => void
+  setFrameProducts: (fps: FrameProduct[]) => void
+
+  /** Toggle photo selection in gallery (respects maxPhotos) */
+  togglePhotoSelection: (photoId: string) => void
+
+  /** Proceed from gallery → editor with the selected photos */
+  proceedToEdit: () => void
+
+  /** Go back from editor → gallery */
+  backToGallery: () => void
+
+  /** Proceed from editor → printing */
+  proceedToPrint: () => void
+
+  /** Navigate between selected photos in editor */
+  setActivePhotoIndex: (i: number) => void
+
+  /** Update pan/zoom/frame for the given photo */
+  updatePhotoEdit: (photoId: string, partial: Partial<PhotoEdit>) => void
+
+  /** Select a frame product for the active photo */
+  selectFrame: (photoId: string, frameProductId: number | null) => void
+
+  /** Called by App.tsx every second while not idle */
+  tickTimer: () => void
+
+  /** Reset inactivity timer (on any touch/pointer event) */
+  touch: () => void
+
+  /** PRD §6.9: show timeout modal when timeLeft hits 0 */
+  triggerTimeout: () => void
+
+  /**
+   * PRD §6.9: dismiss modal — apply Basic Frame to unedited photos,
+   * navigate to printing.
+   */
+  applyTimeoutAndPrint: () => void
+
+  /** Cancel timeout modal — restart the inactivity timer */
+  cancelTimeout: () => void
+
+  setPrintResult: (jobId: string | null, error: string | null) => void
+
+  /** Full reset — back to idle screen */
+  reset: () => void
 }
 
-const INITIAL_EDITOR: EditorState = {
-  filter: "normal",
-  frameId: null,
-  zoom: 1,
-  panX: 0,
-  panY: 0,
-};
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export const useKioskStore = create<KioskState>((set) => ({
+function inactivitySeconds(pax: number): number {
+  return pax >= 8 ? 600 : 300
+}
+
+// ─── Store ────────────────────────────────────────────────────────────────────
+
+export const useKioskStore = create<KioskState>((set, get) => ({
   currentSession: null,
-  timeLeft: 600,
-  screen: "idle",
+  pax: 1,
+  maxPhotos: 999,
+  screen: 'idle',
   photos: [],
-  frames: [],
-  selectedPhoto: null,
-  editor: { ...INITIAL_EDITOR },
-  selectedFrame: null,
-  specialFrameSelected: false,
-  specialFramePrice: 0,
-  printOutputUrl: null,
-  printError: null,
+  frameProducts: [],
+  selectedPhotoIds: [],
+  photoEdits: {},
+  activePhotoIndex: 0,
   lastTouchTs: Date.now(),
+  timeLeft: 300,
+  showTimeoutModal: false,
+  printJobId: null,
+  printError: null,
 
-  setSession: (id) =>
-    set({ currentSession: id, timeLeft: 600, screen: "gallery", lastTouchTs: Date.now() }),
+  // ─── Session ───────────────────────────────────────────────────────────────
 
-  setScreen: (s) => set({ screen: s, lastTouchTs: Date.now() }),
+  setSession: (id, pax, maxPhotos) =>
+    set({
+      currentSession: id,
+      pax,
+      maxPhotos,
+      screen: 'gallery',
+      selectedPhotoIds: [],
+      photoEdits: {},
+      activePhotoIndex: 0,
+      timeLeft: inactivitySeconds(pax),
+      lastTouchTs: Date.now(),
+      showTimeoutModal: false,
+      printJobId: null,
+      printError: null,
+    }),
 
-  setPhotos: (p) => set({ photos: p }),
+  // ─── Data ──────────────────────────────────────────────────────────────────
 
-  setFrames: (f) => set({ frames: f }),
+  setPhotos: (photos) => set({ photos }),
 
-  selectPhoto: (p) =>
-    set({ selectedPhoto: p, editor: { ...INITIAL_EDITOR }, selectedFrame: null, specialFrameSelected: false, specialFramePrice: 0, screen: "editor", lastTouchTs: Date.now() }),
+  setFrameProducts: (fps) => set({ frameProducts: fps }),
 
-  selectFrame: (frame) =>
-    set((state) => ({
-      selectedFrame: frame,
-      specialFrameSelected: frame.type === "special",
-      specialFramePrice: frame.type === "special" ? frame.price || 0 : 0,
-      editor: { ...state.editor, frameId: frame.id },
+  // ─── Gallery selection ─────────────────────────────────────────────────────
+
+  togglePhotoSelection: (photoId) =>
+    set((s) => {
+      const already = s.selectedPhotoIds.includes(photoId)
+      if (already) {
+        return {
+          selectedPhotoIds: s.selectedPhotoIds.filter((id) => id !== photoId),
+        }
+      }
+      if (s.selectedPhotoIds.length >= s.maxPhotos) return {}  // at limit
+      return { selectedPhotoIds: [...s.selectedPhotoIds, photoId] }
+    }),
+
+  // ─── Editor navigation ─────────────────────────────────────────────────────
+
+  proceedToEdit: () =>
+    set({ screen: 'editor', activePhotoIndex: 0, lastTouchTs: Date.now() }),
+
+  backToGallery: () =>
+    set({ screen: 'gallery', lastTouchTs: Date.now() }),
+
+  proceedToPrint: () =>
+    set({ screen: 'printing', lastTouchTs: Date.now() }),
+
+  setActivePhotoIndex: (i) =>
+    set((s) => {
+      const clamped = Math.max(0, Math.min(s.selectedPhotoIds.length - 1, i))
+      return { activePhotoIndex: clamped, lastTouchTs: Date.now() }
+    }),
+
+  // ─── Photo editing ─────────────────────────────────────────────────────────
+
+  updatePhotoEdit: (photoId, partial) =>
+    set((s) => ({
+      photoEdits: {
+        ...s.photoEdits,
+        [photoId]: { ...(s.photoEdits[photoId] ?? DEFAULT_EDIT), ...partial },
+      },
       lastTouchTs: Date.now(),
     })),
 
-  updateEditor: (partial) =>
-    set((s) => ({ editor: { ...s.editor, ...partial }, lastTouchTs: Date.now() })),
+  selectFrame: (photoId, frameProductId) =>
+    set((s) => ({
+      photoEdits: {
+        ...s.photoEdits,
+        [photoId]: { ...(s.photoEdits[photoId] ?? DEFAULT_EDIT), frameProductId },
+      },
+      lastTouchTs: Date.now(),
+    })),
 
-  setPrintResult: (url, error) => set({ printOutputUrl: url, printError: error }),
+  // ─── Inactivity timer ──────────────────────────────────────────────────────
 
   tickTimer: () =>
     set((s) => ({ timeLeft: Math.max(0, s.timeLeft - 1) })),
 
-  touch: () => set({ lastTouchTs: Date.now() }),
+  touch: () =>
+    set((s) => ({
+      lastTouchTs: Date.now(),
+      timeLeft: inactivitySeconds(s.pax),
+      showTimeoutModal: false,
+    })),
+
+  triggerTimeout: () => set({ showTimeoutModal: true }),
+
+  applyTimeoutAndPrint: () => {
+    const { selectedPhotoIds, photoEdits } = get()
+    const updatedEdits = { ...photoEdits }
+    for (const id of selectedPhotoIds) {
+      if (!updatedEdits[id]) {
+        // Unedited photo — apply Basic Frame (null = no overlay)
+        updatedEdits[id] = { ...DEFAULT_EDIT, frameProductId: null }
+      }
+    }
+    set({
+      photoEdits: updatedEdits,
+      showTimeoutModal: false,
+      screen: 'printing',
+    })
+  },
+
+  cancelTimeout: () =>
+    set((s) => ({
+      showTimeoutModal: false,
+      timeLeft: inactivitySeconds(s.pax),
+      lastTouchTs: Date.now(),
+    })),
+
+  // ─── Print ─────────────────────────────────────────────────────────────────
+
+  setPrintResult: (jobId, error) => set({ printJobId: jobId, printError: error }),
+
+  // ─── Full reset ────────────────────────────────────────────────────────────
 
   reset: () =>
     set({
       currentSession: null,
-      timeLeft: 600,
-      screen: "idle",
+      pax: 1,
+      maxPhotos: 999,
+      screen: 'idle',
       photos: [],
-      frames: [],
-      selectedPhoto: null,
-      editor: { ...INITIAL_EDITOR },
-      selectedFrame: null,
-      specialFrameSelected: false,
-      specialFramePrice: 0,
-      printOutputUrl: null,
-      printError: null,
+      frameProducts: [],
+      selectedPhotoIds: [],
+      photoEdits: {},
+      activePhotoIndex: 0,
       lastTouchTs: Date.now(),
+      timeLeft: 300,
+      showTimeoutModal: false,
+      printJobId: null,
+      printError: null,
     }),
-}));
+}))
+
+// ─── Computed selectors ───────────────────────────────────────────────────────
+
+export function getFrameAddonTotal(
+  frameProducts: FrameProduct[],
+  selectedPhotoIds: string[],
+  photoEdits: Record<string, PhotoEdit>,
+  pax = 1,
+): number {
+  let total = 0
+  for (const id of selectedPhotoIds) {
+    const edit = photoEdits[id]
+    if (!edit || edit.frameProductId === null) continue
+    const fp = frameProducts.find((f) => f.id === edit.frameProductId)
+    if (fp) total += hitungHargaFrame(fp, pax)
+  }
+  return total
+}

@@ -1,88 +1,74 @@
-// API client for Capture Engine backend
+// Capture Engine API client
+// Base URL configurable via VITE_API_BASE (default: Mac Mini local IP)
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://192.168.1.100:3100";
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://192.168.1.100:3100'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface Photo {
-  id: string;
-  thumbUrl: string;
-  rawUrl: string;
+  id: string
+  thumbnail_url: string
+  full_url: string
 }
 
-export interface Frame {
-  id: string;
-  name: string;
-  url: string;
+export interface SessionInfo {
+  sessionId: string
+  photoCount: number
 }
 
 export interface PrintPayload {
-  sessionId: string;
-  photoId: string;
-  frameId: string | null;
-  filter: string;
-  crop: {
-    zoom: number;
-    offsetX: number;
-    offsetY: number;
-  };
+  sessionId: string
+  image: string   // data:image/jpeg;base64,...  (rendered canvas)
+  photoId: string
+  copies?: number
 }
 
 export interface PrintResult {
-  status: "success" | "error";
-  message: string;
-  outputUrl?: string;
+  status: 'printing' | 'error'
+  jobId?: string
+  error?: string
+  message?: string
 }
+
+// ─── Fetch helper ─────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: { 'Content-Type': 'application/json' },
     ...opts,
-  });
-  const data = await res.json();
-  if (!res.ok || data.status === "error") {
-    throw new Error(data.message || `API error: ${res.status}`);
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `HTTP ${res.status}`)
   }
-  return data as T;
+  return data as T
 }
 
+// ─── API ──────────────────────────────────────────────────────────────────────
+
 export const api = {
-  /** Create a session on the backend */
-  createSession(sessionId: string) {
-    return apiFetch<{ status: string; sessionId: string }>("/api/sessions", {
-      method: "POST",
-      body: JSON.stringify({ sessionId }),
-    });
+  /** Validate session and get photo count */
+  getSession(sessionId: string) {
+    return apiFetch<SessionInfo>(`/api/sessions/${encodeURIComponent(sessionId)}`)
   },
 
-  /** Get photos for a session */
+  /** Get photo list (thumbnail + full URLs) for a session */
   getPhotos(sessionId: string) {
-    return apiFetch<{ status: string; photos: Photo[] }>(
-      `/api/sessions/${encodeURIComponent(sessionId)}/photos`,
-    );
+    return apiFetch<{ sessionId: string; photos: Photo[] }>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/photos`
+    )
   },
 
-  /** Get available frames */
-  getFrames() {
-    return apiFetch<{ status: string; frames: Frame[] }>("/api/frames");
-  },
-
-  /** Submit a print job */
+  /** Submit a rendered JPEG (base64) to the printer */
   print(payload: PrintPayload) {
-    return apiFetch<PrintResult>("/api/print", {
-      method: "POST",
+    return apiFetch<PrintResult>('/api/print', {
+      method: 'POST',
       body: JSON.stringify(payload),
-    });
+    })
   },
 
-  /** Alias for print job (for compatibility) */
-  printPhoto(payload: PrintPayload) {
-    return api.print(payload);
+  /** Health check — confirm Capture Engine is reachable */
+  health() {
+    return apiFetch<{ status: string }>('/health')
   },
-
-  /** Render only (no print), returns download URL */
-  render(payload: PrintPayload) {
-    return apiFetch<PrintResult>("/api/render", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
-};
+}

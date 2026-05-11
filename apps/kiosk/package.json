@@ -10,18 +10,18 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "clsx": "^2.1.1",
+    "qrcode.react": "^4.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "zustand": "^4.5.5",
-    "qrcode.react": "^4.1.0",
-    "clsx": "^2.1.1"
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "zustand": "^4.5.5"
   },
   "devDependencies": {
-    "@mera/config": "workspace:*",
     "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "@types/react-dom": "^19.0.0"
   }
 }

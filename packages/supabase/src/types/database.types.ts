@@ -48,14 +48,20 @@ export interface Product {
     kategori: string
     tipe_harga: TipeHarga
     harga_dasar: number      // Used when tipe_harga = 'normal'
-    tier_1: number | null    // Price for 1st person tier
-    tier_2: number | null    // Price per person tier 2
-    tier_3: number | null    // Price per person tier 3
-    tier_lebih: number | null // Price per person beyond all tiers
+    tier_1: number | null    // Price for 1st unit/person tier
+    tier_2: number | null    // Price for 2nd unit/person tier
+    tier_3: number | null    // Price for 3rd unit/person tier
+    tier_lebih: number | null // Price beyond all tiers
     is_active: boolean
     max_orang: number        // Max participants per session (e.g. 2, 8)
     default_bw: boolean      // TRUE = BW by default; customer must add 'Edited + Colored'
     is_addon: boolean        // TRUE = this is a selectable add-on (not main package)
+    metadata: Record<string, unknown> | null  // JSONB — used for frame overlays etc.
+    // For bertingkat add-ons: how to determine the effective tier count.
+    // 'pax'  → price scales with number of people (reserved for future group add-ons)
+    // 'qty'  → price scales with units ordered (Add Print, Special Frame)
+    // Optional — defaults to 'qty' in all pricing logic (safe before migration runs)
+    pricing_basis?: 'pax' | 'qty'
 }
 
 /**
@@ -173,7 +179,12 @@ export function calcBookingLineItems(
         const baseCapacity = getProductBaseCapacity(mainProduct, room)
         const extraPax = Math.max(0, pax - baseCapacity)
         if (extraPax > 0) {
-            items.push({ label: `Add Person (${extraPax}×)`, price: extraPax * 25_000 })
+            // Look up Add Person rate from products table; fall back to 25.000 if not found
+            const addPersonProduct = products.find(
+                p => p.is_addon && p.nama.toLowerCase().replace(/[\s_]+/g, '') === 'addperson',
+            )
+            const addPersonRate = addPersonProduct?.harga_dasar ?? 25_000
+            items.push({ label: `Add Person (${extraPax}×)`, price: extraPax * addPersonRate })
         }
     }
 
@@ -194,7 +205,16 @@ export function calcBookingLineItems(
         if (addonProduct) {
             let price = 0
             if (addonProduct.tipe_harga === 'bertingkat') {
-                price = hitungHargaBertingkat(addonProduct, qty)
+                // pricing_basis determines what the tier dimension means:
+                //   'pax' → EDITED_COLORED style: 1 booking entry covers the whole group,
+                //            so price depends on pax (group size). qty=1 stored at booking
+                //            time means "for all pax people".
+                //   'qty' → Add Print / Special Frame style: each unit is priced
+                //            independently. 1 print = tier_1, 2 prints = tier_1+tier_2.
+                const effectivePax = addonProduct.pricing_basis === 'pax'
+                    ? (qty > 1 ? qty : pax)   // per-group: cover all people when qty=1
+                    : qty                      // per-unit: use actual quantity ordered
+                price = hitungHargaBertingkat(addonProduct, effectivePax)
             } else {
                 price = addonProduct.harga_dasar * qty
             }
@@ -295,6 +315,7 @@ export interface Expense {
     keterangan: string
     kategori: string
     jumlah: number
+    metode_bayar: 'CASH' | 'QRIS'
     created_at: string
 }
 
