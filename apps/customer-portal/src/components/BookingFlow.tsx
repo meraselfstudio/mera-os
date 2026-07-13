@@ -239,7 +239,10 @@ export default function BookingFlow() {
             })
         supabase.from('studios').select('*').eq('is_active', true).order('sort_order')
             .then(({ data }) => {
-                if (data) setStudios(data as Studio[])
+                if (data) {
+                    const filtered = (data as Studio[]).filter(s => s.id !== 'Majestic Studio' && s.id !== 'Elevator Studio')
+                    setStudios(filtered)
+                }
             })
     }, [])
 

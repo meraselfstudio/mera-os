@@ -9,7 +9,7 @@ echo "📦 1/2: Deploying POS Dashboard (Vite)"
 echo "----------------------------------------"
 cd apps/pos-dashboard
 npx vercel build --prod --yes
-npx vercel deploy --prebuilt --prod --yes
+npx vercel deploy --prebuilt --prod --yes --archive tgz
 cd ../..
 
 # 2. Deploy the Customer Portal (Next.js)
@@ -25,11 +25,12 @@ pnpm --filter customer-portal deploy .deploy-portal
 
 # Copy environment variables so Next.js can prerender pages
 cp apps/customer-portal/.env.local .deploy-portal/.env.local
+cp -R apps/customer-portal/.vercel .deploy-portal/.vercel 2>/dev/null || true
 
 # Build and deploy from the isolated directory
 cd .deploy-portal
 npx vercel build --prod --yes
-npx vercel deploy --prebuilt --prod --yes
+npx vercel deploy --prebuilt --prod --yes --archive tgz
 cd ..
 
 echo "----------------------------------------"
