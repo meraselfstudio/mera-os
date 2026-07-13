@@ -1,145 +1,146 @@
-# CLAUDE.md — Méra OS Monorepo
+# CLAUDE.md — Monorepo Méra OS
 
-This is the canonical AI development reference for this project.
-Read it in full at the start of every session before touching any code.
-
----
-
-## 1. Project Overview & Business Context
-
-**Méra SelfStudio** is a self-photo studio in Mojokerto, Indonesia. Customers book sessions,
-arrive at the studio, photograph themselves, and receive edited digital files via Instagram DM.
-
-This monorepo (`mera-os`) is the v2 operating system powering three surfaces:
-- **Customer Portal** — public website for booking and free online photobooth
-- **POS Dashboard** — internal staff tool for booking management, POS, attendance, payroll, and finance
-- **Kiosk** — in-studio hardware photobooth tablet connected to a local Capture Engine on the Mac Mini
-
-Production domain: `meraselfstudio.com` | Instagram: `@mera.selfstudio`
-
-### Business Flow
-1. Customer books via customer portal → `registrations` row written to Supabase
-2. Staff verifies booking via POS booking board → changes registration status
-3. Customer arrives → staff creates `transactions` row, processes payment
-4. Photo session runs on Mac Mini (Capture One) with files saved to a folder named after `session_id`
-5. Google Drive Desktop Sync exports photos → staff shares download link via IG DM
-6. Crew clocks in/out via POS attendance board (with webcam photo verification)
-7. Owner reviews payroll via backoffice finance panel
+Ini adalah referensi utama pengembangan AI untuk proyek ini.
+Baca dokumen ini secara penuh di awal setiap sesi sebelum mengubah kode apa pun.
 
 ---
 
-## 2. Tech Stack & Dependencies
+## 1. Gambaran Proyek & Konteks Bisnis
+
+**Méra SelfStudio** adalah self-photo studio di Mojokerto, Indonesia. Pelanggan memesan sesi, datang ke studio, memotret diri mereka sendiri, dan menerima file digital yang telah diedit melalui Instagram DM.
+
+Monorepo ini (`mera-os`) adalah sistem operasi v2 yang menggerakkan tiga antarmuka:
+- **Customer Portal (Portal Pelanggan)** — website publik untuk pemesanan dan photobooth online gratis
+- **POS Dashboard** — alat internal staf untuk manajemen pemesanan, kasir (POS), absensi, penggajian, dan keuangan
+- **Kiosk** — tablet photobooth perangkat keras di studio yang terhubung ke Capture Engine lokal di Mac Mini
+
+Domain produksi: `meraselfstudio.com` | Instagram: `@mera.selfstudio`
+
+### Alur Bisnis
+1. Pelanggan memesan via portal pelanggan → baris `registrations` ditulis ke Supabase
+2. Staf memverifikasi pemesanan via papan pemesanan POS → mengubah status registrasi
+3. Pelanggan tiba → staf membuat baris `transactions`, memproses pembayaran
+4. Sesi foto berjalan di Mac Mini (Capture One) dengan file disimpan ke folder yang dinamai sesuai `session_id`
+5. Google Drive Desktop Sync mengekspor foto → staf membagikan tautan unduhan via IG DM
+6. Kru melakukan clock-in/out via papan absensi POS (dengan verifikasi foto webcam)
+7. Pemilik meninjau penggajian via panel keuangan backoffice
+
+---
+
+## 2. Stack Teknologi & Dependensi
 
 ### Runtime & Build
-| Tool | Version | Purpose |
+| Alat | Versi | Tujuan |
 |------|---------|---------|
-| pnpm | 9.15.4 | Package manager, workspace orchestration |
-| Node | ≥ 18 | Runtime requirement |
-| Turborepo | ^2.3.3 | Monorepo task pipeline |
-| TypeScript | ^5.7.2 | Strict mode, all packages |
+| pnpm | 9.15.4 | Package manager, orkestrasi workspace |
+| Node | ≥ 18 | Persyaratan runtime |
+| Turborepo | ^2.3.3 | Pipeline tugas monorepo |
+| TypeScript | ^5.7.2 | Strict mode, semua package |
 
-### Apps
-| App | Framework | Default Port | Deployment |
+### Aplikasi
+| Aplikasi | Framework | Port Default | Deployment |
 |-----|-----------|-------------|------------|
 | `customer-portal` | Next.js 15 + React 19 | 3000 | Vercel (auto-deploy `main`) |
-| `pos-dashboard` | Vite 6 + React 19 | 5173 | Local studio iMac only |
-| `kiosk` | Vite 6 + React 19 | 5174 | Local network (Android tablet) |
+| `pos-dashboard` | Vite 6 + React 19 | 5173 | Hanya iMac studio lokal |
+| `kiosk` | Vite 6 + React 19 | 5174 | Jaringan lokal (Tablet Android) |
+| `capture-engine` | Node.js + Express | 3100 | Jaringan lokal (Mac Mini) |
 
-### Key Libraries Per App
+### Pustaka Kunci Per Aplikasi
 
 **customer-portal**
 - Next.js App Router (file-based routing)
-- `react-qr-code` — QR code generation (check-in QR on `/admin/qr`)
-- `html2canvas` — not present (used in POS for receipts)
-- No state management library — local React state only
+- `react-qr-code` — pembuatan kode QR (QR check-in di `/admin/qr`)
+- `html2canvas` — tidak ada (digunakan di POS untuk struk)
+- Tanpa pustaka manajemen state — hanya state lokal React
 
 **pos-dashboard**
-- `zustand` 4 — global state (`usePOSStore`)
-- `lucide-react` — icon set
-- `html2canvas` — generates receipt JPEG for printing
-- `date-fns` — date arithmetic
-- `react-router-dom` — declared dependency (partially unused; nav is view-state-based)
+- `zustand` 4 — state global (`usePOSStore`)
+- `lucide-react` — set ikon
+- `html2canvas` — menghasilkan JPEG struk untuk pencetakan
+- `date-fns` — aritmetika tanggal
+- `react-router-dom` — dependensi yang dideklarasikan (sebagian tidak digunakan; navigasi berbasis view-state)
 - `@supabase/supabase-js` v2
 
 **kiosk**
-- `zustand` 4 — global kiosk state (`useKioskStore`)
-- `qrcode.react` — QR codes for photo retrieval
-- Talks to a **local Capture Engine** backend server (not Supabase) for photo session management
+- `zustand` 4 — state global kiosk (`useKioskStore`)
+- `qrcode.react` — kode QR untuk pengambilan foto
+- Berkomunikasi dengan server backend **Capture Engine lokal** (bukan Supabase) untuk manajemen sesi foto
 
-### Shared Packages
-| Package | Contents |
+### Package Bersama
+| Package | Isi |
 |---------|---------|
-| `@mera/supabase` | Supabase singleton client + ALL canonical DB types + shared pricing functions |
-| `@mera/ui` | Button, Card, Modal, Badge UI primitives (partially adopted) |
-| `@mera/config` | TypeScript (`base.json`, `next.json`, `react.json`) + ESLint (`base.js`) configs |
+| `@mera/supabase` | Singleton client Supabase + SEMUA tipe DB kanonikal + fungsi harga bersama |
+| `@mera/ui` | Primitif UI Button, Card, Modal, Badge (diadopsi sebagian) |
+| `@mera/config` | Konfigurasi TypeScript (`base.json`, `next.json`, `react.json`) + ESLint (`base.js`) |
 
 ### Backend
 - **Supabase** (hosted, PostgreSQL 17): database, realtime, storage, RLS, edge functions
-- **Supabase Storage buckets**: `attendance-photos` (private, crew photos), `phonebooth` (public)
-- **Supabase Edge Function**: `calculate-payroll` (Deno runtime, service_role key, bypasses RLS)
-- **Google Apps Script**: receives photobooth strip upload from `POST /api/upload-strip` proxy
-- **Google Drive Desktop Sync**: runs on Mac Mini, syncs Capture One exports to Google Drive
-- **Capture Engine**: local HTTP server at `http://192.168.1.100:3100` — Mac Mini-based backend for the hardware kiosk (photo sessions, frames, print, render)
+- **Supabase Storage buckets**: `attendance-photos` (privat, foto kru), `phonebooth` (publik)
+- **Supabase Edge Function**: `calculate-payroll` (Deno runtime, service_role key, mengabaikan RLS)
+- **Google Apps Script**: menerima unggahan strip photobooth dari proxy `POST /api/upload-strip`
+- **Google Drive Desktop Sync**: berjalan di Mac Mini, menyinkronkan ekspor Capture One ke Google Drive
+- **Capture Engine**: server HTTP lokal di `http://192.168.1.100:3100` — backend berbasis Mac Mini untuk kiosk perangkat keras (sesi foto, frame, cetak, render)
 
 ---
 
-## 3. Folder Structure
+## 3. Struktur Folder
 
 ```
 mera-os/
 ├── apps/
-│   ├── customer-portal/            # Next.js 15 — public website
-│   │   ├── vercel.json             # Vercel deployment config
+│   ├── capture-engine/             # Backend Node.js — pengontrol photobooth hardware lokal
+│   ├── customer-portal/            # Next.js 15 — website publik
+│   │   ├── vercel.json             # Konfigurasi deployment Vercel
 │   │   └── src/
 │   │       ├── app/                # Next.js App Router
 │   │       │   ├── page.tsx        # Landing page (/)
-│   │       │   ├── booking/page.tsx          # Multi-step booking flow (/booking)
-│   │       │   ├── photobooth/page.tsx        # Free online photobooth (/photobooth)
-│   │       │   ├── checkin/page.tsx           # Customer self check-in (/checkin?sid=...)
-│   │       │   ├── pricelist/page.tsx         # Static price list — HARDCODED, not from DB
-│   │       │   ├── cara-booking/page.tsx      # How-to-book guide (static)
-│   │       │   ├── admin/qr/page.tsx          # Staff QR code printer (/admin/qr)
+│   │       │   ├── booking/page.tsx          # Alur pemesanan multi-langkah (/booking)
+│   │       │   ├── photobooth/page.tsx        # Photobooth online gratis (/photobooth)
+│   │       │   ├── checkin/page.tsx           # Check-in mandiri pelanggan (/checkin?sid=...)
+│   │       │   ├── pricelist/page.tsx         # Daftar harga statis — HARDCODED, tidak dari DB
+│   │       │   ├── cara-booking/page.tsx      # Panduan cara memesan (statis)
+│   │       │   ├── admin/qr/page.tsx          # Printer kode QR staf (/admin/qr)
 │   │       │   └── api/
 │   │       │       └── upload-strip/route.ts  # Proxy → Google Apps Script
 │   │       ├── components/
-│   │       │   ├── LandingPage.tsx            # Homepage (hero, sections, CTA)
-│   │       │   ├── BookingFlow.tsx            # Multi-step booking state machine
-│   │       │   ├── PhotoboothPage.tsx         # Client-side photobooth (zero network)
-│   │       │   ├── CheckinPage.tsx            # Self check-in form
-│   │       │   └── PhotoStrip.tsx             # Photobooth strip renderer/compositor
+│   │       │   ├── LandingPage.tsx            # Beranda (hero, sections, CTA)
+│   │       │   ├── BookingFlow.tsx            # State machine pemesanan multi-langkah
+│   │       │   ├── PhotoboothPage.tsx         # Photobooth sisi klien (tanpa jaringan)
+│   │       │   ├── CheckinPage.tsx            # Formulir check-in mandiri
+│   │       │   └── PhotoStrip.tsx             # Renderer/compositor strip photobooth
 │   │       └── lib/
-│   │           └── sanitize.ts               # CRITICAL: session_id sanitizer
+│   │           └── sanitize.ts               # KRITIS: sanitizer session_id
 │   │
-│   ├── pos-dashboard/              # Vite React — internal staff tool
+│   ├── pos-dashboard/              # Vite React — alat internal staf
 │   │   ├── index.html
 │   │   └── src/
-│   │       ├── index.css           # CSS design tokens + animations + layout utilities
-│   │       ├── App.tsx             # ALL routing logic, auth PIN gate, all views
+│   │       ├── index.css           # Token desain CSS + animasi + utilitas tata letak
+│   │       ├── App.tsx             # SEMUA logika routing, gerbang PIN auth, semua view
 │   │       └── components/
-│   │           └── AttendanceBoard.tsx  # Clock-in/out, webcam photo, dual upload
+│   │           └── AttendanceBoard.tsx  # Clock-in/out, foto webcam, unggahan ganda
 │   │
-│   └── kiosk/                      # Vite React — hardware photobooth kiosk
+│   └── kiosk/                      # Vite React — kiosk photobooth hardware
 │       └── src/
-│           ├── App.tsx                         # Screen routing, inactivity timeout
+│           ├── App.tsx                         # Routing layar, timeout inaktivitas
 │           ├── lib/
-│           │   └── api.ts                      # Capture Engine API client
+│           │   └── api.ts                      # Klien API Capture Engine
 │           ├── screens/
-│           │   ├── IdleScreen.tsx              # Attract/idle screen
-│           │   ├── GalleryScreen.tsx           # Photo gallery viewer
-│           │   ├── EditorScreen.tsx            # Filter/sticker editor
-│           │   ├── PrintScreen.tsx             # Print confirmation
-│           │   └── FrameGalleryScreen.tsx      # ⚠️ IN PROGRESS / DEAD CODE — not wired up
+│           │   ├── IdleScreen.tsx              # Layar attract/idle
+│           │   ├── GalleryScreen.tsx           # Penampil galeri foto
+│           │   ├── EditorScreen.tsx            # Editor filter/stiker
+│           │   ├── PrintScreen.tsx             # Konfirmasi cetak
+│           │   └── FrameGalleryScreen.tsx      # ⚠️ SEDANG DIKERJAKAN / KODE MATI — belum terhubung
 │           └── store/
-│               └── useKioskStore.ts            # Session, screen, editor state
+│               └── useKioskStore.ts            # State sesi, layar, editor
 │
 ├── packages/
-│   ├── supabase/                   # Shared Supabase client + canonical DB types
+│   ├── supabase/                   # Klien Supabase bersama + tipe DB kanonikal
 │   │   └── src/
-│   │       ├── client.ts           # Singleton createClient() (works in Next.js + Vite)
-│   │       ├── index.ts            # Public exports
+│   │       ├── client.ts           # Singleton createClient() (berfungsi di Next.js + Vite)
+│   │       ├── index.ts            # Ekspor publik
 │   │       └── types/
-│   │           └── database.types.ts   # THE source of truth for ALL types + pricing logic
-│   ├── ui/                         # Shared UI primitives
+│   │           └── database.types.ts   # SUMBER KEBENARAN untuk SEMUA tipe + logika harga
+│   ├── ui/                         # Primitif UI bersama
 │   │   └── src/
 │   │       └── components/         # Button, Card, Modal, Badge
 │   └── config/
@@ -148,14 +149,14 @@ mera-os/
 │
 ├── supabase/
 │   ├── config.toml
-│   ├── migrations/                 # 001_initial.sql → 010_*.sql
+│   ├── migrations/                 # 001_initial.sql → 012_*.sql
 │   └── functions/
-│       └── calculate-payroll/      # Deno edge function
+│       └── calculate-payroll/      # Edge function Deno
 │           └── index.ts
 │
-├── docs/                           # Architecture docs (start with docs 9–12)
-├── scripts/                        # e2e test .mjs files, migration runner
-├── deploy.sh                       # Two-step deploy: POS direct, portal via isolation
+├── docs/                           # Dokumen arsitektur (mulai dengan docs 9–12)
+├── scripts/                        # File .mjs pengujian e2e, runner migrasi
+├── deploy.sh                       # Deploy dua langkah: POS langsung, portal via isolasi
 ├── turbo.json
 ├── pnpm-workspace.yaml
 └── package.json
@@ -163,155 +164,159 @@ mera-os/
 
 ---
 
-## 4. Existing Features
+## 4. Fitur yang Ada
 
 ### Customer Portal (`customer-portal`)
-- **Landing page** (`/`) — hero, about, gallery, pricing CTA, link to booking
-- **Booking flow** (`/booking`) — multi-step wizard: room selection → package → pax → addons → date/time → submit. Writes to `registrations`. Supports ONLINE_QRIS and ONLINE_KEEPSLOT (6-hour hold). Fetches live product data from Supabase.
-- **Free photobooth** (`/photobooth`) — 100% client-side, no uploads during session; browser camera → strips composited on canvas → local download. Google Apps Script upload is post-session optional opt-in.
-- **Self check-in** (`/checkin?sid=...`) — customer scans QR at studio; sets `checked_in_at` on their registration
-- **Price list** (`/pricelist`) — **STATIC, HARDCODED** page; NOT synced with `products` table. Known divergence.
-- **How-to-book guide** (`/cara-booking`) — static informational page
-- **QR code printer** (`/admin/qr`) — staff-facing utility to print the self-check-in QR pointing to `meraselfstudio.com/checkin`
-- **Strip upload proxy** (`/api/upload-strip`) — proxies photobooth strip POSTs to Google Apps Script
+- **Landing page** (`/`) — hero, tentang, galeri, CTA harga, tautan ke pemesanan (termasuk perbaikan peta)
+- **Booking flow** (`/booking`) — wizard multi-langkah: pemilihan ruangan → paket → pax → addon (dengan harga kuantitas) → tanggal/waktu (dengan pemblokiran slot per studio dan studio bersama) → kirim. Menulis ke `registrations`. Mendukung ONLINE_QRIS dan ONLINE_KEEPSLOT (penahanan 6 jam). Mengambil data produk langsung dari Supabase. Opsi OTS (On The Spot) dihapus.
+- **Booking ticket** — halaman/tampilan tiket khusus yang baru
+- **Reschedule modal** — ditambahkan untuk memungkinkan pelanggan/staf menjadwalkan ulang pemesanan
+- **Free photobooth** (`/photobooth`) — 100% sisi klien, tidak ada unggahan selama sesi; kamera browser → strip dikomposisikan pada kanvas → unduhan lokal. Unggahan Google Apps Script bersifat opsional (opt-in) pasca-sesi.
+- **Self check-in** (`/checkin?sid=...`) — pelanggan memindai QR di studio; mengatur `checked_in_at` pada registrasi mereka (perbaikan tabrakan session_id)
+- **Price list** (`/pricelist`) — Halaman **STATIS, HARDCODED**; TIDAK disinkronkan dengan tabel `products`. Divergensi yang diketahui.
+- **Panduan cara memesan** (`/cara-booking`) — halaman informasi statis
+- **Printer kode QR** (`/admin/qr`) — utilitas untuk staf mencetak QR check-in mandiri yang mengarah ke `meraselfstudio.com/checkin`
+- **Proxy unggahan strip** (`/api/upload-strip`) — proxy untuk permintaan POST strip photobooth ke Google Apps Script
 
 ### POS Dashboard (`pos-dashboard`)
-All features live in `App.tsx` or sub-components. Navigation is view-key state switching.
+Semua fitur berada di `App.tsx` atau sub-komponen. Navigasi adalah peralihan state view-key. **Sekarang menggunakan UI Mobile-First.**
 
-- **PIN authentication** — Owner PIN: `1609`, Admin PIN: per-crew `pin_hash`. Client-side only; no Supabase Auth.
-- **Booking Management Board** (`/booking-management`) — live Supabase Realtime subscriptions on `registrations`. Shows PENDING/VERIFIED/PROCESSED/EXPIRED statuses. Handles KEEPSLOT expiry auto-check on load.
-- **POS / Payment Modal** — fetches latest `products` from Supabase → builds line items using shared `calcBookingLineItems()` → accepts CASH/TRANSFER/QRIS/ONLINE_QRIS → writes to `transactions`. Supports discount with required reason field.
-- **Receipt Generation** — `html2canvas` renders receipt as JPEG for printing/WhatsApp sharing.
-- **Attendance Board** — crew clock-in/out with webcam photo capture. Dual upload: Supabase Storage (`attendance-photos` bucket) + Google Drive via `/api/upload` proxy endpoint (this endpoint may be missing/planned — see Known Gotchas). Hardcoded shift rates (see Rule 11). Hardcoded bonus targets.
-- **Finance / Backoffice** — reads PAID transactions, displays omzet. Reads attendance for payroll review. Expense logging.
-- **Payroll** — calls `calculate-payroll` Supabase Edge Function. INTERN payroll bypasses all penalties/bonuses.
-- **TV Display** (`/tv`) — passive display screen (bookings or promotional content)
-- **Kiosk View** (`/kiosk`) — embedded kiosk management or deep-link launcher
+- **Otentikasi PIN** — PIN Pemilik: `1609`, PIN Admin: `pin_hash` per-kru. Hanya sisi klien; tidak ada Auth Supabase.
+- **Booking Management Board** (`/booking-management`) — langganan Supabase Realtime langsung pada `registrations`. Menampilkan status PENDING/VERIFIED/PROCESSED/COMPLETED/EXPIRED. Menangani pemeriksaan kedaluwarsa KEEPSLOT secara otomatis saat dimuat.
+- **POS / Payment Modal** — mengambil `products` terbaru dari Supabase → membangun item baris menggunakan fungsi bersama `calcBookingLineItems()` → menerima CASH/TRANSFER/QRIS/ONLINE_QRIS → menulis ke `transactions`. Mendukung diskon dengan field alasan (reason) yang diwajibkan.
+- **Pembuatan Struk** — `html2canvas` merender struk sebagai JPEG untuk pencetakan/dibagikan via WhatsApp.
+- **Attendance Board** — clock-in/out kru dengan tangkapan foto webcam. Unggahan ganda: Supabase Storage (bucket `attendance-photos`) + Google Drive via endpoint proxy `/api/upload` (endpoint ini mungkin hilang/direncanakan — lihat Known Gotchas). Tarif shift hardcoded (lihat Aturan 11). Target bonus hardcoded.
+- **Finance / Backoffice** — membaca transaksi PAID, menampilkan omzet. Membaca absensi untuk tinjauan penggajian. Pencatatan pengeluaran.
+- **Payroll** — memanggil Supabase Edge Function `calculate-payroll`. Penggajian INTERN mengabaikan semua penalti/bonus.
+- **Tampilan TV** (`/tv`) — layar tampilan pasif (pemesanan atau konten promosi)
+- **Tampilan Kiosk** (`/kiosk`) — manajemen kiosk tersemat atau peluncur deep-link
 
 ### Kiosk (`kiosk`)
-Hardware tablet app in-studio. Communicates with the **Capture Engine** local server on the Mac Mini at `http://192.168.1.100:3100`.
+Aplikasi tablet perangkat keras di studio. Berkomunikasi dengan server lokal **Capture Engine** di Mac Mini pada `http://192.168.1.100:3100`. **Memiliki alur sesi kiosk yang lengkap.**
 
-- **Idle screen** — attract loop, starts session on tap
-- **Gallery screen** — shows photos from the current session (fetched from Capture Engine)
-- **Editor screen** — apply filters/stickers to selected photo strip
-- **Print screen** — confirm and trigger print job via Capture Engine
-- **`FrameGalleryScreen.tsx`** — ⚠️ **INCOMPLETE / NOT WIRED UP** — uses dummy frame data, className-based styling (inconsistent with rest of app), `useState(null)` untyped. Not referenced in `App.tsx` routing. May be abandoned or pending.
+- **Layar idle** — attract loop, memulai sesi saat disentuh
+- **Layar galeri** — menampilkan foto dari sesi saat ini (diambil dari Capture Engine)
+- **Layar editor** — menerapkan filter/stiker pada strip foto yang dipilih
+- **Layar cetak** — mengonfirmasi dan memicu pekerjaan cetak melalui Capture Engine
+- **`FrameGalleryScreen.tsx`** — ⚠️ **TIDAK LENGKAP / TIDAK TERHUBUNG** — menggunakan data frame buatan (dummy), penataan gaya berbasis className (tidak konsisten dengan aplikasi lainnya), `useState(null)` tidak diketik (untyped). Tidak direferensikan dalam routing `App.tsx`. Mungkin ditinggalkan atau tertunda.
 
-### Shared Package: `@mera/supabase`
-- Supabase client singleton
-- All canonical DB type definitions
-- `hitungHargaBertingkat(product, jumlahOrang)` — tiered pricing calculator
-- `calcBookingLineItems(products, addons)` — **canonical shared pricing function** used by BOTH customer portal BookingFlow AND POS payment modal. Single source of truth for line-item breakdown.
-- `BookingAddons`, `BookingLineItem` interfaces
+### Package Bersama: `@mera/supabase`
+- Singleton klien Supabase
+- Semua definisi tipe DB kanonikal
+- `hitungHargaBertingkat(product, jumlahOrang)` — kalkulator harga bertingkat
+- `calcBookingLineItems(products, addons)` — **fungsi harga bersama kanonikal** yang digunakan OLEH BookingFlow (customer portal) DAN modal pembayaran POS. Sumber kebenaran tunggal untuk rincian item baris.
+- Antarmuka `BookingAddons`, `BookingLineItem`
 
 ---
 
-## 5. Database Schema
+## 5. Skema Database
 
-All TypeScript types live in `packages/supabase/src/types/database.types.ts`.
+Semua tipe TypeScript berada di `packages/supabase/src/types/database.types.ts`.
 
 ### `crew`
-| Column | Type | Notes |
+| Kolom | Tipe | Catatan |
 |--------|------|-------|
 | id | UUID PK | |
 | nama | string | |
 | role | `'Admin' \| 'Crew' \| 'Intern'` | |
-| status_gaji | `'PRO' \| 'INTERN'` | Controls payroll penalty/bonus logic |
-| pin_hash | string \| null | SHA-256 of 4-digit PIN |
+| status_gaji | `'PRO' \| 'INTERN'` | Mengontrol logika penalti/bonus penggajian |
+| pin_hash | string \| null | SHA-256 dari 4-digit PIN |
 | is_active | boolean | |
 | created_at | timestamp | |
 
 ### `attendance`
-| Column | Type | Notes |
+| Kolom | Tipe | Catatan |
 |--------|------|-------|
 | id | UUID PK | |
 | crew_id | UUID FK → crew | |
-| clock_in | timestamp | Locked at clock-in |
+| clock_in | timestamp | Terkunci saat clock-in |
 | clock_out | timestamp \| null | |
 | shift_type | string | `'Weekday Full Time' \| 'Weekend Shift 1' \| 'Weekend Shift 2' \| 'Weekend Full Time'` |
-| base_rate | number | **Locked at clock-in** — never retroactively updated |
-| late_minutes | number | Auto-calculated vs scheduled shift start |
-| penalty_amount | number | `late_minutes / 10 * 5000 IDR` — always 0 for INTERN |
-| bonus_amount | number | Calculated at clock-out — always 0 for INTERN |
-| photo_in_url | string \| null | Supabase Storage URL |
-| photo_out_url | string \| null | Supabase Storage URL |
+| base_rate | number | **Terkunci saat clock-in** — tidak pernah diperbarui secara retroaktif |
+| late_minutes | number | Dihitung otomatis dibandingkan awal shift yang dijadwalkan |
+| penalty_amount | number | `late_minutes / 10 * 5000 IDR` — selalu 0 untuk INTERN |
+| bonus_amount | number | Dihitung saat clock-out — selalu 0 untuk INTERN |
+| photo_in_url | string \| null | URL Supabase Storage |
+| photo_out_url | string \| null | URL Supabase Storage |
 | status | `'ACTIVE' \| 'COMPLETED'` | |
 | created_at | timestamp | |
 
-**CRITICAL: DO NOT JOIN attendance with registrations or transactions. HR-only table.**
+**KRITIS: JANGAN LAKUKAN JOIN tabel attendance dengan registrations atau transactions. Ini adalah tabel khusus HR.**
 
 ### `products`
-| Column | Type | Notes |
+| Kolom | Tipe | Catatan |
 |--------|------|-------|
-| id | integer PK (SERIAL) | **NOT UUID** |
+| id | integer PK (SERIAL) | **BUKAN UUID** |
 | nama | string | |
 | kategori | string | |
 | tipe_harga | `'normal' \| 'bertingkat'` | |
-| harga_dasar | number | Used when `tipe_harga = 'normal'`; also add-on price |
-| tier_1 | number \| null | Price for 1st person |
-| tier_2 | number \| null | Price for 2nd person |
-| tier_3 | number \| null | Price for 3rd person |
-| tier_lebih | number \| null | Price per person beyond all tiers |
+| harga_dasar | number | Digunakan saat `tipe_harga = 'normal'`; juga merupakan harga add-on |
+| tier_1 | number \| null | Harga untuk orang pertama |
+| tier_2 | number \| null | Harga untuk orang ke-2 |
+| tier_3 | number \| null | Harga untuk orang ke-3 |
+| tier_lebih | number \| null | Harga per orang melebihi semua tier |
 | is_active | boolean | |
-| max_orang | number | Max participants per session |
-| default_bw | boolean | TRUE = B&W by default |
-| is_addon | boolean | TRUE = selectable add-on, not main package |
+| max_orang | number | Peserta maksimal per sesi |
+| default_bw | boolean | TRUE = B&W secara default |
+| is_addon | boolean | TRUE = add-on yang dapat dipilih, bukan paket utama |
+| metadata | JSONB | Digunakan oleh overlay frame kiosk (frame_url, thumbnail_url, type, slots) |
 
 ### `registrations`
-| Column | Type | Notes |
+| Kolom | Tipe | Catatan |
 |--------|------|-------|
 | id | UUID PK | |
 | customer_name | string | |
-| instagram_handle | string | `@username` format — used for file delivery via IG DM |
+| instagram_handle | string | Format `@username` — digunakan untuk pengiriman file via IG DM |
 | booking_type | `'ONLINE_QRIS' \| 'ONLINE_KEEPSLOT'` | |
 | status | `'PENDING' \| 'VERIFIED' \| 'PROCESSED' \| 'EXPIRED'` | |
-| session_id | string \| null | **DD-SANITIZEDNAME-CODE**, macOS folder-safe |
+| session_id | string \| null | **DD-SANITIZEDNAME-CODE**, aman untuk folder macOS |
 | preferred_date | string \| null | YYYY-MM-DD |
 | preferred_time | string \| null | HH:MM |
-| addons | JSON \| null | See `BookingAddons` interface below |
-| expires_at | string \| null | KEEPSLOT only: `created_at + 6h` |
-| checked_in_at | string \| null | Set via self check-in QR scan at studio |
+| addons | JSON \| null | Lihat antarmuka `BookingAddons` di bawah |
+| expires_at | string \| null | Hanya KEEPSLOT: `created_at + 6h` |
+| checked_in_at | string \| null | Diatur via scan QR check-in mandiri di studio |
 | created_at | timestamp | |
 
-**`addons` JSON shape (`BookingAddons` interface):**
+**Bentuk JSON `addons` (Antarmuka `BookingAddons`):**
 ```typescript
 {
-  room?: string | null           // e.g. 'Basic Studio', 'Elevator Studio'
-  variant?: string | null        // unused/future
-  selected_addons?: string[]     // e.g. ['EDITED_COLORED']
-  pax?: number                   // number of people
-  product_id?: number | null     // main product id — stored since v2.1; absent in older bookings
-  computed_price?: number        // price snapshot at booking time (fallback for old records)
+  room?: string | null           // contoh 'Basic Studio', 'Elevator Studio'
+  variant?: string | null        // tidak digunakan/untuk masa depan
+  selected_addons?: string[]     // contoh ['EDITED_COLORED']
+  pax?: number                   // jumlah orang
+  product_id?: number | null     // id produk utama — disimpan sejak v2.1; tidak ada di pemesanan lama
+  computed_price?: number        // snapshot harga saat pemesanan (fallback untuk data lama)
 }
 ```
 
 ### `transactions`
-| Column | Type | Notes |
+| Kolom | Tipe | Catatan |
 |--------|------|-------|
 | id | UUID PK | |
-| session_id | string | DD-NAME-CODE format — same as macOS Capture One folder |
-| registration_id | UUID FK \| null | Links to registrations |
-| processed_by | UUID \| null | crew.id (cashier audit trail) |
-| selection_start_time | string \| null | 5-minute photo selection timer start |
+| session_id | string | Format DD-NAME-CODE — sama dengan folder Capture One macOS |
+| registration_id | UUID FK \| null | Menautkan ke registrations |
+| processed_by | UUID \| null | crew.id (jejak audit kasir) |
+| selection_start_time | string \| null | Waktu mulai timer 5 menit pemilihan foto |
 | total_amount | number | |
 | discount_amount | number | Default 0 |
-| discount_reason | string \| null | **REQUIRED if discount_amount > 0** |
+| discount_reason | string \| null | **DIBUTUHKAN jika discount_amount > 0** |
 | payment_method | `'CASH' \| 'TRANSFER' \| 'QRIS' \| 'ONLINE_QRIS'` \| null | |
 | status | `'ACTIVE' \| 'PAID' \| 'REFUNDED' \| 'VOID'` | |
 | created_at | timestamp | |
 
 ### `expenses`
-| Column | Type |
+| Kolom | Tipe |
 |--------|------|
 | id | UUID PK |
 | tanggal | string (YYYY-MM-DD) |
 | keterangan | string |
 | kategori | string |
 | jumlah | number (IDR) |
+| metode_bayar | string | `'CASH' \| 'QRIS'` (Ditambahkan via migrasi 011) |
 | created_at | timestamp |
 
 ### `phonebooth_photos`
-| Column | Type |
+| Kolom | Tipe |
 |--------|------|
 | id | UUID PK |
 | strip_url | string |
@@ -320,239 +325,236 @@ All TypeScript types live in `packages/supabase/src/types/database.types.ts`.
 | promo_consent | boolean |
 | created_at | timestamp |
 
-### RLS Posture
-- **Anon client** (no Supabase Auth): broad SELECT + INSERT on most tables; UPDATE on `registrations`, `transactions`, `attendance`
-- **`crew` writes**: `service_role` key only — never writable by anon client
-- POS dashboard runs as **anon**. PIN auth is client-side only. Supabase Auth is NOT used.
+### Postur RLS (Row Level Security)
+- **Klien Anon** (tanpa Supabase Auth): SELECT + INSERT secara luas di sebagian besar tabel; UPDATE pada `registrations`, `transactions`, `attendance`
+- **Penulisan `crew`**: hanya kunci `service_role` — tidak pernah dapat ditulis oleh klien anon
+- Dashboard POS berjalan sebagai **anon**. Autentikasi PIN hanya di sisi klien. Auth Supabase TIDAK digunakan.
 
 ---
 
-## 6. API Integrations
+## 6. Integrasi API
 
-### Supabase (Primary backend)
-- All DB reads/writes via `@mera/supabase/client` singleton
-- **Realtime**: `registrations` table (POS booking board live updates)
+### Supabase (Backend Utama)
+- Semua baca/tulis DB melalui singleton `@mera/supabase/client`
+- **Realtime**: tabel `registrations` (pembaruan langsung papan pemesanan POS)
 - **Storage buckets**:
-  - `attendance-photos` — crew clock-in/out webcam captures (private)
-  - `phonebooth` — customer photobooth strips (public, no auth needed)
-- **Edge function**: `calculate-payroll` — Deno, uses `SUPABASE_SERVICE_ROLE_KEY`
+  - `attendance-photos` — tangkapan webcam clock-in/out kru (privat)
+  - `phonebooth` — strip photobooth pelanggan (publik, tidak memerlukan auth)
+- **Edge function**: `calculate-payroll` — Deno, menggunakan `SUPABASE_SERVICE_ROLE_KEY`
 
-### Capture Engine (Kiosk hardware backend)
-- Base URL: `VITE_API_BASE` env var, defaults to `http://192.168.1.100:3100`
-- Runs on the Mac Mini in the studio (local network only)
-- Endpoints (from `apps/kiosk/src/lib/api.ts`):
-  - `POST /api/sessions` — start a new photo session
-  - `GET /api/sessions/:id/photos` — fetch captured photos
-  - `GET /api/frames` — list available frame overlays
-  - `POST /api/print` — trigger print job
-  - `POST /api/render` — trigger render job (strip compositing)
+### Capture Engine (Backend perangkat keras Kiosk)
+- Base URL: env var `VITE_API_BASE`, defaultnya `http://192.168.1.100:3100`
+- Berjalan di Mac Mini di studio (hanya jaringan lokal)
+- Endpoints (dari `apps/kiosk/src/lib/api.ts`):
+  - `POST /api/sessions` — memulai sesi foto baru
+  - `GET /api/sessions/:id/photos` — mengambil foto yang diambil
+  - `GET /api/frames` — membuat daftar overlay frame yang tersedia
+  - `POST /api/print` — memicu pekerjaan cetak
+  - `POST /api/render` — memicu pekerjaan render (komposisi strip)
 
 ### Google Apps Script
-- Receives photobooth strip image uploads from the customer portal
-- Called via `POST /api/upload-strip` proxy in customer-portal (avoids CORS)
-- URL configured via `NEXT_PUBLIC_APPS_SCRIPT_URL`
-- POST body: `multipart/form-data` with image + metadata
+- Menerima unggahan gambar strip photobooth dari portal pelanggan
+- Dipanggil via proxy `POST /api/upload-strip` di customer-portal (menghindari CORS)
+- URL dikonfigurasi melalui `NEXT_PUBLIC_APPS_SCRIPT_URL`
+- Body POST: `multipart/form-data` dengan gambar + metadata
 
 ### Google Drive
-- Mac Mini runs Google Drive Desktop Sync in background
-- Capture One exports go into macOS folders named by `session_id` → auto-synced to Google Drive
-- Download links shared to customers via Instagram DM
-- Crew attendance photos also stored via Google Drive (referenced in AttendanceBoard dual-upload)
+- Mac Mini menjalankan Google Drive Desktop Sync di latar belakang
+- Ekspor Capture One masuk ke folder macOS yang dinamai berdasarkan `session_id` → disinkronkan otomatis ke Google Drive
+- Tautan unduhan dibagikan ke pelanggan melalui Instagram DM
+- Foto absensi kru juga disimpan melalui Google Drive (direferensikan dalam unggahan ganda AttendanceBoard)
 
-### `/api/upload` Proxy (Attendance Photo Dual Upload)
-- Referenced in `AttendanceBoard.tsx` for Google Drive upload of crew photos
-- **Status: possibly missing/planned** — not found as a Next.js route file in the repo
-- May be served by a separate local Node server or is a planned feature
-- Without this endpoint, only the Supabase Storage upload path functions
+### Proxy `/api/upload` (Unggahan Ganda Foto Absensi)
+- Direferensikan di `AttendanceBoard.tsx` untuk unggahan foto kru ke Google Drive
+- **Status: mungkin hilang/direncanakan** — tidak ditemukan sebagai file route Next.js di repositori
+- Mungkin dilayani oleh server Node lokal terpisah atau merupakan fitur yang direncanakan
+- Tanpa endpoint ini, hanya jalur unggahan Supabase Storage yang berfungsi
 
-### Instagram (Operational, not technical)
-- No API integration — IG DM is part of the manual operational workflow
-- Booking confirmations, payment receipts, and file delivery are done via IG DM
+### Instagram (Operasional, bukan teknis)
+- Tidak ada integrasi API — IG DM adalah bagian dari alur kerja operasional manual
+- Konfirmasi pemesanan, struk pembayaran, dan pengiriman file dilakukan melalui IG DM
 
 ---
 
-## 7. Coding Conventions & Patterns
+## 7. Konvensi Kode & Pola (Patterns)
 
-### Styling
-- **Inline style objects are the dominant pattern** — Tailwind is NOT used
-- Visual changes live directly in component files, not in separate CSS/class files
-- `apps/pos-dashboard/src/index.css` defines a comprehensive CSS design token system:
-  - CSS custom properties: `--color-bg-primary`, `--color-accent`, `--color-text-primary`, etc.
+### Penataan Gaya (Styling)
+- **Objek gaya inline (inline style) adalah pola dominan** — Tailwind TIDAK digunakan
+- Perubahan visual hidup langsung di dalam file komponen, bukan dalam file CSS/class terpisah
+- `apps/pos-dashboard/src/index.css` mendefinisikan sistem token desain CSS yang komprehensif:
+  - Properti kustom CSS: `--color-bg-primary`, `--color-accent`, `--color-text-primary`, dll.
   - System font stack: `-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif`
-  - Apple HIG-inspired design language: off-white `#F5F5F7`, dark text, minimal chrome
-  - Animations: `realtime-pulse` (booking live update dot), `slide-in-left`, `pin-shake`, `pin-dot-pop`
-  - Layout utilities: `.app-container`, `.main-content`, `.sidebar`, etc.
-- Customer portal background: `#000000` (black) with white/light text
-- `@mera/ui` primitives (Button, Card, Modal, Badge) are available but adoption is partial
+  - Bahasa desain terinspirasi Apple HIG: off-white `#F5F5F7`, teks gelap, krom minimal
+  - Animasi: `realtime-pulse` (titik pembaruan langsung pemesanan), `slide-in-left`, `pin-shake`, `pin-dot-pop`
+  - Utilitas tata letak: `.app-container`, `.main-content`, `.sidebar`, dll.
+- Latar belakang customer portal: `#000000` (hitam) dengan teks putih/terang
+- Primitif `@mera/ui` (Button, Card, Modal, Badge) tersedia tetapi adopsinya sebagian
 
 ### TypeScript
-- `strict: true` in all packages
-- `skipLibCheck: true` to avoid issues with Supabase TS
-- `// eslint-disable-next-line @typescript-eslint/no-explicit-any` is acceptable for direct Supabase client calls that need type casting
+- `strict: true` di semua package
+- `skipLibCheck: true` untuk menghindari masalah dengan Supabase TS
+- `// eslint-disable-next-line @typescript-eslint/no-explicit-any` dapat diterima untuk pemanggilan klien Supabase langsung yang memerlukan type casting
 
-### State Management
-- **Zustand** in pos-dashboard (`usePOSStore`) and kiosk (`useKioskStore`)
-- **Local React state** in customer-portal — no Zustand
-- POS: most state is in `App.tsx` with `useState` calls; Zustand for cross-component state
+### Manajemen State
+- **Zustand** di pos-dashboard (`usePOSStore`) dan kiosk (`useKioskStore`)
+- **State lokal React** di customer-portal — tanpa Zustand
+- POS: sebagian besar state berada di `App.tsx` dengan pemanggilan `useState`; Zustand untuk state lintas-komponen
 
-### Navigation / Routing
-- **customer-portal**: Next.js App Router file-based routing
-- **pos-dashboard**: View-key state switching inside `App.tsx` — `const [view, setView] = useState('booking-management')`. React Router is declared as a dependency but navigation is state-based.
-- **kiosk**: Screen-key state switching inside `App.tsx` — similar pattern to POS
+### Navigasi / Routing
+- **customer-portal**: Next.js App Router (file-based routing)
+- **pos-dashboard**: Peralihan state view-key di dalam `App.tsx` — `const [view, setView] = useState('booking-management')`. React Router dideklarasikan sebagai dependensi tetapi navigasi berbasis state.
+- **kiosk**: Peralihan state screen-key di dalam `App.tsx` — pola yang mirip dengan POS
 
-### Time (Indonesian Time, WIB UTC+7)
-- **ALWAYS use WIB (UTC+7)** for all date/time logic
-- Pattern: `new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)` for today's date key
-- Shift start times computed as WIB — late penalty is calculated vs scheduled shift start in WIB
+### Waktu (Waktu Indonesia, WIB UTC+7)
+- **SELALU gunakan WIB (UTC+7)** untuk semua logika tanggal/waktu
+- Pola: `new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)` untuk kunci tanggal hari ini
+- Waktu mulai shift dihitung sebagai WIB — penalti keterlambatan dihitung terhadap jadwal mulai shift dalam WIB
 
-### Indonesian Language
-- UI text, some variable names, and all DB column names mix Indonesian and English
-- `nama` = name, `tanggal` = date, `jumlah` = amount, `keterangan` = description, `bertingkat` = tiered
-- Currency: IDR, formatted as `Rp ${n.toLocaleString('id-ID')}` or via a `formatIDR()` helper
+### Bahasa Indonesia
+- Teks UI, beberapa nama variabel, dan semua nama kolom DB mencampur bahasa Indonesia dan Inggris
+- Mata uang: IDR, diformat sebagai `Rp ${n.toLocaleString('id-ID')}` atau melalui helper `formatIDR()`
 
-### Shared Pricing (Critical Pattern)
-- **Never duplicate pricing logic in app code**
-- Always use `calcBookingLineItems(products, addons)` from `@mera/supabase`
-- Always fetch fresh `products` from Supabase before any price display — never use hardcoded prices in POS or booking flow
-- `products.id` is an integer (SERIAL), not UUID
+### Harga Bersama (Pola Kritis)
+- **Jangan pernah menduplikasi logika harga di dalam kode aplikasi**
+- Selalu gunakan `calcBookingLineItems(products, addons)` dari `@mera/supabase`
+- Selalu ambil `products` segar dari Supabase sebelum tampilan harga apa pun — jangan pernah gunakan harga hardcoded di POS atau alur pemesanan
+- `products.id` adalah integer (SERIAL), bukan UUID
 
 ---
 
-## 8. Environment Variables
+## 8. Variabel Lingkungan (Environment Variables)
 
 ### `customer-portal` — `apps/customer-portal/.env.local`
 ```
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
-NEXT_PUBLIC_APPS_SCRIPT_URL=        # Google Apps Script web app URL for strip upload
+NEXT_PUBLIC_APPS_SCRIPT_URL=        # URL aplikasi web Google Apps Script untuk unggahan strip
 ```
 
 ### `pos-dashboard` — `apps/pos-dashboard/.env.local`
 ```
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
-VITE_CUSTOMER_PORTAL_URL=           # Customer portal origin (fallback: http://localhost:3000)
-VITE_PORTAL_URL=                    # KioskView deep-link base (fallback: https://meraselfstudio.com)
+VITE_CUSTOMER_PORTAL_URL=           # Origin portal pelanggan (fallback: http://localhost:3000)
+VITE_PORTAL_URL=                    # Basis deep-link KioskView (fallback: https://meraselfstudio.com)
 ```
 
 ### `kiosk` — `apps/kiosk/.env.local`
 ```
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
-VITE_API_BASE=                      # Capture Engine base URL (default: http://192.168.1.100:3100)
+VITE_API_BASE=                      # Base URL Capture Engine (default: http://192.168.1.100:3100)
 ```
 
-### Supabase Edge Functions (auto-injected by Supabase runtime)
+### Supabase Edge Functions (diinjeksikan otomatis oleh runtime Supabase)
 ```
 SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=          # Used by calculate-payroll to bypass RLS
+SUPABASE_SERVICE_ROLE_KEY=          # Digunakan oleh calculate-payroll untuk mengabaikan RLS
 ```
 
 ---
 
-## 9. Features In Development or Planned
+## 9. Fitur Dalam Pengembangan atau Direncanakan
 
-These are incomplete features found via code inspection — confirmed by code status, not assumed.
+Ini adalah fitur yang belum selesai ditemukan melalui inspeksi kode — dikonfirmasi dari status kode, bukan asumsi.
 
-| Feature | Location | Status | Evidence |
+| Fitur | Lokasi | Status | Bukti |
 |---------|---------|--------|---------|
-| Frame Gallery (Kiosk) | `apps/kiosk/src/screens/FrameGalleryScreen.tsx` | Dead / in-progress — not wired to router | Hardcoded dummy data, className-based styles (inconsistent), `useState(null)` untyped, no route in `App.tsx` |
-| `/api/upload` proxy for Google Drive | Referenced in `AttendanceBoard.tsx` | Missing or planned | Not found as a Next.js API route; may be served elsewhere |
-| Static pricelist → DB-driven | `apps/customer-portal/src/app/pricelist/page.tsx` | Known divergence | All prices hardcoded; no Supabase fetch |
-| `product_id` in addons (v2.1) | `packages/supabase/src/types/database.types.ts` | Shipped; older bookings lack this field | `addons.product_id` marked as optional; fallback inference logic in `calcBookingLineItems` handles absence |
+| Frame Gallery (Kiosk) | `apps/kiosk/src/screens/FrameGalleryScreen.tsx` | Mati / sedang dikerjakan — tidak terhubung ke router | Data dummy hardcoded, gaya berbasis className (tidak konsisten), `useState(null)` untyped, tidak ada rute di `App.tsx` |
+| Proxy `/api/upload` untuk Google Drive | Direferensikan di `AttendanceBoard.tsx` | Hilang atau direncanakan | Tidak ditemukan sebagai API route Next.js; mungkin dilayani di tempat lain |
+| Pricelist statis → Berbasis DB | `apps/customer-portal/src/app/pricelist/page.tsx` | Divergensi yang diketahui | Semua harga hardcoded; tidak mengambil dari Supabase |
+| `product_id` di addons (v2.1) | `packages/supabase/src/types/database.types.ts` | Dirilis; pemesanan yang lebih lama tidak memiliki field ini | `addons.product_id` ditandai opsional; logika inferensi fallback dalam `calcBookingLineItems` menangani ketiadaannya |
 
 ---
 
-## 10. Critical Rules — Do NOT Change Without Confirmation
+## 10. Aturan Kritis — JANGAN Ubah Tanpa Konfirmasi
 
-### Rule 1: Session ID Sanitization
+### Aturan 1: Sanitasi ID Sesi
 **File:** `apps/customer-portal/src/lib/sanitize.ts`
 
-Session IDs are **macOS folder names** used in Capture One on the Mac Mini.
-Any unsupported character crashes the filesystem or creates a mismatched folder.
-**Always** call `sanitizeSessionId()` before writing `session_id` to Supabase.
+ID Sesi adalah **nama folder macOS** yang digunakan di Capture One pada Mac Mini.
+Karakter yang tidak didukung akan merusak sistem file atau membuat folder tidak cocok.
+**Selalu** panggil `sanitizeSessionId()` sebelum menulis `session_id` ke Supabase.
 
-Format: `DD-SANITIZEDNAME-CODE` (e.g. `27-AYU-MR`). Only `[a-zA-Z0-9-]` characters.
+Format: `DD-SANITIZEDNAME-CODE` (mis. `27-AYU-MR`). Hanya karakter `[a-zA-Z0-9-]`.
 
-### Rule 2: Shared Pricing — Never Diverge
+### Aturan 2: Harga Bersama — Jangan Pernah Berubah
 **File:** `packages/supabase/src/types/database.types.ts`
 
-`calcBookingLineItems(products, addons)` is the single source of truth for price calculation.
-It must be used in BOTH customer-portal `BookingFlow.tsx` AND pos-dashboard payment processing.
-`hitungHargaBertingkat(product, pax)` is the tiered pricing calculator — also lives here.
+`calcBookingLineItems(products, addons)` adalah sumber kebenaran tunggal untuk perhitungan harga.
+Ini harus digunakan di KEDUA sisi: `BookingFlow.tsx` (customer-portal) DAN pemrosesan pembayaran POS (pos-dashboard).
+`hitungHargaBertingkat(product, pax)` adalah kalkulator harga bertingkat — juga berada di sini.
 
-**Never hardcode prices or duplicate pricing math in component files.**
+**Jangan pernah melakukan hardcode harga atau menduplikasi perhitungan matematika harga dalam file komponen.**
 
-### Rule 3: Finance Counts PAID Transactions Only
-Omzet/revenue counts only `transactions.status === 'PAID'`.
-Do not change the transaction state machine without reviewing finance aggregations.
+### Aturan 3: Keuangan Hanya Menghitung Transaksi PAID
+Omzet/pendapatan hanya menghitung `transactions.status === 'PAID'`.
+Jangan mengubah state machine transaksi tanpa meninjau agregasi keuangan.
 
-### Rule 4: INTERN Payroll Bypass
-In `supabase/functions/calculate-payroll/index.ts`:
-When `status_gaji === 'INTERN'`: `penalty_amount = 0`, `bonus_amount = 0`, `net_pay = 0`.
-This is intentional — INTERN status is for operational logging only, not pay processing.
+### Aturan 4: Bypass Penggajian INTERN
+Di `supabase/functions/calculate-payroll/index.ts`:
+Saat `status_gaji === 'INTERN'`: `penalty_amount = 0`, `bonus_amount = 0`, `net_pay = 0`.
+Ini disengaja — status INTERN hanya untuk pencatatan operasional, bukan pemrosesan gaji.
 
-### Rule 5: Attendance Isolation
-**Never JOIN `attendance` with `registrations` or `transactions`.**
-Attendance is HR-only data. The `base_rate` on an attendance record is locked at clock-in
-and must never be retroactively updated, even if the crew's salary data changes.
+### Aturan 5: Isolasi Absensi
+**Jangan pernah melakukan JOIN `attendance` dengan `registrations` atau `transactions`.**
+Absensi adalah data khusus HR. `base_rate` pada catatan absensi dikunci saat clock-in dan tidak boleh diperbarui secara retroaktif, bahkan jika data gaji kru berubah.
 
-### Rule 6: Photobooth is 100% Client-Side
+### Aturan 6: Photobooth 100% Sisi Klien
 **File:** `apps/customer-portal/src/components/PhotoboothPage.tsx`
 
-During capture: **zero network calls** — no Supabase, no uploads, no external APIs.
-Output is a local browser download only. The Google Apps Script upload is a post-session, opt-in action.
-Do not add network calls to `PhotoboothPage.tsx` without an explicit product decision.
+Selama pengambilan gambar: **nol pemanggilan jaringan** — tidak ada Supabase, tidak ada unggahan, tidak ada API eksternal.
+Output hanya berupa unduhan lokal browser. Unggahan Google Apps Script adalah tindakan opt-in (pilihan) pasca-sesi.
+Jangan tambahkan panggilan jaringan ke `PhotoboothPage.tsx` tanpa keputusan produk yang eksplisit.
 
-### Rule 7: Time Slot Arrays Must Stay in Sync
-Booking time slot arrays exist in BOTH:
+### Aturan 7: Array Slot Waktu Harus Tetap Sinkron
+Array slot waktu pemesanan ada di KEDUA file:
 - `apps/customer-portal/src/components/BookingFlow.tsx`
 - `apps/pos-dashboard/src/App.tsx`
 
-If you add, remove, or change time slots: **update both files.**
+Jika Anda menambah, menghapus, atau mengubah slot waktu: **perbarui kedua file tersebut.**
 
-### Rule 8: Discount Reason Required
-`discount_reason` must be non-null when `discount_amount > 0` on a transaction.
-This is a hard owner audit requirement.
+### Aturan 8: Alasan Diskon Diperlukan
+`discount_reason` harus non-null ketika `discount_amount > 0` pada suatu transaksi.
+Ini adalah persyaratan audit pemilik yang keras (mutlak).
 
-### Rule 9: KEEPSLOT Expiry is 6 Hours
-`ONLINE_KEEPSLOT` registrations expire exactly 6 hours after `created_at`.
-The POS board auto-expires on load. The booking flow sets `expires_at = now + 6h`.
-Do not change this without a product/business decision.
+### Aturan 9: Kedaluwarsa KEEPSLOT adalah 6 Jam
+Registrasi `ONLINE_KEEPSLOT` kedaluwarsa tepat 6 jam setelah `created_at`.
+Papan POS otomatis menetapkan kedaluwarsa saat dimuat. Alur pemesanan mengatur `expires_at = now + 6h`.
+Jangan ubah ini tanpa keputusan produk/bisnis.
 
-### Rule 10: Owner PIN is Hardcoded
-`OWNER_PIN = '1609'` is hardcoded in `apps/pos-dashboard/src/App.tsx`.
-Acceptable for current internal use. Do not move to `.env` without adding proper secret management.
-Do not log or expose it in errors or console output.
+### Aturan 10: PIN Pemilik di-Hardcode
+`OWNER_PIN = '1609'` di-hardcode dalam `apps/pos-dashboard/src/App.tsx`.
+Dapat diterima untuk penggunaan internal saat ini. Jangan pindahkan ke `.env` tanpa menambahkan manajemen rahasia yang tepat.
+Jangan me-log atau mengeksposnya dalam error atau output konsol.
 
-### Rule 11: Hardcoded Shift Rates and Bonus Targets (Known Constants)
-In `apps/pos-dashboard/src/components/AttendanceBoard.tsx`:
-- Weekday Full Time rate: **75,000 IDR**
-- Weekend Shift 1 / Shift 2 rate: **35,000 IDR**
-- Weekend Full Time rate: **100,000 IDR**
-- Weekday bonus target: **1,000,000 IDR** omzet
-- Weekend bonus target: **1,500,000 IDR** omzet
+### Aturan 11: Tarif Shift dan Target Bonus Hardcoded (Konstanta yang Diketahui)
+Di `apps/pos-dashboard/src/components/AttendanceBoard.tsx`:
+- Tarif Weekday Full Time: **75.000 IDR**
+- Tarif Weekend Shift 1 / Shift 2: **35.000 IDR**
+- Tarif Weekend Full Time: **100.000 IDR**
+- Target bonus weekday: omzet **1.000.000 IDR**
+- Target bonus weekend: omzet **1.500.000 IDR**
 
-These are business constants. Do not change without explicit owner instruction.
+Ini adalah konstanta bisnis. Jangan ubah tanpa instruksi pemilik yang eksplisit.
 
-### Rule 12: `products.id` is an Integer, Not a UUID
-The `products` table uses a SERIAL integer primary key. Never treat `Product.id` as a UUID.
-When storing `product_id` in `addons` JSON, it is a `number`.
+### Aturan 12: `products.id` adalah Integer, Bukan UUID
+Tabel `products` menggunakan primary key integer SERIAL. Jangan pernah memperlakukan `Product.id` sebagai UUID.
+Saat menyimpan `product_id` di dalam JSON `addons`, nilainya adalah `number`.
 
-### Rule 13: RLS Is Wide Open for Anon — No Secret Data in Anon-Accessible Tables
-The anon Supabase client can SELECT all public tables. Do not store sensitive data
-(PINs, private contact info, payment credentials) in tables readable by anon.
-Crew PIN hashes are stored — ensure they remain hashed (never plaintext).
+### Aturan 13: RLS Terbuka Lebar untuk Anon — Tidak Ada Data Rahasia di Tabel yang Dapat Diakses Anon
+Klien Supabase anon dapat melakukan SELECT ke semua tabel publik. Jangan simpan data sensitif (PIN, info kontak pribadi, kredensial pembayaran) di tabel yang dapat dibaca oleh anon.
+Hash PIN Kru disimpan — pastikan mereka tetap ter-hash (tidak pernah berupa plaintext).
 
 ---
 
-## 11. Key Commands
+## 11. Perintah Kunci
 
 ```bash
 # Install
 pnpm install
 
-# Dev (all apps)
+# Dev (semua aplikasi)
 pnpm dev
 
 # Per-app dev
@@ -564,7 +566,7 @@ pnpm --filter kiosk dev               # localhost:5174
 pnpm build
 pnpm --filter customer-portal build
 
-# Type check — ALWAYS run after touching shared types in @mera/supabase
+# Pengecekan tipe (Type check) — SELALU jalankan setelah menyentuh tipe bersama di @mera/supabase
 pnpm --filter customer-portal type-check
 pnpm --filter pos-dashboard type-check
 pnpm --filter kiosk type-check
@@ -581,75 +583,75 @@ pnpm clean
 ## 12. Deployment
 
 ### Customer Portal → Vercel
-- Auto-deploys from `main` branch
-- Config: `apps/customer-portal/vercel.json`
-- **Two-step deploy via `deploy.sh`**: customer portal uses `pnpm deploy --filter customer-portal` to a `.deploy-portal/` temp dir to avoid monorepo symlink issues with Vercel
-- Next.js config (`next.config.ts`) transpiles `@mera/ui` and `@mera/supabase` workspace packages
+- Auto-deploys dari branch `main`
+- Konfigurasi: `apps/customer-portal/vercel.json`
+- **Deploy dua langkah via `deploy.sh`**: customer portal menggunakan `pnpm deploy --filter customer-portal` ke direktori sementara `.deploy-portal/` untuk menghindari masalah symlink monorepo dengan Vercel
+- Konfigurasi Next.js (`next.config.ts`) men-transpile package workspace `@mera/ui` dan `@mera/supabase`
 
-### POS Dashboard — Local Only
-- Runs locally on the studio iMac (27-inch)
-- `pnpm --filter pos-dashboard build` → serve the static `dist/` output via any local server
-- `deploy.sh` handles the POS dashboard deploy separately (direct build)
+### POS Dashboard — Hanya Lokal
+- Berjalan secara lokal di iMac studio (27-inci)
+- `pnpm --filter pos-dashboard build` → menyajikan output statis `dist/` melalui server lokal mana pun
+- `deploy.sh` menangani deployment dashboard POS secara terpisah (direct build)
 
-### Kiosk — Local Network
-- Runs on Android tablet in studio on local WiFi
-- `pnpm --filter kiosk build` → serve `dist/` on local network
+### Kiosk — Jaringan Lokal
+- Berjalan pada tablet Android di studio di WiFi lokal
+- `pnpm --filter kiosk build` → menyajikan `dist/` di jaringan lokal
 
 ### Supabase
 - Edge functions: `supabase functions deploy calculate-payroll`
-- Migrations: `supabase db push` or via `scripts/run-migrations.mjs`
+- Migrasi: `supabase db push` atau melalui `scripts/run-migrations.mjs`
 
 ---
 
-## 13. File Map — Quick Reference
+## 13. Peta File — Referensi Cepat
 
-| What | Where |
+| Apa | Di Mana |
 |------|-------|
-| All DB types + shared pricing | `packages/supabase/src/types/database.types.ts` |
-| Supabase client singleton | `packages/supabase/src/client.ts` |
-| Package public exports | `packages/supabase/src/index.ts` |
-| Session ID sanitizer | `apps/customer-portal/src/lib/sanitize.ts` |
-| Booking flow (customer) | `apps/customer-portal/src/components/BookingFlow.tsx` |
+| Semua tipe DB + harga bersama | `packages/supabase/src/types/database.types.ts` |
+| Singleton klien Supabase | `packages/supabase/src/client.ts` |
+| Ekspor publik package | `packages/supabase/src/index.ts` |
+| Sanitizer ID Sesi | `apps/customer-portal/src/lib/sanitize.ts` |
+| Alur pemesanan (pelanggan) | `apps/customer-portal/src/components/BookingFlow.tsx` |
 | Landing page | `apps/customer-portal/src/components/LandingPage.tsx` |
-| Free photobooth | `apps/customer-portal/src/components/PhotoboothPage.tsx` |
-| Self check-in | `apps/customer-portal/src/components/CheckinPage.tsx` |
-| Strip upload proxy | `apps/customer-portal/src/app/api/upload-strip/route.ts` |
-| Admin QR printer | `apps/customer-portal/src/app/admin/qr/page.tsx` |
-| POS dashboard (all logic) | `apps/pos-dashboard/src/App.tsx` |
-| Attendance board | `apps/pos-dashboard/src/components/AttendanceBoard.tsx` |
-| POS CSS design tokens | `apps/pos-dashboard/src/index.css` |
-| Kiosk app entry | `apps/kiosk/src/App.tsx` |
-| Kiosk Capture Engine client | `apps/kiosk/src/lib/api.ts` |
-| Kiosk state store | `apps/kiosk/src/store/useKioskStore.ts` |
-| Payroll edge function | `supabase/functions/calculate-payroll/index.ts` |
-| DB migrations | `supabase/migrations/` (001 → 010) |
-| Deployment script | `deploy.sh` |
-| Architecture docs (start here) | `docs/9-current-project-context.md` |
+| Photobooth gratis | `apps/customer-portal/src/components/PhotoboothPage.tsx` |
+| Check-in mandiri | `apps/customer-portal/src/components/CheckinPage.tsx` |
+| Proxy unggahan strip | `apps/customer-portal/src/app/api/upload-strip/route.ts` |
+| Printer QR admin | `apps/customer-portal/src/app/admin/qr/page.tsx` |
+| POS dashboard (semua logika) | `apps/pos-dashboard/src/App.tsx` |
+| Papan absensi | `apps/pos-dashboard/src/components/AttendanceBoard.tsx` |
+| Token desain CSS POS | `apps/pos-dashboard/src/index.css` |
+| Entri aplikasi Kiosk | `apps/kiosk/src/App.tsx` |
+| Klien Kiosk Capture Engine | `apps/kiosk/src/lib/api.ts` |
+| Store state Kiosk | `apps/kiosk/src/store/useKioskStore.ts` |
+| Edge function penggajian | `supabase/functions/calculate-payroll/index.ts` |
+| Migrasi DB | `supabase/migrations/` (001 → 010) |
+| Skrip deployment | `deploy.sh` |
+| Dokumen arsitektur (mulai dari sini) | `docs/9-current-project-context.md` |
 
 ---
 
-## 14. Known Gotchas
+## 14. Gotchas yang Diketahui (Masalah yang Sering Terjadi)
 
-1. **Inline styles everywhere** — visual changes require editing component files directly; there is no Tailwind or global CSS class system.
+1. **Inline styles di mana-mana** — perubahan visual mengharuskan pengeditan file komponen secara langsung; tidak ada Tailwind atau sistem class CSS global.
 
-2. **`App.tsx` in POS is monolithic** — most POS logic is in one large file. Navigation is `view` state switching (`useState('booking-management')`), not React Router, despite the router dependency.
+2. **`App.tsx` di POS bersifat monolitik** — sebagian besar logika POS berada dalam satu file besar. Navigasi adalah peralihan state `view` (`useState('booking-management')`), bukan React Router, terlepas dari adanya dependensi router.
 
-3. **RLS is wide open for anon** — registrations, transactions, and attendance are all writable by anonymous clients. Security is enforced by client-side PIN gates and `service_role`-only writes to the `crew` table.
+3. **RLS terbuka lebar untuk anon** — registrations, transactions, dan attendance semuanya dapat ditulis oleh klien anonim (anonymous). Keamanan ditegakkan oleh gerbang PIN sisi klien dan penulisan hanya `service_role` ke tabel `crew`.
 
-4. **`products.id` is a SERIAL integer** — not a UUID. Do not treat it as one.
+4. **`products.id` adalah integer SERIAL** — bukan UUID. Jangan perlakukan sebagai UUID.
 
-5. **Pricelist page is static** — `apps/customer-portal/src/app/pricelist/page.tsx` has hardcoded prices that are NOT sourced from Supabase. If product prices change in the DB, the pricelist page must be manually updated.
+5. **Halaman pricelist statis** — `apps/customer-portal/src/app/pricelist/page.tsx` memiliki harga hardcoded yang TIDAK bersumber dari Supabase. Jika harga produk berubah dalam DB, halaman daftar harga harus diperbarui secara manual.
 
-6. **Older bookings lack `product_id`** — `addons.product_id` was added in v2.1. `calcBookingLineItems()` falls back to room-label → kategori inference for older records.
+6. **Pemesanan lama tidak memiliki `product_id`** — `addons.product_id` ditambahkan pada v2.1. `calcBookingLineItems()` menggunakan fallback inferensi label kamar → kategori untuk data lama.
 
-7. **Time slots duplicated** — weekday/weekend time slot arrays exist in both `BookingFlow.tsx` and `App.tsx`. Change one → change both.
+7. **Slot waktu diduplikasi** — array slot waktu weekday/weekend ada di kedua `BookingFlow.tsx` dan `App.tsx`. Ubah satu → ubah keduanya.
 
-8. **`/api/upload` may be missing** — `AttendanceBoard.tsx` references `/api/upload` for Google Drive upload of crew clock-in photos. This endpoint was not found as a Next.js route file. Only the Supabase Storage path is confirmed working.
+8. **`/api/upload` mungkin hilang** — `AttendanceBoard.tsx` mereferensikan `/api/upload` untuk mengunggah foto clock-in kru ke Google Drive. Endpoint ini tidak ditemukan sebagai file route Next.js. Hanya jalur unggahan Supabase Storage yang dikonfirmasi bekerja.
 
-9. **`FrameGalleryScreen.tsx` is dead code** — the kiosk screen is not wired to any route in `App.tsx`. Uses inconsistent styles and dummy data. Do not rely on it or extend it without first auditing its state.
+9. **`FrameGalleryScreen.tsx` adalah kode mati** — layar kiosk ini tidak terhubung ke rute mana pun di `App.tsx`. Menggunakan gaya tidak konsisten dan data dummy. Jangan bergantung padanya atau mengembangkannya tanpa mengaudit state-nya terlebih dahulu.
 
-10. **Legacy docs drift** — `docs/` files 1–8 reference older tech decisions and naming. Trust `docs/9-12` and the code. When docs and code disagree, the code is correct.
+10. **Penyimpangan (drift) dokumen lama** — file `docs/` 1–8 mereferensikan keputusan teknologi dan penamaan yang lebih lama. Percayai `docs/9-12` dan kodenya. Saat dokumen dan kode tidak setuju, kodenya yang benar.
 
-11. **Price is snapshotted at booking time** — `registration.addons.computed_price` captures the price at submission. Changing product prices in the DB does not retroactively update old bookings' computed prices.
+11. **Harga di-snapshot saat pemesanan** — `registration.addons.computed_price` menangkap harga saat pengiriman. Mengubah harga produk dalam DB tidak secara retroaktif memperbarui harga perhitungan pada pemesanan lama.
 
-12. **Kiosk is a hardware system** — the `kiosk` app does not write bookings or talk to the customer portal directly. It communicates with the local Capture Engine server on the Mac Mini (`http://192.168.1.100:3100`). Without that server running, the kiosk app has no backend.
+12. **Kiosk adalah sistem perangkat keras** — aplikasi `kiosk` tidak menulis pemesanan atau berbicara dengan portal pelanggan secara langsung. Ini berkomunikasi dengan server Capture Engine lokal di Mac Mini (`http://192.168.1.100:3100`). Tanpa server tersebut berjalan, aplikasi kiosk tidak memiliki backend.

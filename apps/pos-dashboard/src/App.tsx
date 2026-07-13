@@ -257,6 +257,22 @@ export default function App() {
   const [monthExpMetode, setMonthExpMetode] = useState<'CASH' | 'QRIS'>('CASH')
   const [monthExpDate, setMonthExpDate] = useState(() => todayKey())
 
+  const isDashboardUnlocked = useMemo(() => {
+    if (role === 'owner') return true;
+    if (role !== 'crew') return false;
+    if (!activeCrewId) return false;
+    
+    const activeCrew = crewList.find(c => c.id === activeCrewId);
+    if (!activeCrew) return false;
+    
+    // Interns are not allowed access to POS dashboard
+    if (activeCrew.status_gaji === 'INTERN') return false;
+    
+    // Pro Crew must be clocked in today
+    const hasActiveAttendance = attendance.some(a => a.crew_id === activeCrewId && a.status === 'ACTIVE');
+    return hasActiveAttendance;
+  }, [role, activeCrewId, crewList, attendance]);
+
   // Core loader — accepts explicit ISO date range
   const loadRecapRange = useCallback(async (start: string, end: string) => {
     setMonthLoading(true)
@@ -3086,16 +3102,16 @@ export default function App() {
         )
       })()}
 
-      {role === 'crew' && showCrewAttendanceOverlay && (
+      {role === 'crew' && (!isDashboardUnlocked || showCrewAttendanceOverlay) && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(3px)', zIndex: 999, display: 'grid', placeItems: 'center', padding: 16 }}>
           <div style={{ width: 'min(920px, 100%)', maxHeight: '90vh', overflow: 'auto', border: '1px solid var(--mera-border)', borderRadius: 20, background: 'var(--mera-surface)', boxShadow: 'var(--mera-shadow-xl)' }}>
             <div style={{ padding: 14, borderBottom: '1px solid var(--mera-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--mera-text-secondary)' }}>Clock in to access dashboard</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--mera-text-secondary)' }}>{isDashboardUnlocked ? 'Attendance Board' : 'Clock in to access dashboard'}</p>
               <button
-                onClick={handleLogout}
+                onClick={isDashboardUnlocked ? () => setShowCrewAttendanceOverlay(false) : handleLogout}
                 style={{ border: '1px solid var(--mera-border-strong)', borderRadius: 10, background: 'var(--mera-surface-raised)', color: 'var(--mera-text-secondary)', fontWeight: 600, fontSize: 12, padding: '8px 14px' }}
               >
-                Back
+                {isDashboardUnlocked ? 'Close' : 'Back'}
               </button>
             </div>
 
