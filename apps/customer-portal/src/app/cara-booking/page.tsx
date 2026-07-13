@@ -20,7 +20,7 @@ const STEPS = [
         number: '01',
         emoji: '🏠',
         title: 'Pilih Studio',
-        desc: 'Pilih studio yang kamu inginkan, ada 3 pilihan Studio : Basic Studio, Elevator Studio dan Majestic Studio',
+        desc: 'Pilih studio yang kamu inginkan: Basic Studio atau Pas Photo.',
     },
     {
         number: '02',

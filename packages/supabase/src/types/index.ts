@@ -18,6 +18,7 @@ export type {
     PayrollResult,
     StatusGaji,
     PhoneBoothPhoto,
+    Studio,
 } from './database.types'
 
 export { hitungHargaBertingkat } from './database.types'

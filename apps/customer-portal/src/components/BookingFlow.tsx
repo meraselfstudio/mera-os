@@ -5,49 +5,12 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@mera/supabase/client'
-import type { Product, BookingType } from '@mera/supabase'
+import type { Product, BookingType, Studio } from '@mera/supabase'
 import { calcBookingLineItems } from '@mera/supabase'
 import QRCode from 'react-qr-code'
 
 // ── Constants ───────────────────────────────────────────────────
-export const STUDIO_ROOMS = [
-    {
-        id: 'Basic Studio',
-        name: 'Basic Studio',
-        desc: '',
-        emoji: '',
-        accent: '#ffffffff',
-        bgGradient: 'linear-gradient(160deg, #000000ff 0%, #1b1b1bff 100%)',
-        image: '/photo-basic-lg-1.png',
-    },
-    {
-        id: 'Pas Photo',
-        name: 'Pas Photo',
-        desc: '',
-        emoji: '',
-        accent: '#ffffffff',
-        bgGradient: 'linear-gradient(160deg, #000000ff 0%, #1b1b1bff 100%)',
-        image: '/photo-pasphoto-bl.png',
-    },
-    {
-        id: 'Majestic Studio',
-        name: 'Majestic Studio',
-        desc: '',
-        emoji: '',
-        accent: '#ffffffff',
-        bgGradient: 'linear-gradient(160deg, #000000ff 0%, #1b1b1bff 100%)',
-        image: '/photo-majestic-1.png',
-    },
-    {
-        id: 'Elevator Studio',
-        name: 'Elevator Studio',
-        desc: '',
-        emoji: '',
-        accent: '#ffffffff',
-        bgGradient: 'linear-gradient(160deg, #000000ff 0%, #1b1b1bff 100%)',
-        image: '/photo-elevator-1.png',
-    },
-]
+
 
 export const VARIANTS = {
     'Basic Studio': [
@@ -254,6 +217,7 @@ export default function BookingFlow() {
     const [state, setState] = useState<BookingState>(INITIAL)
     const [allProducts, setAllProducts] = useState<Product[]>([])
     const [addonProducts, setAddonProducts] = useState<Product[]>([])
+    const [studios, setStudios] = useState<Studio[]>([])
     const [loading, setLoading] = useState(false)
     const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
 
@@ -265,13 +229,17 @@ export default function BookingFlow() {
     const [rescCalDate, setRescCalDate] = useState<Date>(() => new Date())
     const [rescLoading, setRescLoading] = useState(false)
 
-    // Fetch all active products
+    // Fetch all active products and studios
     useEffect(() => {
         supabase.from('products').select('*').eq('is_active', true).order('id')
             .then(({ data }) => {
                 const all = (data ?? []) as Product[]
                 setAllProducts(all.filter(p => !p.is_addon))
                 setAddonProducts(all.filter(p => p.is_addon))
+            })
+        supabase.from('studios').select('*').eq('is_active', true).order('sort_order')
+            .then(({ data }) => {
+                if (data) setStudios(data as Studio[])
             })
     }, [])
 
@@ -307,13 +275,13 @@ export default function BookingFlow() {
         if (!state.selectedRoom) return []
         return allProducts.filter(p => {
             const cat = p.kategori.toLowerCase()
-            if (state.selectedRoom === 'Basic Studio') return cat === 'basic studio'
-            if (state.selectedRoom === 'Pas Photo') return cat === 'pas photo'
-            if (state.selectedRoom === 'Elevator Studio') return cat === 'thematic'
-            if (state.selectedRoom === 'Majestic Studio') return cat === 'thematic'
+            const activeStudio = studios.find(s => s.id === state.selectedRoom)
+            if (activeStudio && activeStudio.allowed_categories) {
+                return activeStudio.allowed_categories.some(allowed => cat.includes(allowed.toLowerCase()))
+            }
             return false
         })
-    }, [state.selectedRoom, allProducts])
+    }, [state.selectedRoom, allProducts, studios])
 
     // Dynamic Time Slots based on Date, with shared studio logic for Basic Studio and Pas Photo
     const [bookedSlots, setBookedSlots] = useState<string[]>([])
@@ -329,25 +297,28 @@ export default function BookingFlow() {
             .in('status', ['PENDING', 'VERIFIED', 'PROCESSED'])
             .then(({ data }) => {
                 if (!data) { setBookedSlots([]); return }
-                // Only block slots for the same studio (not the whole group)
+                // Only block slots for the same studio or studios in the same shared_slots_group
                 const selected = state.selectedRoom
-                let blockRooms: string[] = []
-                if (selected === 'Basic Studio' || selected === 'Pas Photo') {
-                    blockRooms = ['Basic Studio', 'Pas Photo']
-                } else if (selected === 'Elevator Studio' || selected === 'Majestic Studio') {
-                    blockRooms = ['Elevator Studio', 'Majestic Studio']
-                } else {
-                    blockRooms = [selected || '']
+                const activeStudio = studios.find(s => s.id === selected)
+                let blockRooms: string[] = [selected || '']
+                if (activeStudio && activeStudio.shared_slots_group) {
+                    blockRooms = studios
+                        .filter(s => s.shared_slots_group === activeStudio.shared_slots_group)
+                        .map(s => s.id)
+                } else if (!activeStudio) {
+                    // Fallback for hardcoded if studios haven't loaded
+                    if (selected === 'Basic Studio' || selected === 'Pas Photo') blockRooms = ['Basic Studio', 'Pas Photo']
+                    else if (selected === 'Elevator Studio' || selected === 'Majestic Studio') blockRooms = ['Elevator Studio', 'Majestic Studio']
                 }
+
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const blocked = (data as any[]).filter(row => {
                     const room = row.addons?.room
-                    // Only block if the booking is for the same physical studio (not across groups)
                     return blockRooms.includes(room)
                 }).map((row: { preferred_time: string }) => row.preferred_time)
                 setBookedSlots(blocked)
             })
-    }, [state.preferredDate, state.selectedRoom])
+    }, [state.preferredDate, state.selectedRoom, studios])
 
     const availableSlots = useMemo(() => {
         if (!state.preferredDate) return []
@@ -628,36 +599,14 @@ export default function BookingFlow() {
                                 </div>
 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 28, width: '100%', maxWidth: 760 }}>
-                                    {/* Row 1: Basic Studio & Pas Photo */}
                                     <div>
-                                        <h3 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', marginBottom: 14, textAlign: 'center', letterSpacing: TRACK.soft }}>Basic Studio Packages:</h3>
                                         <div style={{
                                             display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, width: '100%'
                                         }}>
-                                            {[STUDIO_ROOMS[0], STUDIO_ROOMS[1]].map(r => (
+                                            {studios.map(r => (
                                                 <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifySelf: 'center', width: 'clamp(120px, 42vw, 168px)' }}>
                                                     <div style={{ width: '100%', position: 'relative', marginBottom: 12, aspectRatio: '4/5' }}>
-                                                        <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat` }} />
-                                                    </div>
-                                                    <button onClick={() => { setState(p => ({ ...p, selectedRoom: r.id, selectedPackage: null, selectedVariant: null, selectedAddons: [] })); setStep('packages'); }}
-                                                        style={{ background: '#622128', color: '#fff', border: 'none', borderRadius: 999, padding: '11px 14px', width: '100%', minHeight: 44, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', lineHeight: 1.2, textAlign: 'center', transition: 'transform 0.15s ease' }}>
-                                                        {r.name} <span style={{ opacity: 0.6 }}>→</span>
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Row 2: Majestic & Elevator */}
-                                    <div>
-                                        <h3 style={{ fontSize: TYPE.xs, fontWeight: 700, color: '#888', marginBottom: 14, textAlign: 'center', marginTop: 6, letterSpacing: TRACK.soft }}>Thematic Studio Packages:</h3>
-                                        <div style={{
-                                            display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14, width: '100%'
-                                        }}>
-                                            {[STUDIO_ROOMS[2], STUDIO_ROOMS[3]].map(r => (
-                                                <div key={r.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifySelf: 'center', width: 'clamp(120px, 42vw, 168px)' }}>
-                                                    <div style={{ width: '100%', position: 'relative', marginBottom: 12, aspectRatio: '4/5' }}>
-                                                        <div style={{ width: '100%', height: '100%', background: `url(${r.image}) center/contain no-repeat` }} />
+                                                        <div style={{ width: '100%', height: '100%', background: `url(${r.image_url}) center/contain no-repeat` }} />
                                                     </div>
                                                     <button onClick={() => { setState(p => ({ ...p, selectedRoom: r.id, selectedPackage: null, selectedVariant: null, selectedAddons: [] })); setStep('packages'); }}
                                                         style={{ background: '#622128', color: '#fff', border: 'none', borderRadius: 999, padding: '11px 14px', width: '100%', minHeight: 44, fontSize: TYPE.xs, fontWeight: 700, letterSpacing: TRACK.soft, cursor: 'pointer', display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', lineHeight: 1.2, textAlign: 'center', transition: 'transform 0.15s ease' }}>
@@ -698,7 +647,7 @@ export default function BookingFlow() {
                                                 }}>
                                                     <div style={{
                                                         width: '100%', height: '100%',
-                                                        background: `url(${STUDIO_ROOMS.find(r => r.id === state.selectedRoom)?.image || ''}) center/contain no-repeat`,
+                                                        background: `url(${studios.find(r => r.id === state.selectedRoom)?.image_url || ''}) center/contain no-repeat`,
                                                     }} />
                                                 </div>
                                             </div>

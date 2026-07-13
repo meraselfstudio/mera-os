@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { supabase } from '@mera/supabase/client'
-import { Clock, RefreshCw, CheckCircle2, Circle, AlertTriangle, Camera, XCircle, ArrowLeft } from 'lucide-react'
+import { createPOSClient } from '@mera/supabase'
+const supabase = createPOSClient()
+import { Clock, RefreshCw, CheckCircle2, Circle, AlertTriangle, Camera, XCircle, ArrowLeft, Download } from 'lucide-react'
 import type { Crew, Attendance } from '@mera/supabase'
 
 // ── Shift Definitions ─────────────────────────────────────────
@@ -124,7 +125,7 @@ function useCamera() {
 }
 
 // ── Upload photo to Supabase Storage ─────────────────────────
-async function uploadPhoto(base64: string, filename: string): Promise<string | null> {
+async function uploadPhoto(base64: string, filename: string, metadata?: any): Promise<string | null> {
     try {
         const res = await fetch(base64)
         const blob = await res.blob()
@@ -135,7 +136,7 @@ async function uploadPhoto(base64: string, filename: string): Promise<string | n
         const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path)
 
         // Also upload to Google Drive via Apps Script (silent, best-effort)
-        uploadToDriveBackground(base64, filename)
+        uploadToDriveBackground(base64, filename, metadata)
 
         return urlData.publicUrl
     } catch {
@@ -145,20 +146,69 @@ async function uploadPhoto(base64: string, filename: string): Promise<string | n
 
 // ── Silent background upload to Google Drive via server-side proxy ──
 
-function uploadToDriveBackground(base64: string, filename: string) {
+function uploadToDriveBackground(base64: string, filename: string, metadata?: any) {
     const data = base64.split(',')[1]
     if (!data) return
 
-    fetch('/api/upload', {
+    const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL
+    if (!scriptUrl) return
+
+    // Sending directly to Apps Script using no-cors and text/plain to avoid CORS preflight issues
+    fetch(scriptUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
         body: JSON.stringify({
             fileName: filename,
             mimeType: 'image/jpeg',
             data,
-            folder: 'attendance',
+            folderId: '1KfG7aIPXbZIoOG857fFl73jfYJozAYBI',
+            subFolder: metadata?.crewName || 'Unknown'
         }),
-    }).catch(() => { /* silent */ })
+    }).catch(e => console.warn('Background upload failed', e))
+}
+
+// ── Export Intern PDF ─────────────────────────────────────────
+
+function exportInternPdf(attendance: Attendance[], crewList: Crew[]) {
+    const jsPDF = (window as any).jspdf.jsPDF
+    const doc = new jsPDF()
+    const interns = crewList.filter((c: any) => c.status_gaji === 'INTERN')
+    const internIds = new Set(interns.map(c => c.id))
+
+    // Filter attendance for interns only
+    const internAtt = attendance.filter(a => internIds.has(a.crew_id))
+
+    // Prepare table data
+    const tableData = internAtt.map(a => {
+        const crewName = crewList.find(c => c.id === a.crew_id)?.nama || 'Unknown'
+        const inTime = new Date(a.clock_in).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        const outTime = a.clock_out ? new Date(a.clock_out).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'
+        const date = new Date(a.clock_in).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+        return [
+            date,
+            crewName,
+            a.shift_type,
+            inTime,
+            outTime,
+            a.status === 'COMPLETED' ? 'Selesai' : 'Hadir'
+        ]
+    })
+
+    doc.setFontSize(16)
+    doc.text('Rekap Absen Magang', 14, 20)
+    doc.setFontSize(10)
+    doc.text(`Tanggal Cetak: ${new Date().toLocaleString('id-ID')}`, 14, 26)
+
+    ;(doc as any).autoTable({
+        startY: 32,
+        head: [['Tanggal', 'Nama', 'Shift', 'Clock In', 'Clock Out', 'Status']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [41, 128, 185] }
+    })
+
+    doc.save(`Rekap_Absen_Magang_${new Date().getTime()}.pdf`)
 }
 
 // ── Main Component ────────────────────────────────────────────
@@ -232,11 +282,21 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                         {now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                     </p>
                 </div>
-                <button onClick={load} style={{
-                    padding: '6px 14px', fontSize: 12, border: '1px solid var(--mera-border)',
-                    borderRadius: 'var(--mera-radius-md)', background: 'var(--mera-surface)',
-                    cursor: 'pointer', color: 'var(--mera-text-secondary)',
-                }}><RefreshCw size={12} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} /></button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => exportInternPdf(attendance, crew)} style={{
+                        padding: '6px 14px', fontSize: 12, border: '1px solid var(--mera-border)',
+                        borderRadius: 'var(--mera-radius-md)', background: 'var(--mera-surface)',
+                        cursor: 'pointer', color: 'var(--mera-text-secondary)', fontWeight: 600
+                    }}>
+                        <Download size={12} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} />
+                        Cetak PDF Magang
+                    </button>
+                    <button onClick={load} style={{
+                        padding: '6px 14px', fontSize: 12, border: '1px solid var(--mera-border)',
+                        borderRadius: 'var(--mera-radius-md)', background: 'var(--mera-surface)',
+                        cursor: 'pointer', color: 'var(--mera-text-secondary)',
+                    }}><RefreshCw size={12} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} /> Refresh</button>
+                </div>
             </div>
 
             {/* ── Stats strip ────────────────────────────── */}
@@ -445,7 +505,13 @@ function ClockInModal({ crew, attendance, onClose, onDone }: {
         let photoUrl: string | null = null
         if (photoData) {
             const fname = `${todayISO()}_${crew.id}_in_${Date.now()}.jpg`
-            photoUrl = await uploadPhoto(photoData, fname)
+            photoUrl = await uploadPhoto(photoData, fname, {
+                crewName: crew.nama,
+                type: 'IN',
+                shift: shift.key,
+                time: clockInISO,
+                isIntern
+            })
         }
 
         const { error } = await (supabase.from('attendance') as any).insert({
@@ -601,12 +667,19 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
         let photoUrl: string | null = null
         if (photoData) {
             const fname = `${todayISO()}_${crew.id}_out_${Date.now()}.jpg`
-            photoUrl = await uploadPhoto(photoData, fname)
+            const clockOutISO = new Date().toISOString()
+            photoUrl = await uploadPhoto(photoData, fname, {
+                crewName: crew.nama,
+                type: 'OUT',
+                shift: att.shift_type,
+                time: clockOutISO,
+                isIntern
+            })
         }
 
         const { error } = await (supabase.from('attendance') as any)
             .update({
-                clock_out: new Date().toISOString(),
+                clock_out: photoUrl ? new Date().toISOString() : new Date().toISOString(),
                 status: 'COMPLETED',
                 bonus_amount: isIntern ? 0 : bonus,
                 photo_out_url: photoUrl,

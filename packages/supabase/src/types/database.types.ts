@@ -39,6 +39,23 @@ export interface Attendance {
     created_at: string
 }
 
+// ── Studios ───────────────────────────────────────────────────
+export interface Studio {
+    id: string
+    name: string
+    description: string | null
+    emoji: string | null
+    accent: string
+    bg_gradient: string
+    image_url: string | null
+    shared_slots_group: string | null
+    allowed_categories: string[] | null
+    sort_order: number
+    is_active: boolean
+    created_at: string
+}
+
+
 // ── Products ──────────────────────────────────────────────────
 export type TipeHarga = 'normal' | 'bertingkat'
 
@@ -46,6 +63,7 @@ export interface Product {
     id: number               // SERIAL — integer, not UUID
     nama: string
     kategori: string
+    deskripsi: string | null
     tipe_harga: TipeHarga
     harga_dasar: number      // Used when tipe_harga = 'normal'
     tier_1: number | null    // Price for 1st unit/person tier
@@ -333,6 +351,11 @@ export interface PhoneBoothPhoto {
 export interface Database {
     public: {
         Tables: {
+            studios: {
+                Row: Studio
+                Insert: Omit<Studio, 'id' | 'created_at'>
+                Update: Partial<Omit<Studio, 'id' | 'created_at'>>
+            }
             crew: {
                 Row: Crew
                 Insert: Omit<Crew, 'id' | 'created_at'>

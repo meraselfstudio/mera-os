@@ -16,8 +16,8 @@ type LandingPageProps = {
 const FALLBACK_PHOTOS: LandingPhoto[] = [
     { src: '/photo-basic-mr-1.png', alt: 'Basic studio' },
     { src: '/photo-yearbook-1.png', alt: 'Pas photo' },
-    { src: '/photo-majestic-1.png', alt: 'Majestic studio' },
-    { src: '/photo-elevator-1.png', alt: 'Elevator studio' },
+    // { src: '/photo-majestic-1.png', alt: 'Majestic studio' },
+    // { src: '/photo-elevator-1.png', alt: 'Elevator studio' },
 ]
 
 export default function LandingPage({ photos, fontClassName }: LandingPageProps) {

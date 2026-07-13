@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
+import { supabase } from '@mera/supabase/client'
+import type { Product, Studio } from '@mera/supabase'
+
+export const revalidate = 60 // ISR: regenerate every 60 seconds
 
 export const metadata: Metadata = {
     title: 'Pricelist',
@@ -14,60 +18,10 @@ const TEXT = '#2e1b1f'
 const TEXT_SEC = '#4a3438'
 const MAROON = '#622128'
 
-function fmtRp(n: number) {
+function fmtRp(n: number | null | undefined) {
+    if (n == null) return ''
     return 'Rp ' + n.toLocaleString('id-ID')
 }
-
-type PriceItem = {
-    name: string
-    desc: string
-    price: string
-    badge?: string
-    highlight?: boolean
-}
-
-const MAIN_PACKAGES: PriceItem[] = [
-    { name: 'Self Photo Session', desc: '10 Menit sesi foto unlimited jepret di Basic Studio dengan 6 pilihan background, paket untuk 2 orang, gratis 1 Print Basic Frame, Soft Files Hitam Putih', price: fmtRp(50000), highlight: true },
-    { name: 'Party Photo Session', desc: '15 Menit sesi foto unlimited jepret di Basic Studio dengan 6 pilihan background, paket untuk 8 orang, gratis 2 Print Basic Frame, Soft Files Hitam Putih', price: fmtRp(135000) },
-    { name: 'Pas Photo Basic', desc: '10 menit sesi foto formal dan bebas dengan background polos untuk 1 orang, Free Soft Files Hitam Putih', price: fmtRp(80000) },
-    { name: 'Pas Photo Package', desc: '10 Menit Foto formal dan bebas dengan background polos untuk 2 orang, Dapat foto 2x3, 3x4, 4x6 dan 1 Print Basic Frame + Soft Files', price: fmtRp(100000) },
-]
-
-const THEMATIC: PriceItem[] = [
-    { name: 'Thematic Basic', desc: '10 menit sesi foto unlimited jepret dengan tema pilihan di Elevator dan Majestic Studio untuk 1 orang, Free Soft Files Hitam Putih', price: fmtRp(15000) },
-    { name: 'Thematic Package', desc: '10 menit sesi foto unlimited jepret dengan tema pilihan di Elevator dan Majestic Studio untuk 2 orang, Free Soft Files, Free 1 Print Basic Frame', price: fmtRp(50000) },
-]
-
-type AddonItem = {
-    name: string
-    desc: string
-    price: string
-    tiered?: { labels: string[]; prices: string[] }
-}
-
-const ADDONS: AddonItem[] = [
-    { name: 'Edited + Colored Photo', desc: 'Hasil Foto Soft Files + Hasil Print Berwarna dan Ter-edit dengan retouch professional', price: fmtRp(20000) },
-    { name: 'Add Person', desc: 'Tambahan 1 orang di sesi yang sama', price: fmtRp(25000) + ' / orang' },
-    { name: 'Add Time (5 menit)', desc: 'Perpanjangan waktu sesi (per 5 menit)', price: fmtRp(15000) + ' / 5 menit' },
-    {
-        name: 'Add Print',
-        desc: 'Print tambahan foto',
-        price: 'Mulai ' + fmtRp(15000),
-        tiered: {
-            labels: ['1 lembar', '2 lembar', '3 lembar', '4+ lembar'],
-            prices: [fmtRp(15000), fmtRp(30000), fmtRp(35000), '+' + fmtRp(13000) + ' / lembar'],
-        },
-    },
-    {
-        name: 'Special Frame',
-        desc: 'Frame premium untuk hasil print',
-        price: 'Mulai ' + fmtRp(25000),
-        tiered: {
-            labels: ['1 frame', '2 frame', '3 frame', '4+ frame'],
-            prices: [fmtRp(25000), fmtRp(40000), fmtRp(50000), '+' + fmtRp(15000) + ' / frame'],
-        },
-    },
-]
 
 const STUDIO_PHOTOS = [
     { src: '/photo-basic-mr-1.png', label: 'Basic · Maroon' },
@@ -80,14 +34,8 @@ const STUDIO_PHOTOS = [
     { src: '/photo-yearbook-1.png', label: 'Yearbook' },
 ]
 
-const THEMATIC_PHOTOS = [
-    { src: '/photo-majestic-1.png', label: 'Majestic Studio' },
-    { src: '/photo-majestic-2.png', label: 'Majestic Studio' },
-    { src: '/photo-elevator-1.png', label: 'Elevator Studio' },
-    { src: '/photo-elevator-2.png', label: 'Elevator Studio' },
-]
-
 function PhotoRow({ photos }: { photos: { src: string; label: string }[] }) {
+    if (!photos || photos.length === 0) return null
     return (
         <div style={{ overflow: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', margin: '0 -20px', padding: '0 20px 20px' }}>
             <div style={{ display: 'flex', gap: 12, width: 'max-content' }}>
@@ -104,7 +52,18 @@ function PhotoRow({ photos }: { photos: { src: string; label: string }[] }) {
     )
 }
 
-export default function PricelistPage() {
+export default async function PricelistPage() {
+    // Fetch products & studios from database
+    const [productsRes, studiosRes] = await Promise.all([
+        supabase.from('products').select('*').eq('is_active', true).order('id'),
+        supabase.from('studios').select('*').eq('is_active', true).order('sort_order')
+    ])
+
+    const products = (productsRes.data || []) as Product[]
+    const studios = (studiosRes.data || []) as Studio[]
+
+    const addons = products.filter(p => p.is_addon)
+
     return (
         <main style={{ minHeight: '100dvh', background: BG, color: TEXT, fontFamily: FONT }}>
             {/* Nav */}
@@ -129,78 +88,104 @@ export default function PricelistPage() {
                 </p>
             </section>
 
-            {/* Main Packages */}
-            <section style={{ maxWidth: 680, margin: '0 auto', padding: '0 20px 36px' }}>
-                <h2 style={{ fontSize: 11, fontWeight: 700, color: TEXT_SEC, opacity: 0.4, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 16, paddingLeft: 4 }}>📸 Basic Studio - Background Polos</h2>
-                <PhotoRow photos={STUDIO_PHOTOS} />
-                <div style={{ display: 'grid', gap: 12 }}>
-                    {MAIN_PACKAGES.map(item => (
-                        <div key={item.name} style={{
-                            background: item.highlight ? 'linear-gradient(135deg, rgba(98,33,40,0.08) 0%, rgba(98,33,40,0.03) 100%)' : 'rgba(255,255,255,0.6)',
-                            border: item.highlight ? '1px solid rgba(98,33,40,0.2)' : '1px solid rgba(98,33,40,0.06)',
-                            borderRadius: 16, padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16,
-                        }}>
-                            <div style={{ flex: 1 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                    <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{item.name}</span>
-                                    {item.badge && <span style={{ fontSize: 9, fontWeight: 700, background: MAROON, color: '#fff', padding: '3px 8px', borderRadius: 10 }}>{item.badge}</span>}
-                                </div>
-                                <p style={{ margin: 0, fontSize: 12, color: TEXT_SEC, opacity: 0.55, lineHeight: 1.4 }}>{item.desc}</p>
-                            </div>
-                            <span style={{ fontSize: 16, fontWeight: 800, color: item.highlight ? MAROON : TEXT, whiteSpace: 'nowrap' }}>{item.price}</span>
-                        </div>
-                    ))}
-                </div>
-            </section>
+            {/* Dynamic Studio Packages */}
+            {studios.map(studio => {
+                // Filter products that match this studio's allowed_categories
+                const studioProducts = products.filter(p => {
+                    if (p.is_addon) return false
+                    if (!p.kategori) return false
+                    const allowed = studio.allowed_categories || []
+                    return allowed.some((c: string) => c.toLowerCase() === p.kategori.toLowerCase())
+                })
 
-            {/* Thematic */}
-            <section style={{ maxWidth: 680, margin: '0 auto', padding: '0 20px 36px' }}>
-                <h2 style={{ fontSize: 11, fontWeight: 700, color: TEXT_SEC, opacity: 0.4, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 16, paddingLeft: 4 }}>🎨 Thematic Studio - Elevator Studio & Majestic Studio</h2>
-                <PhotoRow photos={THEMATIC_PHOTOS} />
-                <div style={{ display: 'grid', gap: 12 }}>
-                    {THEMATIC.map(item => (
-                        <div key={item.name} style={{
-                            background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(98,33,40,0.06)',
-                            borderRadius: 16, padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16,
-                        }}>
-                            <div style={{ flex: 1 }}>
-                                <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{item.name}</span>
-                                <p style={{ margin: '4px 0 0', fontSize: 12, color: TEXT_SEC, opacity: 0.55, lineHeight: 1.4 }}>{item.desc}</p>
-                            </div>
-                            <span style={{ fontSize: 16, fontWeight: 800, color: TEXT, whiteSpace: 'nowrap' }}>{item.price}</span>
+                if (studioProducts.length === 0) return null
+
+                // Fallback Option B: if it's the Basic Studio, use the rich gallery, otherwise use single image
+                const isBasic = studio.name.toLowerCase().includes('basic')
+                const photosToRender = isBasic 
+                    ? STUDIO_PHOTOS 
+                    : (studio.image_url ? [{ src: studio.image_url, label: studio.name }] : [])
+
+                return (
+                    <section key={studio.id} style={{ maxWidth: 680, margin: '0 auto', padding: '0 20px 36px' }}>
+                        <h2 style={{ fontSize: 11, fontWeight: 700, color: TEXT_SEC, opacity: 0.4, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 16, paddingLeft: 4 }}>
+                            {studio.emoji} {studio.name} {studio.description ? `- ${studio.description}` : ''}
+                        </h2>
+                        
+                        <PhotoRow photos={photosToRender} />
+                        
+                        <div style={{ display: 'grid', gap: 12 }}>
+                            {studioProducts.map(item => {
+                                const isHighlight = item.nama === 'Self Photo Session'
+                                return (
+                                <div key={item.id} style={{
+                                    background: isHighlight ? 'linear-gradient(135deg, rgba(98,33,40,0.08) 0%, rgba(98,33,40,0.03) 100%)' : 'rgba(255,255,255,0.6)',
+                                    border: isHighlight ? '1px solid rgba(98,33,40,0.2)' : '1px solid rgba(98,33,40,0.06)',
+                                    borderRadius: 16, padding: '18px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16,
+                                }}>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                            <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{item.nama}</span>
+                                            {isHighlight && <span style={{ fontSize: 9, fontWeight: 700, background: MAROON, color: '#fff', padding: '3px 8px', borderRadius: 10 }}>BEST SELLER</span>}
+                                        </div>
+                                        <p style={{ margin: 0, fontSize: 12, color: TEXT_SEC, opacity: 0.55, lineHeight: 1.4 }}>
+                                            {item.deskripsi || item.kategori}
+                                        </p>
+                                    </div>
+                                    <span style={{ fontSize: 16, fontWeight: 800, color: isHighlight ? MAROON : TEXT, whiteSpace: 'nowrap' }}>
+                                        {fmtRp(item.harga_dasar)}
+                                    </span>
+                                </div>
+                            )})}
                         </div>
-                    ))}
-                </div>
-            </section>
+                    </section>
+                )
+            })}
 
             {/* Add-ons */}
             <section style={{ maxWidth: 680, margin: '0 auto', padding: '0 20px 48px' }}>
                 <h2 style={{ fontSize: 11, fontWeight: 700, color: TEXT_SEC, opacity: 0.4, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 16, paddingLeft: 4 }}>✨ Add-ons</h2>
                 <div style={{ display: 'grid', gap: 12 }}>
-                    {ADDONS.map(item => (
-                        <div key={item.name} style={{
+                    {addons.map(item => {
+                        const isTiered = item.tipe_harga === 'bertingkat' && item.tier_1 != null
+                        return (
+                        <div key={item.id} style={{
                             background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(98,33,40,0.06)',
                             borderRadius: 16, padding: '18px 20px',
                         }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
                                 <div style={{ flex: 1 }}>
-                                    <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{item.name}</span>
-                                    <p style={{ margin: '4px 0 0', fontSize: 12, color: TEXT_SEC, opacity: 0.55, lineHeight: 1.4 }}>{item.desc}</p>
+                                    <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{item.nama}</span>
+                                    <p style={{ margin: '4px 0 0', fontSize: 12, color: TEXT_SEC, opacity: 0.55, lineHeight: 1.4 }}>
+                                        {item.deskripsi || ''}
+                                    </p>
                                 </div>
-                                <span style={{ fontSize: 16, fontWeight: 800, color: MAROON, whiteSpace: 'nowrap' }}>{item.price}</span>
+                                <span style={{ fontSize: 16, fontWeight: 800, color: MAROON, whiteSpace: 'nowrap' }}>
+                                    {isTiered ? `Mulai ${fmtRp(item.harga_dasar)}` : fmtRp(item.harga_dasar)}
+                                </span>
                             </div>
-                            {item.tiered && (
+                            {isTiered && (
                                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(98,33,40,0.06)', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-                                    {item.tiered.labels.map((label, i) => (
-                                        <div key={label} style={{ textAlign: 'center' }}>
-                                            <p style={{ margin: 0, fontSize: 10, color: TEXT_SEC, opacity: 0.4, marginBottom: 2 }}>{label}</p>
-                                            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: TEXT_SEC }}>{item.tiered!.prices[i]}</p>
-                                        </div>
-                                    ))}
+                                    <div style={{ textAlign: 'center' }}>
+                                        <p style={{ margin: 0, fontSize: 10, color: TEXT_SEC, opacity: 0.4, marginBottom: 2 }}>1 pax</p>
+                                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: TEXT_SEC }}>{fmtRp(item.tier_1)}</p>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <p style={{ margin: 0, fontSize: 10, color: TEXT_SEC, opacity: 0.4, marginBottom: 2 }}>2 pax</p>
+                                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: TEXT_SEC }}>{fmtRp(item.tier_2)}</p>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <p style={{ margin: 0, fontSize: 10, color: TEXT_SEC, opacity: 0.4, marginBottom: 2 }}>3 pax</p>
+                                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: TEXT_SEC }}>{fmtRp(item.tier_3)}</p>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <p style={{ margin: 0, fontSize: 10, color: TEXT_SEC, opacity: 0.4, marginBottom: 2 }}>4+ pax</p>
+                                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: TEXT_SEC }}>+{fmtRp(item.tier_lebih)}/ea</p>
+                                    </div>
                                 </div>
                             )}
                         </div>
-                    ))}
+                    )})}
                 </div>
             </section>
 

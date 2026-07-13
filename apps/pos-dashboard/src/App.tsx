@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { Banknote, BarChart3, Calendar, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock3, Copy, CreditCard, Delete, Download, ExternalLink, Layers3, LogOut, MessageCircle, Monitor, Plus, Receipt, Send, TrendingUp, Users, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
-import { supabase } from '@mera/supabase/client'
+import { createPOSClient } from '@mera/supabase'
+const supabase = createPOSClient()
 import type { Attendance, Crew, Expense, Product, Registration, RegistrationStatus, Transaction, TransactionStatus, PaymentMethod, BookingAddons } from '@mera/supabase'
 import { hitungHargaBertingkat, calcBookingLineItems } from '@mera/supabase'
 import AttendanceBoard from './components/AttendanceBoard'
@@ -24,7 +25,15 @@ const crewNavItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }
   { key: 'attendance', label: 'Attendance', icon: <Clock3 size={18} /> },
 ]
 
-const OWNER_PIN = '1609'
+const OWNER_PIN_LENGTH = 4
+
+// SEC-02: Utility hashing untuk PIN (Client-side)
+async function sha256(message: string) {
+  const msgBuffer = new TextEncoder().encode(message)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
 
 function todayKey() {
   const now = new Date()
@@ -728,8 +737,9 @@ export default function App() {
     setShowCrewAttendanceOverlay(true)
   }
 
-  const handleOwnerLoginSuccess = () => {
-    if (ownerPinInput.trim() === OWNER_PIN) {
+  const handleOwnerLoginSuccess = async () => {
+    const hash = await sha256(ownerPinInput.trim())
+    if (hash === import.meta.env.VITE_OWNER_PIN_HASH) {
       setRole('owner')
       localStorage.setItem('mera_pos_role', 'owner')
       setView('schedule')
@@ -743,13 +753,14 @@ export default function App() {
   }
 
   const handleOwnerDigit = (digit: string) => {
-    if (ownerPinInput.length >= OWNER_PIN.length) return
+    if (ownerPinInput.length >= OWNER_PIN_LENGTH) return
     const next = `${ownerPinInput}${digit}`
     setOwnerPinInput(next)
     if (ownerPinError) setOwnerPinError('')
-    if (next.length === OWNER_PIN.length) {
-      window.setTimeout(() => {
-        if (next === OWNER_PIN) {
+    if (next.length === OWNER_PIN_LENGTH) {
+      window.setTimeout(async () => {
+        const hash = await sha256(next)
+        if (hash === import.meta.env.VITE_OWNER_PIN_HASH) {
           setRole('owner')
           setView('schedule')
           setOwnerPinError('')
@@ -1004,7 +1015,7 @@ export default function App() {
                 className={ownerPinError ? 'pin-shake' : undefined}
                 style={{ display: 'flex', gap: 16, marginBottom: 32 }}
               >
-                {Array.from({ length: OWNER_PIN.length }).map((_, i) => (
+                {Array.from({ length: OWNER_PIN_LENGTH }).map((_, i) => (
                   <span
                     key={i}
                     className={i < ownerPinInput.length ? 'pin-dot-filled' : undefined}

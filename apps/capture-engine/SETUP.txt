@@ -1,0 +1,344 @@
+================================================================
+  MÉRA CAPTURE ENGINE — SETUP GUIDE (MAC MINI)
+================================================================
+
+WHAT THIS IS
+------------
+The Capture Engine is a small server that runs on the Mac Mini.
+It connects the Android tablet (kiosk) to Capture One and the
+DNP printer via the local studio WiFi.
+
+You do NOT need VSCode or any code editor on the Mac Mini.
+
+
+DEVICES & ROLES
+---------------
+  Laptop          → where you develop (mera-os project)
+  Mac Mini        → runs Capture Engine ONLY
+  Android tablet  → opens https://edit.meraselfstudio.com in browser
+  DNP printer     → connected to Mac Mini via USB
+
+NOTE: The kiosk UI is now hosted on Vercel at:
+      https://edit.meraselfstudio.com
+      You no longer need to serve it from the Mac Mini.
+
+
+================================================================
+  STEP 1 — INSTALL NODE.JS ON MAC MINI (one time only)
+================================================================
+
+1. On Mac Mini, open Safari
+2. Go to: https://nodejs.org
+3. Download the macOS installer (LTS version)
+4. Run the installer, click through — done
+
+
+================================================================
+  STEP 2 — COPY CAPTURE ENGINE TO MAC MINI (one time only)
+================================================================
+
+You only need one folder from your laptop:
+
+  apps/capture-engine   → the server
+
+
+--- Transfer to Mac Mini ---
+
+  Easiest: AirDrop
+    - Right-click "capture-engine" folder → Share → AirDrop → Mac Mini
+
+  Alternative: USB drive, then copy to Mac Mini Desktop
+
+
+--- On Mac Mini, organize like this ---
+
+  ~/capture-engine/      ← the server folder
+
+
+================================================================
+  STEP 3 — CONFIGURE THE CAPTURE ENGINE
+================================================================
+
+1. Open Terminal on Mac Mini
+2. Go to the capture-engine folder:
+
+     cd ~/capture-engine
+
+3. Copy the example config:
+
+     cp .env.example .env
+
+4. Open .env with TextEdit:
+
+     open -e .env
+
+5. Fill in your values:
+
+     PORT=3100
+     SESSIONS_PATH=/Volumes/MERADATA/Capture One Session
+     EXPORTS_PATH=/Volumes/MERADATA/Méra Exports Photo Database
+     PRINTER_NAME=DNP_DS620
+
+   To find your exact volume name:
+     ls /Volumes/
+
+   To find your DNP printer name (make sure printer is ON and connected):
+     lpstat -p
+     (use exactly what it shows, e.g. DNP_DS620 or DNP-DS-RX1)
+
+6. Save and close .env
+
+
+================================================================
+  STEP 4 — INSTALL & START
+================================================================
+
+In Terminal on Mac Mini:
+
+  cd ~/capture-engine
+  npm install
+  node server.js
+
+You should see:
+  Méra Capture Engine running on port 3100
+
+Leave this Terminal window open while the studio is operating.
+
+
+================================================================
+  STEP 5 — OPEN ON ANDROID TABLET
+================================================================
+
+1. Connect tablet to studio WiFi (same network as Mac Mini)
+2. Open Chrome browser on the tablet
+3. Go to:
+
+     https://edit.meraselfstudio.com
+
+4. You should see the MÉRA kiosk screen
+
+   NOTE: The tablet must be on the same WiFi as the Mac Mini
+   so it can reach the Capture Engine at 192.168.143.234:3100.
+   The kiosk page loads from the internet, but all photo/print
+   calls go directly to the Mac Mini on the local network.
+
+
+================================================================
+  STEP 6 — VERIFY EVERYTHING WORKS
+================================================================
+
+From any device on the same WiFi, open a browser and go to:
+
+  http://192.168.143.234:3100/health
+
+You should see: { "status": "ok" }
+
+Also open the kiosk on the tablet:
+
+  https://edit.meraselfstudio.com
+
+If the kiosk loads but photos don't appear, make sure:
+  - node server.js is still running on Mac Mini
+  - Tablet is on the same WiFi network as Mac Mini
+  - Mac Mini local IP is still 192.168.143.234
+    (if IP changed, contact developer to update the config)
+
+
+================================================================
+  KEEP IT RUNNING AUTOMATICALLY (recommended)
+================================================================
+
+So the server restarts automatically if Mac Mini reboots:
+
+  npm install -g pm2
+  cd ~/capture-engine
+  pm2 start ecosystem.config.js
+  pm2 save
+  pm2 startup
+  (run the command it prints)
+
+
+================================================================
+  UPDATING AFTER CODE CHANGES
+================================================================
+
+The kiosk UI updates automatically — Vercel redeploys whenever
+the developer pushes code. No action needed on Mac Mini.
+
+If the Capture Engine (server.js) is updated:
+
+  1. Developer sends you a new capture-engine folder (AirDrop)
+  2. On Mac Mini:
+       cd ~/capture-engine
+       npm install
+       pm2 restart capture-engine
+       (or: node server.js if not using PM2)
+
+
+================================================================
+  QUICK REFERENCE — COMMANDS ON MAC MINI
+================================================================
+
+  Start Capture Engine:    cd ~/capture-engine && node server.js
+  Check printer name:      lpstat -p
+  Check volume name:       ls /Volumes/
+  Check health:            curl http://localhost:3100/health
+
+
+================================================================
+  NETWORK SUMMARY
+================================================================
+
+  Kiosk UI (tablet):    https://edit.meraselfstudio.com
+  Capture Engine:       http://<mac-mini-ip>:3100
+  Health check:         http://<mac-mini-ip>:3100/health
+
+
+================================================================
+  END-TO-END TEST — FULL SESSION WALKTHROUGH
+================================================================
+
+Use this checklist to verify the complete studio flow works,
+from session creation to printing.
+
+----------------------------------------------------------------
+  BEFORE YOU START
+----------------------------------------------------------------
+
+  Make sure all of the following are ready:
+
+  [ ] Capture Engine is running on Mac Mini
+        → Terminal shows: Méra Capture Engine running on port 3100
+        → Health check passes: http://192.168.143.234:3100/health
+  [ ] DNP printer is ON and connected to Mac Mini via USB
+  [ ] Capture One is open on Mac Mini
+  [ ] Android tablet is connected to studio WiFi
+  [ ] Tablet browser is open at https://edit.meraselfstudio.com
+  [ ] Kiosk shows the idle/attract screen (cream background, Méra logo)
+
+----------------------------------------------------------------
+  STEP 1 — CREATE A TEST SESSION IN CAPTURE ONE
+----------------------------------------------------------------
+
+  1. On Mac Mini, open Capture One
+  2. Create a new Session (File → New Session)
+  3. Name the session using the standard format:
+       Example: 15-TEST-MR
+
+     Rules for session name:
+       - Start with today's date (DD)
+       - Use only letters, numbers, and dashes
+       - No spaces, no special characters
+       - Must match exactly what you'll type on the kiosk
+
+  4. Make sure the session folder is saved inside the path
+     you configured in .env:
+       SESSIONS_PATH=/Volumes/MERADATA/Capture One Session
+
+     The full path should look like:
+       /Volumes/MERADATA/Capture One Session/15-TEST-MR/
+
+----------------------------------------------------------------
+  STEP 2 — TAKE PHOTOS IN CAPTURE ONE
+----------------------------------------------------------------
+
+  1. Set up the camera and connect it to Mac Mini (tethered)
+  2. Take 2–5 test shots inside Capture One
+  3. In Capture One, set up an Export Recipe that:
+       - Exports JPEGs to the Capture folder inside the session
+       - Uses a consistent naming pattern (e.g. IMG_001.jpg)
+
+  4. Export the photos (use your configured hotkey or
+     File → Export Originals / Process Recipe)
+
+  5. Verify the exported JPEGs are inside:
+       /Volumes/MERADATA/Capture One Session/15-TEST-MR/
+       (or whatever subfolder your export recipe uses)
+
+     The Capture Engine scans this folder for .jpg / .jpeg files.
+
+----------------------------------------------------------------
+  STEP 3 — OPEN THE SESSION ON THE KIOSK
+----------------------------------------------------------------
+
+  1. On the Android tablet, go to https://edit.meraselfstudio.com
+  2. Tap the TOP-LEFT CORNER of the screen 3 times quickly
+       → A staff login modal will appear
+  3. Type the session ID exactly as named in Capture One:
+       Example: 15-TEST-MR
+  4. Tap "Buka Sesi"
+
+  What should happen:
+  [ ] Modal closes
+  [ ] Kiosk moves to the Gallery screen
+  [ ] All exported photos appear as thumbnails
+
+  If photos do not appear:
+  - Double-check the session folder name matches exactly
+  - Make sure Capture Engine is still running (check Terminal)
+  - Confirm the tablet is on the same WiFi as Mac Mini
+
+----------------------------------------------------------------
+  STEP 4 — SELECT PHOTOS ON THE KIOSK
+----------------------------------------------------------------
+
+  1. Tap one or more photos to select them (checkmark appears)
+  2. The kiosk shows how many photos are selected vs. allowed
+       Example: "2 / 4 dipilih"
+  3. Tap "Lanjut ke Editor" (proceed to editor)
+
+----------------------------------------------------------------
+  STEP 5 — EDIT AND APPLY FRAME
+----------------------------------------------------------------
+
+  1. In the Editor screen, swipe left/right to switch between
+     selected photos
+  2. Pinch to zoom, drag to reposition
+  3. Tap a frame from the carousel at the bottom to apply it
+  4. When happy with all photos, tap "Cetak" (Print)
+
+----------------------------------------------------------------
+  STEP 6 — CONFIRM PRINT
+----------------------------------------------------------------
+
+  1. Print screen shows a preview of your selections
+  2. Tap "Cetak Sekarang" to confirm
+  3. The kiosk sends the render+print request to the
+     Capture Engine on Mac Mini
+
+  What should happen:
+  [ ] Progress bar fills while rendering
+  [ ] "Cetak Berhasil!" success screen appears
+  [ ] DNP printer starts printing within a few seconds
+  [ ] A QR code appears on screen (for future download link)
+  [ ] Kiosk resets to idle screen after 30 seconds
+
+----------------------------------------------------------------
+  TROUBLESHOOTING — COMMON ISSUES
+----------------------------------------------------------------
+
+  PROBLEM: "Koneksi ke server gagal" when opening session
+  FIX: Capture Engine is not running or tablet is on wrong WiFi
+       → Check: http://192.168.143.234:3100/health from tablet browser
+       → If unreachable, restart node server.js on Mac Mini
+
+  PROBLEM: Session opens but gallery is empty (no photos)
+  FIX: Photos not yet exported from Capture One, or saved in
+       wrong folder. Export to the session root folder.
+
+  PROBLEM: Print fails / error screen appears
+  FIX 1: DNP printer is off or not connected → check USB cable
+  FIX 2: Wrong printer name in .env → run: lpstat -p
+          Then update PRINTER_NAME= in .env and restart server
+
+  PROBLEM: Kiosk stuck on loading (spinner forever)
+  FIX: Tap the screen to dismiss, tap top-left 3x to re-enter
+       the session ID, or refresh the tablet browser
+
+  PROBLEM: Frame overlay not visible on print
+  FIX: Frames are fetched from Supabase. Check that
+       VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set
+       in .env on the kiosk (if self-hosted) or in Vercel env vars
+
+================================================================
+

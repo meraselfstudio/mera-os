@@ -1,6 +1,10 @@
 // @mera/supabase — Public API (v2)
 export { createClient, supabase } from './client'
 
+// POS-only client with x-mera-pos-key header for RLS authorization
+// ⚠️  Use ONLY in pos-dashboard — not in customer-portal or kiosk
+export { createPOSClient } from './pos-client'
+
 // Re-export all types from the canonical database.types file
 export type {
     Database,
@@ -8,6 +12,7 @@ export type {
     CrewRole,
     Attendance,
     AttendanceStatus,
+    Studio,
     Product,
     TipeHarga,
     Registration,
