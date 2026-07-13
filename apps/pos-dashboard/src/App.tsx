@@ -886,6 +886,7 @@ export default function App() {
       .channel('pos-reset-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'registrations' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => load())
       .subscribe()
 
     return () => {
@@ -3119,6 +3120,10 @@ export default function App() {
               <AttendanceBoard onLogout={handleLogout} onClockIn={(crewId) => { 
                   setActiveCrewId(crewId); 
                   localStorage.setItem('mera_pos_crew_id', crewId);
+                  setAttendance(prev => {
+                    if (prev.some(a => a.crew_id === crewId && a.status === 'ACTIVE')) return prev;
+                    return [...prev, { crew_id: crewId, status: 'ACTIVE' } as any];
+                  });
                   setShowCrewAttendanceOverlay(false) 
               }} />
             </div>
