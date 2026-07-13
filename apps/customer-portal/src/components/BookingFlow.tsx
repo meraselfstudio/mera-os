@@ -17,9 +17,9 @@ export const VARIANTS = {
         { code: 'LG', label: 'Light Grey', hex: '#aaaaaaff' },
         { code: 'MR', label: 'Maroon', hex: '#6f0505ff' },
         { code: 'DG', label: 'Dark Grey', hex: '#494747ff' },
-        { code: 'BR', label: 'Brown', hex: '#b16a37ff' },
-        { code: 'DP', label: 'Dusty Pink', hex: '#c97ca4ff' },
-        { code: 'BL', label: 'Blue', hex: '#00437aff' },
+        { code: 'SP', label: 'Soft Pink', hex: '#E3C0C5' },
+        { code: 'CC', label: 'Choco', hex: '#815333' },
+        { code: 'OG', label: 'Olive Green', hex: '#7C8052' },
     ]
 }
 

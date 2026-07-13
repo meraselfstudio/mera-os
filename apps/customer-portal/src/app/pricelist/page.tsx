@@ -26,10 +26,10 @@ function fmtRp(n: number | null | undefined) {
 const STUDIO_PHOTOS = [
     { src: '/photo-basic-mr-1.png', label: 'Basic · Maroon' },
     { src: '/photo-basic-lg-1.png', label: 'Basic · Light Grey' },
-    { src: '/photo-basic-dp-1.png', label: 'Basic · Dusty Pink' },
-    { src: '/photo-basic-bl-1.png', label: 'Basic · Blue' },
     { src: '/photo-basic-dg-1.png', label: 'Basic · Dark Grey' },
-    { src: '/photo-brown-1.png', label: 'Basic · Brown' },
+    { src: '/photo-basic-sp-1.png', label: 'Basic · Soft Pink' },
+    { src: '/photo-basic-cc-1.png', label: 'Basic · Choco' },
+    { src: '/photo-basic-og-1.png', label: 'Basic · Olive Green' },
     { src: '/photo-pasphoto-bl.png', label: 'Pas Photo' },
     { src: '/photo-yearbook-1.png', label: 'Yearbook' },
 ]
