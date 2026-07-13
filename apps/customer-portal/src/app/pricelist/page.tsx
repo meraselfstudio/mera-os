@@ -29,7 +29,7 @@ const STUDIO_PHOTOS = [
     { src: '/photo-basic-dg-1.png', label: 'Basic · Dark Grey' },
     { src: '/photo-basic-sp-1.png', label: 'Basic · Soft Pink' },
     { src: '/photo-basic-cc-1.png', label: 'Basic · Choco' },
-    { src: '/photo-basic-og-1.png', label: 'Basic · Olive Green' },
+    { src: '/photo-basic-gr-1.png', label: 'Basic · Olive Green' },
     { src: '/photo-pasphoto-bl.png', label: 'Pas Photo' },
     { src: '/photo-yearbook-1.png', label: 'Yearbook' },
 ]
@@ -60,7 +60,7 @@ export default async function PricelistPage() {
     ])
 
     const products = (productsRes.data || []) as Product[]
-    const studios = (studiosRes.data || []) as Studio[]
+    const studios = ((studiosRes.data || []) as Studio[]).filter(s => s.id !== 'Majestic Studio' && s.id !== 'Elevator Studio')
 
     const addons = products.filter(p => p.is_addon)
 

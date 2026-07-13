@@ -19,7 +19,7 @@ export const VARIANTS = {
         { code: 'DG', label: 'Dark Grey', hex: '#494747ff' },
         { code: 'SP', label: 'Soft Pink', hex: '#E3C0C5' },
         { code: 'CC', label: 'Choco', hex: '#815333' },
-        { code: 'OG', label: 'Olive Green', hex: '#7C8052' },
+        { code: 'GR', label: 'Olive Green', hex: '#7C8052' },
     ]
 }
 
