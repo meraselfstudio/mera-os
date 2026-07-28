@@ -624,7 +624,11 @@ export default function BookingFlow() {
                                 const isHighlight = pkg.nama === 'Self Photo Session'
                                 return (
                                     <div key={pkg.id}
-                                        onClick={() => setState(p => ({ ...p, selectedPackage: pkg }))}
+                                        onClick={() => setState(p => ({
+                                            ...p,
+                                            selectedPackage: pkg,
+                                            pax: Math.max(pkg.max_orang || 1, 1)
+                                        }))}
                                         style={{
                                             background: isSelected ? 'linear-gradient(135deg, rgba(98,33,40,0.08) 0%, rgba(98,33,40,0.03) 100%)' : 'rgba(255,255,255,0.7)',
                                             border: isSelected ? `2px solid ${MAROON}` : '1px solid rgba(98,33,40,0.1)',
@@ -649,6 +653,64 @@ export default function BookingFlow() {
                                 )
                             })}
                         </div>
+
+                        {/* Pax (Jumlah Orang) Selector */}
+                        {state.selectedPackage && (
+                            <div style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(98,33,40,0.1)', borderRadius: 20, padding: 20, marginBottom: 28 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                                    <div>
+                                        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TEXT }}>
+                                            Jumlah Orang ({state.pax} Pax)
+                                        </h3>
+                                        <p style={{ margin: '4px 0 0', fontSize: 12, color: TEXT_SEC, opacity: 0.6 }}>
+                                            {state.selectedPackage.nama.includes('Party')
+                                                ? 'Termasuk 8 orang (Tambahan orang +Rp 25.000/orang)'
+                                                : state.selectedPackage.nama.includes('Pas Photo')
+                                                ? `Termasuk ${state.selectedPackage.max_orang} orang`
+                                                : 'Termasuk 2 orang (Tambahan orang +Rp 25.000/orang)'}
+                                        </p>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', border: '1px solid rgba(98,33,40,0.15)', borderRadius: 999, padding: '4px 8px' }}>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                setState(p => ({ ...p, pax: Math.max(1, p.pax - 1) }))
+                                            }}
+                                            disabled={state.pax <= 1}
+                                            style={{
+                                                width: 32, height: 32, borderRadius: 16, border: 'none',
+                                                background: state.pax > 1 ? MAROON : 'rgba(0,0,0,0.05)',
+                                                color: state.pax > 1 ? '#fff' : 'rgba(0,0,0,0.3)',
+                                                fontSize: 18, fontWeight: 700, cursor: state.pax > 1 ? 'pointer' : 'not-allowed',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                            }}>
+                                            −
+                                        </button>
+                                        <span style={{ fontSize: 16, fontWeight: 800, color: MAROON, minWidth: 24, textAlign: 'center' }}>
+                                            {state.pax}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                setState(p => ({ ...p, pax: Math.min(20, p.pax + 1) }))
+                                            }}
+                                            disabled={state.pax >= 20}
+                                            style={{
+                                                width: 32, height: 32, borderRadius: 16, border: 'none',
+                                                background: state.pax < 20 ? MAROON : 'rgba(0,0,0,0.05)',
+                                                color: state.pax < 20 ? '#fff' : 'rgba(0,0,0,0.3)',
+                                                fontSize: 18, fontWeight: 700, cursor: state.pax < 20 ? 'pointer' : 'not-allowed',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                            }}>
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Variant Color Selector for Basic Studio */}
                         {needsVariant && (
