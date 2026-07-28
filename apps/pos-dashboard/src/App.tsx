@@ -269,18 +269,22 @@ export default function App() {
   const [monthExpMetode, setMonthExpMetode] = useState<'CASH' | 'QRIS'>('CASH')
   const [monthExpDate, setMonthExpDate] = useState(() => todayKey())
 
+  // Initial fetch of active crews so crewList is populated for role/login checks
+  useEffect(() => {
+    supabase.from('crew').select('*').eq('is_active', true).order('nama').then(({ data }) => {
+      if (data) setCrewList(data as Crew[])
+    })
+  }, [])
+
   const isDashboardUnlocked = useMemo(() => {
     if (role === 'owner') return true;
     if (role !== 'crew') return false;
     if (!activeCrewId) return false;
     
     const activeCrew = crewList.find(c => c.id === activeCrewId);
-    if (!activeCrew) return false;
+    if (activeCrew && activeCrew.status_gaji === 'INTERN') return false;
     
-    // Interns are not allowed access to POS dashboard
-    if (activeCrew.status_gaji === 'INTERN') return false;
-    
-    // Pro Crew must be clocked in today
+    // Pro Crew (or active crew) must have an active attendance record today
     const hasActiveAttendance = attendance.some(a => a.crew_id === activeCrewId && a.status === 'ACTIVE');
     return hasActiveAttendance;
   }, [role, activeCrewId, crewList, attendance]);
@@ -1860,13 +1864,14 @@ export default function App() {
               return (
                 <div style={{ display: 'grid', gap: 16 }}>
                   {/* KPI row */}
-                  <div className="gc-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10 }}>
+                  <div className="gc-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 10 }}>
                     <Pill label="Gross Omzet" value={fmtRp(omzet)} />
                     <Pill label="Discounts" value={`−${fmtRp(discountTotal)}`} color={discountTotal > 0 ? '#C89696' : undefined} />
                     <Pill label="Net Revenue" value={fmtRp(netRevenue)} color="#A8C5A0" />
+                    <Pill label="Kas Tunai Laci" value={fmtRp(cashTotal - expenseCash)} color="#A8C5A0" />
+                    <Pill label="QRIS / TF In" value={fmtRp(qrisTotal)} color="#9BB8D0" />
                     <Pill label="Expenses" value={fmtRp(expenseTotal)} color="#E0B88A" />
                     <Pill label="Exp Cash" value={fmtRp(expenseCash)} color="#E0B88A" />
-                    <Pill label="Exp QRIS" value={fmtRp(expenseQris)} color="#9BB8D0" />
                     <Pill label="Profit" value={fmtRp(profit)} color={profit >= 0 ? '#A8C5A0' : '#C89696'} />
                   </div>
 
@@ -1874,17 +1879,19 @@ export default function App() {
                     {/* Payment breakdown */}
                     <Card>
                       <div style={{ padding: '16px 18px' }}>
-                        <SectionHeader title="Payment" icon={<Banknote size={16} />} />
+                        <SectionHeader title="Payment & Cash Register" icon={<Banknote size={16} />} />
                         <div>
-                          {finRow('Cash In', fmtRp(cashTotal))}
-                          {finRow('QRIS / Transfer In', fmtRp(qrisTotal))}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0 4px' }}>
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>Total Paid</span>
-                            <span style={{ fontSize: 16, fontWeight: 700 }}>{fmtRp(omzet)}</span>
+                          {finRow('Cash In (Pemasukan Tunai)', fmtRp(cashTotal))}
+                          {finRow('Exp Cash Out (Pengeluaran Tunai)', `−${fmtRp(expenseCash)}`, expenseCash > 0 ? '#E0B88A' : undefined)}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'rgba(168,197,160,0.12)', border: '1px solid rgba(168,197,160,0.25)', borderRadius: 10, margin: '8px 0' }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#A8C5A0' }}>💵 Sisa Kas Tunai di Laci</span>
+                            <span style={{ fontSize: 16, fontWeight: 800, color: '#A8C5A0' }}>{fmtRp(cashTotal - expenseCash)}</span>
                           </div>
-                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '0.5px solid rgba(255,255,255,0.06)' }}>
-                            {finRow('Exp Cash Out', fmtRp(expenseCash))}
-                            {finRow('Exp QRIS Out', fmtRp(expenseQris))}
+                          {finRow('QRIS / Transfer In', fmtRp(qrisTotal), '#9BB8D0')}
+                          {finRow('Exp QRIS Out', `−${fmtRp(expenseQris)}`, expenseQris > 0 ? '#9BB8D0' : undefined)}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0 4px', borderTop: '0.5px solid rgba(255,255,255,0.08)' }}>
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>Total Gross Paid</span>
+                            <span style={{ fontSize: 16, fontWeight: 700 }}>{fmtRp(omzet)}</span>
                           </div>
                         </div>
                         <div style={{ marginTop: 14, display: 'grid', gap: 4 }}>

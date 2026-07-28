@@ -402,26 +402,41 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
 
                             {/* Action button */}
                             {isWorking && activeAtt ? (
-                                <button
-                                    onClick={() => setClockOutTarget({ crew: c, att: activeAtt })}
-                                    style={{
-                                        width: '100%', padding: '9px', fontSize: 12, fontWeight: 700,
-                                        background: 'var(--mera-surface-raised)', color: 'var(--mera-text-primary)',
-                                        border: '1px solid var(--mera-border-strong)', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
-                                    }}
-                                >
-                                    <><Camera size={14} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} /> Logout</>
-                                </button>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    <button
+                                        onClick={() => { if (onClockIn) onClockIn(c.id) }}
+                                        style={{
+                                            width: '100%', padding: '9px', fontSize: 12, fontWeight: 700,
+                                            background: 'var(--mera-accent)', color: '#fff',
+                                            border: 'none', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+                                        }}
+                                    >
+                                        <LogIn size={14} /> Masuk POS Dashboard
+                                    </button>
+                                    <button
+                                        onClick={() => setClockOutTarget({ crew: c, att: activeAtt })}
+                                        style={{
+                                            width: '100%', padding: '7px', fontSize: 11, fontWeight: 600,
+                                            background: 'transparent', color: 'var(--mera-text-tertiary)',
+                                            border: '1px solid var(--mera-border)', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
+                                        }}
+                                    >
+                                        <Camera size={12} /> Clock Out / Selesai Shift
+                                    </button>
+                                </div>
                             ) : !isDone && (
                                 <button
                                     onClick={() => setClockInTarget(c)}
                                     style={{
                                         width: '100%', padding: '9px', fontSize: 12, fontWeight: 700,
-                                        background: 'var(--mera-accent)', color: '#171717ff',
+                                        background: 'var(--mera-accent)', color: '#fff',
                                         border: 'none', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                     }}
                                 >
-                                    <><Camera size={14} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} /> Login</>
+                                    <Camera size={14} /> Clock In & Login
                                 </button>
                             )}
                         </div>
