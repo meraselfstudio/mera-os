@@ -93,6 +93,18 @@ function parseSplitNote(reason: string | null): { baseMethod: string; baseAmount
   return { baseMethod: m[1], baseAmount: Number(m[2]), addonMethod: m[3], addonAmount: Number(m[4]) }
 }
 
+// Parse machine-readable cash note: "[Cash:100000 | Change:30000]"
+function parsePaymentCashNote(reason: string | null): { cashReceived?: number; changeAmt?: number } | null {
+  if (!reason) return null
+  const mRec = reason.match(/Cash:(\d+)/)
+  const mChg = reason.match(/Change:(\d+)/)
+  if (!mRec && !mChg) return null
+  return {
+    cashReceived: mRec ? Number(mRec[1]) : undefined,
+    changeAmt: mChg ? Number(mChg[1]) : undefined,
+  }
+}
+
 // Compute cash vs QRIS/transfer totals correctly, handling split ONLINE_QRIS+CASH payments
 function calcMethodTotals(txList: Transaction[]) {
   let cash = 0, qris = 0
@@ -192,6 +204,7 @@ export default function App() {
   const txAddonsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [paymentMethodPick, setPaymentMethodPick] = useState<PaymentMethod | null>(null)
   const [addonPaymentPick, setAddonPaymentPick] = useState<PaymentMethod | null>(null)
+  const [cashReceivedInput, setCashReceivedInput] = useState<string>('')
   const [showPayModal, setShowPayModal] = useState(false)
   const [payTx, setPayTx] = useState<Transaction | null>(null)
   const [dmCopied, setDmCopied] = useState(false)
@@ -575,7 +588,14 @@ export default function App() {
     totalAmount: number,
     discountAmt: number,
     discountReason: string,
-    splitInfo?: { baseAmount: number; baseMethod: PaymentMethod; addonAmount: number; addonMethod: PaymentMethod },
+    splitInfo?: {
+      baseAmount: number;
+      baseMethod: PaymentMethod;
+      addonAmount: number;
+      addonMethod: PaymentMethod;
+      cashReceived?: number;
+      changeAmt?: number;
+    },
     mergedAddons?: BookingAddons | null,
   ) => {
     setActionLoading(true)
@@ -587,11 +607,18 @@ export default function App() {
     const lineItems = calcBookingLineItems(products, effectiveAddons)
     const correctTotal = lineItems.reduce((sum, item) => sum + item.price, 0)
 
-    // Build discount_reason: include split payment note if applicable
+    // Build discount_reason: include split payment & cash notes if applicable
     let finalReason = discountReason || null
+    const noteParts: string[] = []
     if (splitInfo && splitInfo.addonAmount > 0) {
-      const splitNote = `[Split: ${splitInfo.baseMethod}:${splitInfo.baseAmount} + ${splitInfo.addonMethod}:${splitInfo.addonAmount}]`
-      finalReason = finalReason ? `${finalReason} ${splitNote}` : splitNote
+      noteParts.push(`[Split: ${splitInfo.baseMethod}:${splitInfo.baseAmount} + ${splitInfo.addonMethod}:${splitInfo.addonAmount}]`)
+    }
+    if (splitInfo?.cashReceived) {
+      noteParts.push(`[Cash:${splitInfo.cashReceived} | Change:${splitInfo.changeAmt ?? 0}]`)
+    }
+    if (noteParts.length > 0) {
+      const extraNote = noteParts.join(' ')
+      finalReason = finalReason ? `${finalReason} ${extraNote}` : extraNote
     }
 
     // If session add-ons were merged in, persist them to the registration first
@@ -2619,7 +2646,10 @@ export default function App() {
                     return (
                       <button
                         key={m}
-                        onClick={() => setAddonPaymentPick(m)}
+                        onClick={() => {
+                          setAddonPaymentPick(m)
+                          if (m !== 'CASH') setCashReceivedInput('')
+                        }}
                         style={{
                           border: `1.5px solid ${selected ? '#E0B88A' : 'rgba(255,255,255,0.08)'}`,
                           borderRadius: 14,
@@ -2648,7 +2678,10 @@ export default function App() {
                     return (
                       <button
                         key={m}
-                        onClick={() => setPaymentMethodPick(m)}
+                        onClick={() => {
+                          setPaymentMethodPick(m)
+                          if (m !== 'CASH') setCashReceivedInput('')
+                        }}
                         style={{
                           border: `1.5px solid ${selected ? '#622128' : 'rgba(255,255,255,0.08)'}`,
                           borderRadius: 14,
@@ -2665,6 +2698,54 @@ export default function App() {
                       </button>
                     )
                   })}
+                </div>
+              </div>
+            )}
+
+            {/* Cash Received & Change Calculation */}
+            {((hasSplit && addonPaymentPick === 'CASH') || (!hasSplit && paymentMethodPick === 'CASH')) && (
+              <div style={{ padding: '12px 22px 0' }}>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 6, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Uang Diterima & Kembalian</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input
+                    type="number"
+                    placeholder="Nominal Cash Diterima (Rp)"
+                    value={cashReceivedInput}
+                    onChange={e => setCashReceivedInput(e.target.value)}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(224,184,138,0.3)', background: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: 14, fontWeight: 700, outline: 'none', boxSizing: 'border-box' }}
+                  />
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {[remainingToPay, 50000, 100000, 150000, 200000].filter((val, idx, self) => val > 0 && self.indexOf(val) === idx).map(val => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setCashReceivedInput(String(val))}
+                        style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '5px 10px', fontSize: 11, fontWeight: 600, background: cashReceivedInput === String(val) ? '#E0B88A' : 'rgba(255,255,255,0.06)', color: cashReceivedInput === String(val) ? '#000' : '#fff', cursor: 'pointer' }}
+                      >
+                        {val === remainingToPay ? 'Pas' : fmtRp(val)}
+                      </button>
+                    ))}
+                  </div>
+                  {(() => {
+                    const received = parseInt(cashReceivedInput, 10) || 0
+                    if (received >= remainingToPay && remainingToPay > 0) {
+                      const change = received - remainingToPay
+                      return (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(168,197,160,0.15)', border: '1px solid rgba(168,197,160,0.3)', borderRadius: 10, padding: '8px 12px', marginTop: 2 }}>
+                          <span style={{ fontSize: 13, color: '#A8C5A0', fontWeight: 600 }}>💵 Kembalian:</span>
+                          <span style={{ fontSize: 16, color: '#A8C5A0', fontWeight: 800 }}>{fmtRp(change)}</span>
+                        </div>
+                      )
+                    } else if (received > 0 && received < remainingToPay) {
+                      return (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(200,150,150,0.15)', border: '1px solid rgba(200,150,150,0.3)', borderRadius: 10, padding: '8px 12px', marginTop: 2 }}>
+                          <span style={{ fontSize: 12, color: '#C89696', fontWeight: 600 }}>⚠️ Kurang:</span>
+                          <span style={{ fontSize: 13, color: '#C89696', fontWeight: 800 }}>{fmtRp(remainingToPay - received)}</span>
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
                 </div>
               </div>
             )}
@@ -2686,15 +2767,26 @@ export default function App() {
             <div style={{ padding: '0 22px 22px' }}>
               <button
                 onClick={() => {
+                  const recVal = parseInt(cashReceivedInput, 10) || 0
+                  const changeVal = Math.max(0, recVal - remainingToPay)
                   if (hasSplit) {
                     markTxPaid(payTx, 'ONLINE_QRIS', grandTotal, discountAmt, discountReasonInput, {
                       baseAmount: baseTotal,
                       baseMethod: 'ONLINE_QRIS',
                       addonAmount: remainingToPay,
                       addonMethod: addonPaymentPick ?? 'CASH',
+                      cashReceived: recVal > 0 ? recVal : undefined,
+                      changeAmt: recVal > 0 ? changeVal : undefined,
                     }, mergedAddons)
                   } else if (paymentMethodPick) {
-                    markTxPaid(payTx, paymentMethodPick, grandTotal, discountAmt, discountReasonInput, undefined, mergedAddons)
+                    markTxPaid(payTx, paymentMethodPick, grandTotal, discountAmt, discountReasonInput, {
+                      baseAmount: grandTotal,
+                      baseMethod: paymentMethodPick,
+                      addonAmount: 0,
+                      addonMethod: paymentMethodPick,
+                      cashReceived: recVal > 0 ? recVal : undefined,
+                      changeAmt: recVal > 0 ? changeVal : undefined,
+                    }, mergedAddons)
                   }
                 }}
                 disabled={!canPay || actionLoading}
@@ -2733,6 +2825,7 @@ export default function App() {
         const receiptLineItems = calcLineItems(reg)
         const receiptSubtotal = receiptLineItems.reduce((s, i) => s + i.price, 0)
         const splitParsed = parseSplitNote(tx.discount_reason)
+        const cashNote = parsePaymentCashNote(tx.discount_reason)
         const splitNote = splitParsed
           ? `${splitParsed.baseMethod} ${fmtRp(splitParsed.baseAmount)} + ${splitParsed.addonMethod} ${fmtRp(splitParsed.addonAmount)}`
           : null
@@ -3085,10 +3178,39 @@ export default function App() {
                     )}
                   </div>
                   <p style={{ textAlign: 'center', fontSize: 10, color: '#999', margin: '6px 0', letterSpacing: 2 }}>━━━━━━━━━━━━━━━━━━━━</p>
-                  <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', fontSize: 14, fontWeight: 700 }}><span>TOTAL</span><span>{fmtRp(tx.total_amount - tx.discount_amount)}</span></p>
+                  <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700 }}><span>TOTAL</span><span>{fmtRp(tx.total_amount - tx.discount_amount)}</span></p>
                   <p style={{ textAlign: 'center', fontSize: 10, color: '#999', margin: '6px 0', letterSpacing: 2 }}>━━━━━━━━━━━━━━━━━━━━</p>
-                  <p style={{ margin: '4px 0', fontSize: 10, textAlign: 'center' }}>Payment: <strong>{tx.payment_method ?? 'PAID'}</strong> ✓</p>
-                  {splitNote && <p style={{ margin: '2px 0', fontSize: 8, textAlign: 'center', color: '#888' }}>({splitNote})</p>}
+
+                  <div style={{ fontSize: 10, lineHeight: 1.8, marginBottom: 4 }}>
+                    <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Booking Type</span>
+                      <span style={{ fontWeight: 700 }}>{reg?.booking_type === 'ONLINE_QRIS' ? 'Online QRIS' : 'Keep Slot (Bayar Studio)'}</span>
+                    </p>
+                    {reg?.booking_type === 'ONLINE_QRIS' && (
+                      <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Online Pre-paid</span>
+                        <span>{fmtRp(splitParsed ? splitParsed.baseAmount : (tx.total_amount - tx.discount_amount))}</span>
+                      </p>
+                    )}
+                    <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Studio Settlement</span>
+                      <span style={{ fontWeight: 700 }}>
+                        {splitParsed ? `${splitParsed.addonMethod} (${fmtRp(splitParsed.addonAmount)})` : `${tx.payment_method ?? 'CASH'}`}
+                      </span>
+                    </p>
+                    {cashNote?.cashReceived !== undefined && (
+                      <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Cash Received</span>
+                        <span>{fmtRp(cashNote.cashReceived)}</span>
+                      </p>
+                    )}
+                    {cashNote?.changeAmt !== undefined && cashNote.changeAmt > 0 && (
+                      <p style={{ margin: 0, display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                        <span>Change</span>
+                        <span>{fmtRp(cashNote.changeAmt)}</span>
+                      </p>
+                    )}
+                  </div>
                   <div style={{ textAlign: 'center', marginTop: 16 }}>
                     <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 4px' }}>Terima kasih! 🙏</p>
                     <p style={{ fontSize: 9, color: '#888', margin: 0 }}>Follow us @meraselfstudio</p>
