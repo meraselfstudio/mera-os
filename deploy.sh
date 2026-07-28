@@ -25,7 +25,7 @@ pnpm --filter customer-portal deploy .deploy-portal
 
 # Copy environment variables so Next.js can prerender pages
 cp apps/customer-portal/.env.local .deploy-portal/.env.local
-cp -R apps/customer-portal/.vercel .deploy-portal/.vercel 2>/dev/null || true
+(cd .deploy-portal && npx vercel link --yes --project .deploy-portal)
 
 # Build and deploy from the isolated directory
 cd .deploy-portal

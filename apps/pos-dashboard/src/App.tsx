@@ -3368,7 +3368,7 @@ export default function App() {
                   >
                     <option value="">Select package</option>
                     {products.filter(p => !p.is_addon && p.is_active).map(p => (
-                      <option key={p.id} value={p.id}>{p.nama}</option>
+                      <option key={p.id} value={p.id}>{p.nama} ({p.kategori}) — {fmtRp(p.harga_dasar)}</option>
                     ))}
                   </select>
                 </div>

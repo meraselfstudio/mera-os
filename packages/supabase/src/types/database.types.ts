@@ -126,8 +126,10 @@ export interface BookingLineItem {
 
 /** Internal helper — derive how many people the base package covers */
 function getProductBaseCapacity(product: Product, room?: string | null): number {
+    if (product.max_orang && product.max_orang > 0) return product.max_orang
     const n = product.nama.toLowerCase()
     if (n.includes('party')) return 8
+    if (n.includes('pas photo couple')) return 2
     if (n.includes('pas photo package') || n.includes('thematic package')) return 2
     if ((room ?? '').toLowerCase().includes('basic')) return 2
     return 1
@@ -170,7 +172,8 @@ export function calcBookingLineItems(
         // Always compare lowercase so DB storage case doesn't matter.
         const roomLower = (room ?? '').toLowerCase()
         let kategori = ''
-        if (roomLower === 'close up room' || roomLower === 'pas photo') kategori = 'close up room'
+        if (roomLower === 'pas photo') kategori = 'pas photo'
+        else if (roomLower === 'close up room') kategori = 'close up room'
         else if (roomLower === 'basic studio') kategori = 'basic studio'
 
         const candidates = products.filter(
