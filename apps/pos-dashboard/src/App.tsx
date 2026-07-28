@@ -9,7 +9,7 @@ import AttendanceBoard from './components/AttendanceBoard'
 
 type ViewKey = 'schedule' | 'booking' | 'finance' | 'attendance' | 'monthly'
 type RoleKey = 'crew' | 'owner'
-type StudioBucket = 'BASIC' | 'MAJESTIC' | 'ELEVATOR' | 'QUEUE'
+type StudioBucket = 'BASIC' | 'CLOSEUP' | 'QUEUE'
 
 const ownerNavItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: 'schedule', label: 'Schedule', icon: <Calendar size={18} /> },
@@ -117,9 +117,8 @@ function calcMethodTotals(txList: Transaction[]) {
 function toStudioBucket(reg: Registration): StudioBucket {
   const addons = reg.addons
   const room = `${addons?.room ?? ''}`.toLowerCase()
-  if (room.includes('basic') || room.includes('pas')) return 'BASIC'
-  if (room.includes('majestic')) return 'MAJESTIC'
-  if (room.includes('elevator')) return 'ELEVATOR'
+  if (room.includes('basic')) return 'BASIC'
+  if (room.includes('close up') || room.includes('pas')) return 'CLOSEUP'
   return 'QUEUE'
 }
 
@@ -913,8 +912,7 @@ export default function App() {
   const perStudio = useMemo(() => {
     return {
       BASIC: registrations.filter((r) => toStudioBucket(r) === 'BASIC'),
-      MAJESTIC: registrations.filter((r) => toStudioBucket(r) === 'MAJESTIC'),
-      ELEVATOR: registrations.filter((r) => toStudioBucket(r) === 'ELEVATOR'),
+      CLOSEUP: registrations.filter((r) => toStudioBucket(r) === 'CLOSEUP'),
       QUEUE: registrations.filter((r) => toStudioBucket(r) === 'QUEUE'),
     }
   }, [registrations])
@@ -1323,7 +1321,7 @@ export default function App() {
                   return (r.preferred_time ?? '').slice(0, 2) === slot.slice(0, 2)
                 })
               const basicWeek = weekRegistrations.filter((r) => toStudioBucket(r) === 'BASIC')
-              const thematicWeek = weekRegistrations.filter((r) => ['MAJESTIC', 'ELEVATOR'].includes(toStudioBucket(r)))
+              const closeUpWeek = weekRegistrations.filter((r) => toStudioBucket(r) === 'CLOSEUP')
 
               const weekCalGrid = (title: string, studios: StudioBucket[], accent: string, count: number) => (
                 <Card style={{ overflow: 'hidden' }}>
@@ -1560,7 +1558,7 @@ export default function App() {
                   {calViewMode === 'week' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                       {weekCalGrid('Studio Basic', ['BASIC', 'QUEUE'], '#622128', basicWeek.length)}
-                      {weekCalGrid('Studio Thematic', ['MAJESTIC', 'ELEVATOR'], '#E0B88A', thematicWeek.length)}
+                      {weekCalGrid('Close Up Room', ['CLOSEUP'], '#2E4B72', closeUpWeek.length)}
                     </div>
                   )}
                 </div>
@@ -3172,7 +3170,7 @@ export default function App() {
         const WEEKEND_SLOTS = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00','19:30','20:00','20:30','21:00']
         const slotDate = editDateInput ? new Date(editDateInput + 'T00:00:00') : new Date()
         const slotDay = slotDate.getDay()
-        const timeSlots = (slotDay === 0 || slotDay === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS
+        const timeSlots = (slotDay === 0 || slotDay === 5 || slotDay === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS
 
         const inputSt: React.CSSProperties = { width: '100%', padding: '9px 12px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
         const labelSt: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 7 }
@@ -3543,10 +3541,10 @@ export default function App() {
                     "17:00", "17:30", "18:00", "18:30",
                     "19:00", "19:30", "20:00", "20:30", "21:00"
                   ];
-                  const baseSlots = (day === 0 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
-                  // Find all bookings for this date for Basic Studio or Pas Photo
+                  const baseSlots = (day === 0 || day === 5 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
+                  // Find all bookings for this date for Close Up Room or Pas Photo
                   const booked = registrations
-                    .filter(r => r.preferred_date === editDateInput && (r.addons?.room === 'Basic Studio' || r.addons?.room === 'Pas Photo') && ['PENDING','VERIFIED','PROCESSED'].includes(r.status))
+                    .filter(r => r.preferred_date === editDateInput && (r.addons?.room === 'Close Up Room' || r.addons?.room === 'Pas Photo') && ['PENDING','VERIFIED','PROCESSED'].includes(r.status))
                     .map(r => r.preferred_time);
                   // If today, filter out past slots
                   const todayStr = new Date().toISOString().slice(0,10);

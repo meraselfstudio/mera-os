@@ -16,8 +16,7 @@ const SUPABASE_KEY = 'sb_publishable_Q9WnAZI3-iXfhX3b7IV5cA_psvE9tRa'
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 const MIGRATIONS = [
-    join(__dir, '../supabase/migrations/002_revised_schema.sql'),
-    join(__dir, '../supabase/migrations/003_seed.sql'),
+    join(__dir, '../supabase/migrations/019_update_products_from_pricelist.sql'),
 ]
 
 // Split SQL into individual statements and execute each

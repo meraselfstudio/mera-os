@@ -67,9 +67,8 @@ function CheckinContent() {
 
     const roomEmoji: Record<string, string> = {
         'Basic Studio': '🖤',
+        'Close Up Room': '✨',
         'Pas Photo': '🎩',
-        'Elevator Studio': '🛗',
-        'Majestic Studio': '👑',
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

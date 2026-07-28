@@ -170,8 +170,7 @@ export function calcBookingLineItems(
         // Always compare lowercase so DB storage case doesn't matter.
         const roomLower = (room ?? '').toLowerCase()
         let kategori = ''
-        if (roomLower === 'pas photo') kategori = 'pas photo'
-        else if (roomLower === 'elevator studio' || roomLower === 'majestic studio') kategori = 'thematic'
+        if (roomLower === 'close up room' || roomLower === 'pas photo') kategori = 'close up room'
         else if (roomLower === 'basic studio') kategori = 'basic studio'
 
         const candidates = products.filter(

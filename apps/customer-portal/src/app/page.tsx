@@ -36,23 +36,27 @@ async function getLandingPhotos(): Promise<LandingPhoto[]> {
         path.join(process.cwd(), 'apps/customer-portal/public'),
     ]
 
-    let publicDir: string | null = null
-    for (const candidate of publicCandidates) {
+    let targetDir: string | null = null
+    for (const base of publicCandidates) {
+        const candidate = path.join(base, 'Website photo Reference (4 x 5.1 inci)')
         try {
             await fs.access(candidate)
-            publicDir = candidate
+            targetDir = candidate
             break
         } catch {
             continue
         }
     }
 
-    if (!publicDir) return []
+    if (!targetDir) return []
 
-    const entries = await fs.readdir(publicDir, { withFileTypes: true })
+    const entries = await fs.readdir(targetDir, { withFileTypes: true })
     const photos = entries
-        .filter((e) => e.isFile() && /^photo-[\w-]+\.(png|jpe?g|webp)$/i.test(e.name))
-        .map((e) => ({ src: `/${e.name}`, alt: e.name.replace(/^photo-|-\d+\.\w+$/g, ' ').trim() }))
+        .filter((e) => e.isFile() && /\.(png|jpe?g|webp)$/i.test(e.name))
+        .map((e) => ({
+            src: `/Website photo Reference (4 x 5.1 inci)/${encodeURIComponent(e.name)}`,
+            alt: e.name.replace(/\.\w+$/, ''),
+        }))
 
     return shufflePhotos(photos)
 }

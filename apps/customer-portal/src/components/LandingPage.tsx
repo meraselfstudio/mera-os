@@ -102,7 +102,7 @@ export default function LandingPage({ photos, fontClassName }: LandingPageProps)
                             <div style={{ textAlign: 'center', marginBottom: 16 }}>
                                 <p style={{ margin: 30, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}></p>
                                 <h2 style={{ margin: '4px 0 2px', fontFamily: 'Times New Roman Condensed, Times New Roman, Times, serif', fontStyle: 'italic', fontSize: 22, fontWeight: 800, color: '#622128', lineHeight: 1.2 }}>Our Location</h2>
-                                <p style={{ margin: 10, fontSize: 10, color: '#622128' }}>Jalan Jayanegara 175A, Kecamatan Puri, Mojokerto</p>
+                                <p style={{ margin: 10, fontSize: 10, color: '#622128' }}>Jalan Sawunggaling no.4, Magersari, Mojokerto</p>
                             </div>
 
                             {/* Map card */}
