@@ -25,8 +25,8 @@ const STEPS = [
     {
         number: '02',
         emoji: '🎨',
-        title: 'Pilih Paket & Background',
-        desc: 'Pilih paket foto yang sesuai, pilihan warna background, dan add-ons opsional (misal: Cetak / Edit & Color).',
+        title: 'Pilih Paket & Jumlah Orang',
+        desc: 'Pilih paket foto yang sesuai, tentukan jumlah orang dalam sesi (Pax), pilihan warna background, dan add-ons opsional (misal: Cetak / Edit & Color).',
         img: '/how-to-book-steps/step2.png',
     },
     {
