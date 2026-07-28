@@ -150,22 +150,33 @@ function uploadToDriveBackground(base64: string, filename: string, metadata?: an
     const data = base64.split(',')[1]
     if (!data) return
 
-    const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL
-    if (!scriptUrl) return
+    const payload = {
+        fileName: filename,
+        mimeType: 'image/jpeg',
+        data,
+        folderId: '1KfG7aIPXbZIoOG857fFl73jfYJozAYBI',
+        subFolder: metadata?.crewName || 'Unknown'
+    }
 
-    // Sending directly to Apps Script using no-cors and text/plain to avoid CORS preflight issues
-    fetch(scriptUrl, {
+    // Send via server proxy endpoint for reliable Google Drive upload
+    fetch('/api/upload', {
         method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-        body: JSON.stringify({
-            fileName: filename,
-            mimeType: 'image/jpeg',
-            data,
-            folderId: '1KfG7aIPXbZIoOG857fFl73jfYJozAYBI',
-            subFolder: metadata?.crewName || 'Unknown'
-        }),
-    }).catch(e => console.warn('Background upload failed', e))
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    })
+        .then(r => r.json())
+        .catch(() => {
+            // Fallback: direct Apps Script request
+            const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL
+            if (scriptUrl) {
+                fetch(scriptUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+                    body: JSON.stringify(payload),
+                }).catch(e => console.warn('Background attendance upload failed', e))
+            }
+        })
 }
 
 // ── Export Intern PDF ─────────────────────────────────────────

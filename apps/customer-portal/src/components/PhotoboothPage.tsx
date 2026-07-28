@@ -280,15 +280,6 @@ export default function PhotoboothPage() {
         return canvas.toDataURL('image/png')
     }, [])
 
-    // Rebuild strip when frame changes
-    useEffect(() => {
-        if (appState === 'preview' && photos.length === PHOTO_COUNT) {
-            buildStrip(photos, selectedFrame).then(url => {
-                if (url) setStripUrl(url)
-            })
-        }
-    }, [selectedFrame, appState, photos, buildStrip])
-
     // ── Silent background upload via server-side proxy → Google Drive ──
     const uploadBackground = useCallback((dataUrl: string, consent: boolean) => {
         const base64 = dataUrl.split(',')[1]
@@ -309,6 +300,19 @@ export default function PhotoboothPage() {
             .then(d => console.log('[PhoneBooth] Upload result:', d))
             .catch(err => console.warn('[PhoneBooth] Upload failed:', err))
     }, [])
+
+    // Rebuild strip when frame changes & auto-upload to Google Drive
+    useEffect(() => {
+        if (appState === 'preview' && photos.length === PHOTO_COUNT) {
+            buildStrip(photos, selectedFrame).then(url => {
+                if (url) {
+                    setStripUrl(url)
+                    // Auto-save phonebooth strip to Google Drive
+                    uploadBackground(url, promoConsent)
+                }
+            })
+        }
+    }, [selectedFrame, appState, photos, buildStrip, uploadBackground, promoConsent])
 
     // ── Handle download (native share → Save to Photos on mobile) ──
     const handleDownload = useCallback(async () => {
