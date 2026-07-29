@@ -675,20 +675,31 @@ pnpm clean
 
 ---
 
-## 15. Changelog Terkini & Pembaruan Sistem
+## 15. Changelog Terkini & Pembaruan Sistem (Juli 2026)
 
-### 1. Integrasi Google Apps Script (Upload ke GDrive)
-- Script Google Apps Script telah diperbaiki (mendukung `doGet` dan `doPost`) dan izin telah disetel ke "Anyone".
-- Berfungsi sebagai backend proxy tanpa server untuk mengunggah foto absensi kru dan strip foto dari photobooth online gratis langsung ke Google Drive milik studio.
-- Environment variables (`VITE_APPS_SCRIPT_URL` & `NEXT_PUBLIC_APPS_SCRIPT_URL`) telah disetel di kedua aplikasi.
+### 1. Pricelist & Produk Dinamis (Customer Portal)
+- Halaman Pricelist dan alur pemesanan (Booking Flow) kini langsung mengambil data paket, addons, dan harga dari tabel `products` di database Supabase (bukan lagi *hardcode*). 
+- Hal ini menjadikan database sebagai *single source of truth* untuk mencegah kesalahan rekapan dan harga.
 
-### 2. Perubahan Studio & Background Assets
-- Studio "Majestic Studio" dan "Elevator Studio" telah disembunyikan/dihapus dari production.
-- Menghapus warna background lama (Brown, Dusty Pink, Blue).
-- Menambahkan aset warna background baru untuk studio (Soft Pink, Choco, Olive Green) di antarmuka BookingFlow dan Pricelist.
+### 2. Perubahan Studio & Katalog Produk
+- Menghapus studio usang ("Majestic Studio" & "Elevator Studio").
+- Menambahkan paket baru ke database (Basic Studio, Close Up Room, Pas Photo) dan mengatur slot *sharing* (*Close Up* & *Pas Photo* menggunakan slot fisik yang sama).
+- Mengganti aset warna *background* (menghapus Brown, Dusty Pink, Blue, lalu menambahkan Soft Pink, Choco, Olive Green).
 
-### 3. Perbaikan Bug POS Dashboard (Crew Clock-In)
-- **Stuck Login Crew PRO**: Memperbaiki bug di mana kru berstatus PRO terjebak di layar "Clock In" bahkan setelah berhasil absen.
-- **Optimistic UI & Realtime**: Menambahkan *optimistic state update* saat klik clock-in dan me-listen ke `postgres_changes` untuk tabel `attendance` di `App.tsx` agar dashboard POS seketika terbuka tanpa menunggu interval fetch 15 detik.
-- Perbaikan alur "Back" pada layar absensi untuk memastikan navigasi kembali ke pilihan awal berfungsi semestinya.
-- **Link Domain**: Vercel project untuk domain `meraselfstudio.com` telah ditautkan kembali ke build `customer-portal` dengan benar.
+### 3. Otomasi Capture Engine
+- Menambahkan endpoint `POST /api/sessions/create` dan `GET /api/sessions/:sessionId/stats` di `server.js` Mac Mini untuk otomatisasi pembuatan *folder* sesi Capture One.
+
+### 4. Integrasi GDrive via Google Apps Script Proxy
+- Script Google Apps Script telah disempurnakan (mendukung `doGet` dan `doPost`) sebagai proxy *serverless* tanpa batas CORS.
+- Berfungsi penuh untuk menyimpan *strip photobooth* (gratis) dan *foto absensi kru* (wajib) langsung ke Google Drive studio secara otomatis di *background*.
+
+### 5. Pembaruan Manajemen Kru & Magang (POS Dashboard)
+- Menambahkan jenis status gaji baru: `INTERN` (anak magang).
+- Akun berstatus *Intern* dapat menggunakan mesin absensi, namun diblokir dari akses masuk ke dasbor POS utama.
+- Fitur eksport laporan (PDF) terpisah untuk rekap absen khusus anak magang.
+
+### 6. Perbaikan UI & Fitur POS Dashboard
+- **Fitur Laci Kasir & Pembayaran**: Menambahkan indikator saldo laci kas, perhitungan uang kembalian (*change*) untuk nota cetak termal, serta melabeli pembayaran `Online QRIS` vs `Keep Slot` dengan warna di Ringkasan Booking.
+- **Edit Package**: Kru kini bisa langsung mengubah Paket (Package) tamu pada saat di studio dari rincian booking.
+- **Stuck Login Crew PRO (Bugfix)**: Memperbaiki zona waktu (*timezone WIB to UTC mismatch*) yang menyebabkan sistem gagal membaca absen kru di pagi hari.
+- **Optimistic UI & Realtime**: Memberikan *optimistic state update* pada `attendance` di POS sehingga dasbor terbuka instan sesaat setelah kru clock-in (tidak perlu lagi klik "Back" / menunggu *fetch* 15 detik).
