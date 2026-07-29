@@ -215,11 +215,11 @@ app.post('/api/print', async (req, res) => {
     log('info', `Print job queued: ${jobId} (${copies}×)`)
 
     // Clean up temp file after 5 minutes
-    setTimeout(() => { try { fs.unlinkSync(tmpFile) } catch {} }, 300_000)
+    setTimeout(() => { try { fs.unlinkSync(tmpFile) } catch { } }, 300_000)
 
     res.json({ status: 'printing', jobId })
   } catch (err) {
-    try { fs.unlinkSync(tmpFile) } catch {}
+    try { fs.unlinkSync(tmpFile) } catch { }
     log('error', `Print failed for ${sessionId}/${photoId}`, err.message)
     res.status(500).json({ error: 'Print failed', message: err.message })
   }

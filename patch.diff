@@ -1,0 +1,16 @@
+--- apps/pos-dashboard/src/App.tsx
++++ apps/pos-dashboard/src/App.tsx
+@@ -1070,2 +1070,8 @@
+ function todayKey() {
+   const now = new Date()
+   const wib = new Date(now.getTime() + 7 * 60 * 60 * 1000)
+   return wib.toISOString().slice(0, 10)
+ }
++function wibDayToISOStart(dateStr: string): string {
++  try { return new Date(`${dateStr}T00:00:00+07:00`).toISOString() }
++  catch { return `${dateStr}T00:00:00Z` }
++}
++function wibDayToISOEnd(dateStr: string): string {
++  try { return new Date(`${dateStr}T23:59:59+07:00`).toISOString() }
++  catch { return `${dateStr}T23:59:59Z` }
++}

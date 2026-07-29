@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPOSClient } from '@mera/supabase'
 const supabase = createPOSClient()
-import { Clock, RefreshCw, CheckCircle2, Circle, AlertTriangle, Camera, XCircle, ArrowLeft, Download, LogIn } from 'lucide-react'
+import { Clock, RefreshCw, CheckCircle2, Circle, AlertTriangle, Camera, XCircle, ArrowLeft, Download } from 'lucide-react'
 import type { Crew, Attendance } from '@mera/supabase'
 
 // ── Shift Definitions ─────────────────────────────────────────
@@ -144,16 +144,14 @@ async function uploadPhoto(base64: string, filename: string, metadata?: any): Pr
         const { data, error } = await supabase.storage
             .from('attendance-photos')
             .upload(filename, blob, { contentType: 'image/jpeg', upsert: true })
+        if (error || !data?.path) return null
+        const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path)
 
         // Also upload to Google Drive via Apps Script (silent, best-effort)
         uploadToDriveBackground(base64, filename, metadata)
 
-        if (error || !data?.path) return null
-        const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path)
-
         return urlData.publicUrl
     } catch {
-        uploadToDriveBackground(base64, filename, metadata)
         return null
     }
 }
@@ -164,33 +162,22 @@ function uploadToDriveBackground(base64: string, filename: string, metadata?: an
     const data = base64.split(',')[1]
     if (!data) return
 
-    const payload = {
-        fileName: filename,
-        mimeType: 'image/jpeg',
-        data,
-        folderId: '1KfG7aIPXbZIoOG857fFl73jfYJozAYBI',
-        subFolder: metadata?.crewName || 'Unknown'
-    }
+    const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL
+    if (!scriptUrl) return
 
-    // Send via server proxy endpoint for reliable Google Drive upload
-    fetch('/api/upload', {
+    // Sending directly to Apps Script using no-cors and text/plain to avoid CORS preflight issues
+    fetch(scriptUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-    })
-        .then(r => r.json())
-        .catch(() => {
-            // Fallback: direct Apps Script request
-            const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL
-            if (scriptUrl) {
-                fetch(scriptUrl, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-                    body: JSON.stringify(payload),
-                }).catch(e => console.warn('Background attendance upload failed', e))
-            }
-        })
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        body: JSON.stringify({
+            fileName: filename,
+            mimeType: 'image/jpeg',
+            data,
+            folderId: '1KfG7aIPXbZIoOG857fFl73jfYJozAYBI',
+            subFolder: metadata?.crewName || 'Unknown'
+        }),
+    }).catch(e => console.warn('Background upload failed', e))
 }
 
 // ── Export Intern PDF ─────────────────────────────────────────
@@ -225,13 +212,13 @@ function exportInternPdf(attendance: Attendance[], crewList: Crew[]) {
     doc.setFontSize(10)
     doc.text(`Tanggal Cetak: ${new Date().toLocaleString('id-ID')}`, 14, 26)
 
-    ;(doc as any).autoTable({
-        startY: 32,
-        head: [['Tanggal', 'Nama', 'Shift', 'Clock In', 'Clock Out', 'Status']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [41, 128, 185] }
-    })
+        ; (doc as any).autoTable({
+            startY: 32,
+            head: [['Tanggal', 'Nama', 'Shift', 'Clock In', 'Clock Out', 'Status']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: { fillColor: [41, 128, 185] }
+        })
 
     doc.save(`Rekap_Absen_Magang_${new Date().getTime()}.pdf`)
 }

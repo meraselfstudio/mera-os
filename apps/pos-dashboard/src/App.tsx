@@ -290,10 +290,10 @@ export default function App() {
     if (role === 'owner') return true;
     if (role !== 'crew') return false;
     if (!activeCrewId) return false;
-    
+
     const activeCrew = crewList.find(c => c.id === activeCrewId);
     if (activeCrew && activeCrew.status_gaji === 'INTERN') return false;
-    
+
     // Pro Crew (or active crew) must have an active attendance record today
     const hasActiveAttendance = attendance.some(a => a.crew_id === activeCrewId && a.status === 'ACTIVE');
     return hasActiveAttendance;
@@ -322,7 +322,7 @@ export default function App() {
   const loadMonthData = useCallback(async (ym: string) => {
     const [year, month] = ym.split('-').map(Number)
     const startDate = new Date(year, month - 2, 26)
-    const endDate   = new Date(year, month - 1, 25)
+    const endDate = new Date(year, month - 1, 25)
     await loadRecapRange(
       startDate.toISOString().slice(0, 10),
       endDate.toISOString().slice(0, 10),
@@ -887,17 +887,17 @@ export default function App() {
     const load = async () => {
       const day = todayKey()
       const [wkStart, wkEnd] = weekRange()
+      
       const isoStart = wibDayToISOStart(day)
       const isoEnd = wibDayToISOEnd(day)
 
-      const [{ data: regData }, { data: txData }, { data: attData }, { data: expData }, { data: weekRegData }, { data: prodData }, { data: crewData }] = await Promise.all([
+      const [{ data: regData }, { data: txData }, { data: attData }, { data: expData }, { data: weekRegData }, { data: prodData }] = await Promise.all([
         supabase.from('registrations').select('*').or(`preferred_date.eq.${day},created_at.gte.${isoStart}`).order('created_at', { ascending: false }),
         supabase.from('transactions').select('*').gte('created_at', isoStart).lte('created_at', isoEnd).order('created_at', { ascending: false }),
         supabase.from('attendance').select('*').gte('clock_in', isoStart).lte('clock_in', isoEnd).order('clock_in', { ascending: false }),
         supabase.from('expenses').select('*').gte('tanggal', day).lte('tanggal', day).order('tanggal', { ascending: false }),
         supabase.from('registrations').select('*').gte('preferred_date', wkStart).lte('preferred_date', wkEnd).order('preferred_time', { ascending: true }),
         supabase.from('products').select('*').eq('is_active', true).order('kategori'),
-        supabase.from('crew').select('*').eq('is_active', true).order('nama'),
       ])
 
       if (!mounted) return
@@ -1699,11 +1699,11 @@ export default function App() {
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {r.status === 'PENDING' && qBtn('Verify', <Check size={11}/>, '#9BB8D0', () => advanceBooking(r, 'VERIFIED'))}
-                      {r.status === 'VERIFIED' && qBtn('Process →', <ChevronRight size={11}/>, '#A8C5A0', () => advanceBooking(r, 'PROCESSED'))}
-                      {r.status === 'PROCESSED' && !isPaid && linkedTx && qBtn('Pay', <CreditCard size={11}/>, '#A8C5A0', () => { setPayTx(linkedTx); setShowPayModal(true); setPaymentMethodPick(r.booking_type === 'ONLINE_QRIS' ? 'ONLINE_QRIS' : null); setDiscountInput(''); setDiscountReasonInput('') })}
-                      {r.status === 'PROCESSED' && isPaid && linkedTx && qBtn('Receipt', <Send size={11}/>, '#7FC29B', () => openReceipt(linkedTx))}
-                      {r.status === 'COMPLETED' && linkedTx && qBtn('Receipt', <Send size={11}/>, '#7FC29B', () => openReceipt(linkedTx))}
+                      {r.status === 'PENDING' && qBtn('Verify', <Check size={11} />, '#9BB8D0', () => advanceBooking(r, 'VERIFIED'))}
+                      {r.status === 'VERIFIED' && qBtn('Process →', <ChevronRight size={11} />, '#A8C5A0', () => advanceBooking(r, 'PROCESSED'))}
+                      {r.status === 'PROCESSED' && !isPaid && linkedTx && qBtn('Pay', <CreditCard size={11} />, '#A8C5A0', () => { setPayTx(linkedTx); setShowPayModal(true); setPaymentMethodPick(r.booking_type === 'ONLINE_QRIS' ? 'ONLINE_QRIS' : null); setDiscountInput(''); setDiscountReasonInput('') })}
+                      {r.status === 'PROCESSED' && isPaid && linkedTx && qBtn('Receipt', <Send size={11} />, '#7FC29B', () => openReceipt(linkedTx))}
+                      {r.status === 'COMPLETED' && linkedTx && qBtn('Receipt', <Send size={11} />, '#7FC29B', () => openReceipt(linkedTx))}
                     </div>
                   </div>
                 )
@@ -1762,8 +1762,8 @@ export default function App() {
                       <span style={{ fontSize: 14, fontWeight: 800, flexShrink: 0 }}>{fmtRp(estimatedTotal)}</span>
                     </div>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      {t.status === 'ACTIVE' && qBtn('Pay', <CreditCard size={11}/>, '#A8C5A0', () => { setPayTx(t); setShowPayModal(true); const lr = registrations.find(r => r.id === t.registration_id); setPaymentMethodPick(lr?.booking_type === 'ONLINE_QRIS' ? 'ONLINE_QRIS' : null); setDiscountInput(''); setDiscountReasonInput('') })}
-                      {t.status === 'PAID' && qBtn('Receipt + DM', <Send size={11}/>, '#7FC29B', () => openReceipt(t))}
+                      {t.status === 'ACTIVE' && qBtn('Pay', <CreditCard size={11} />, '#A8C5A0', () => { setPayTx(t); setShowPayModal(true); const lr = registrations.find(r => r.id === t.registration_id); setPaymentMethodPick(lr?.booking_type === 'ONLINE_QRIS' ? 'ONLINE_QRIS' : null); setDiscountInput(''); setDiscountReasonInput('') })}
+                      {t.status === 'PAID' && qBtn('Receipt + DM', <Send size={11} />, '#7FC29B', () => openReceipt(t))}
                     </div>
                   </div>
                 )
@@ -1788,10 +1788,10 @@ export default function App() {
               )
 
               const tabDefs: Array<{ key: typeof bookingTab; label: string; count: number; color: string }> = [
-                { key: 'lobby',  label: 'Lobby',     count: pending.length + verified.length, color: '#E0B88A' },
-                { key: 'studio', label: 'In Studio',  count: processed.length,                color: '#A8C5A0' },
-                { key: 'active', label: 'Active TXs', count: activeTx.length,                 color: '#E0B88A' },
-                { key: 'paid',   label: 'Paid',       count: paidTx.length,                   color: '#7FC29B' },
+                { key: 'lobby', label: 'Lobby', count: pending.length + verified.length, color: '#E0B88A' },
+                { key: 'studio', label: 'In Studio', count: processed.length, color: '#A8C5A0' },
+                { key: 'active', label: 'Active TXs', count: activeTx.length, color: '#E0B88A' },
+                { key: 'paid', label: 'Paid', count: paidTx.length, color: '#7FC29B' },
               ]
 
               return (
@@ -1804,11 +1804,11 @@ export default function App() {
 
                   {/* Summary pills — 6-col desktop, 3-col mobile */}
                   <div className="gc-kpi-grid gc-booking-pills" style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10 }}>
-                    <Pill label="Pending"       value={pending.length}      color="#E0B88A" />
-                    <Pill label="Verified"      value={verified.length}     color="#9BB8D0" />
-                    <Pill label="In Studio"     value={processed.length}    color="#A8C5A0" />
-                    <Pill label="Active TXs"    value={activeTx.length}     color="#E0B88A" />
-                    <Pill label="Cash"          value={fmtRp(cashTotal)} />
+                    <Pill label="Pending" value={pending.length} color="#E0B88A" />
+                    <Pill label="Verified" value={verified.length} color="#9BB8D0" />
+                    <Pill label="In Studio" value={processed.length} color="#A8C5A0" />
+                    <Pill label="Active TXs" value={activeTx.length} color="#E0B88A" />
+                    <Pill label="Cash" value={fmtRp(cashTotal)} />
                     <Pill label="QRIS/Transfer" value={fmtRp(qrisTotal)} />
                   </div>
 
@@ -1839,21 +1839,21 @@ export default function App() {
 
                   {/* ── Mobile single-panel view (hidden on desktop) ── */}
                   <div className="gc-booking-mobile-panel" style={{ display: 'none' }}>
-                    {bookingTab === 'lobby'  && bookingCol('Lobby',     <Layers3 size={15}/>,  [...pending, ...verified], 'No bookings in lobby')}
-                    {bookingTab === 'studio' && bookingCol('In Studio', <Monitor size={15}/>,   processed,                'No active sessions')}
-                    {bookingTab === 'active' && txCol('Active TXs',     <CreditCard size={15}/>, activeTx,                'No active transactions')}
-                    {bookingTab === 'paid'   && txCol('Paid Today',     <Receipt size={15}/>,   paidTx,                  'No paid transactions')}
+                    {bookingTab === 'lobby' && bookingCol('Lobby', <Layers3 size={15} />, [...pending, ...verified], 'No bookings in lobby')}
+                    {bookingTab === 'studio' && bookingCol('In Studio', <Monitor size={15} />, processed, 'No active sessions')}
+                    {bookingTab === 'active' && txCol('Active TXs', <CreditCard size={15} />, activeTx, 'No active transactions')}
+                    {bookingTab === 'paid' && txCol('Paid Today', <Receipt size={15} />, paidTx, 'No paid transactions')}
                   </div>
 
                   {/* ── Desktop 4-panel layout (hidden on mobile) ── */}
                   <div className="gc-booking-desktop-layout" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, minHeight: 'calc(100vh - 230px)' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      {bookingCol('Lobby',     <Layers3 size={15}/>, [...pending, ...verified], 'No bookings in lobby')}
-                      {bookingCol('In Studio', <Monitor size={15}/>, processed,                 'No active sessions')}
+                      {bookingCol('Lobby', <Layers3 size={15} />, [...pending, ...verified], 'No bookings in lobby')}
+                      {bookingCol('In Studio', <Monitor size={15} />, processed, 'No active sessions')}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      {txCol('Active',     <CreditCard size={15}/>, activeTx, 'No active transactions')}
-                      {txCol('Paid Today', <Receipt size={15}/>,   paidTx,   'No paid transactions')}
+                      {txCol('Active', <CreditCard size={15} />, activeTx, 'No active transactions')}
+                      {txCol('Paid Today', <Receipt size={15} />, paidTx, 'No paid transactions')}
                     </div>
                   </div>
                 </div>
@@ -1990,7 +1990,8 @@ export default function App() {
                           <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                             {(['CASH', 'QRIS'] as const).map(m => (
                               <button key={m} onClick={() => setExpenseMetode(m)}
-                                style={{ border: 'none', borderRadius: 8, padding: '8px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                                style={{
+                                  border: 'none', borderRadius: 8, padding: '8px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
                                   background: expenseMetode === m ? (m === 'CASH' ? 'rgba(168,197,160,0.2)' : 'rgba(155,184,208,0.2)') : 'rgba(255,255,255,0.05)',
                                   color: expenseMetode === m ? (m === 'CASH' ? '#A8C5A0' : '#9BB8D0') : 'rgba(255,255,255,0.3)',
                                 }}>
@@ -2130,7 +2131,7 @@ export default function App() {
                 const [y, m] = monthKey.split('-').map(Number)
                 return {
                   start: new Date(y, m - 2, 26).toISOString().slice(0, 10),
-                  end:   new Date(y, m - 1, 25).toISOString().slice(0, 10),
+                  end: new Date(y, m - 1, 25).toISOString().slice(0, 10),
                 }
               })()
 
@@ -2331,7 +2332,8 @@ export default function App() {
                           <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
                             {(['CASH', 'QRIS'] as const).map(m => (
                               <button key={m} onClick={() => setMonthExpMetode(m)}
-                                style={{ border: 'none', borderRadius: 7, padding: '7px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                                style={{
+                                  border: 'none', borderRadius: 7, padding: '7px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer',
                                   background: monthExpMetode === m ? (m === 'CASH' ? 'rgba(168,197,160,0.2)' : 'rgba(155,184,208,0.2)') : 'rgba(255,255,255,0.05)',
                                   color: monthExpMetode === m ? (m === 'CASH' ? '#A8C5A0' : '#9BB8D0') : 'rgba(255,255,255,0.3)',
                                 }}>
@@ -2564,275 +2566,275 @@ export default function App() {
           : paymentMethodPick !== null
 
         return (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', zIndex: 1000, display: 'grid', placeItems: 'center', padding: 16 }}>
-          <div style={{ width: 'min(420px, 100%)', maxHeight: '90vh', overflow: 'auto', borderRadius: 24, background: '#1C1C1E', border: '1px solid rgba(139,26,26,0.2)', boxShadow: '0 24px 48px rgba(0,0,0,0.5)' }}>
-            <div style={{ padding: '20px 22px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: 17, fontWeight: 700 }}>Payment</h3>
-              <button onClick={() => { setShowPayModal(false); setPayTx(null); setSessionAddons({}); setAddonPaymentPick(null) }} style={{ border: 'none', background: 'rgba(255,255,255,0.06)', borderRadius: 20, width: 30, height: 30, display: 'grid', placeItems: 'center', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
-                <X size={14} />
-              </button>
-            </div>
-
-            {/* Customer info */}
-            {payReg && (
-              <div style={{ padding: '12px 22px 0' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700 }}>{payReg.customer_name}</span>
-                  {payReg.instagram_handle && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>@{payReg.instagram_handle.replace('@', '')}</span>}
-                </div>
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
-                  {payTx.session_id} · <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}>{(payReg.addons as BookingAddons | null)?.room ?? toStudioBucket(payReg)}</span>
-                  {(payReg.addons as BookingAddons | null)?.pax ? <span> · {(payReg.addons as BookingAddons | null)?.pax} pax</span> : null}
-                </p>
-                <div style={{ marginTop: 6 }}>
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                    fontSize: 11, fontWeight: 700, letterSpacing: '0.03em',
-                    padding: '3px 10px', borderRadius: 20,
-                    background: payReg.booking_type === 'ONLINE_QRIS' ? 'rgba(155,184,208,0.15)' : 'rgba(224,184,138,0.15)',
-                    color: payReg.booking_type === 'ONLINE_QRIS' ? '#9BB8D0' : '#E0B88A',
-                    border: `1px solid ${payReg.booking_type === 'ONLINE_QRIS' ? 'rgba(155,184,208,0.3)' : 'rgba(224,184,138,0.3)'}`,
-                  }}>
-                    {payReg.booking_type === 'ONLINE_QRIS' ? '💳 Booking via Online QRIS' : '📌 Booking via Keep Slot'}
-                  </span>
-                </div>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', zIndex: 1000, display: 'grid', placeItems: 'center', padding: 16 }}>
+            <div style={{ width: 'min(420px, 100%)', maxHeight: '90vh', overflow: 'auto', borderRadius: 24, background: '#1C1C1E', border: '1px solid rgba(139,26,26,0.2)', boxShadow: '0 24px 48px rgba(0,0,0,0.5)' }}>
+              <div style={{ padding: '20px 22px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h3 style={{ fontSize: 17, fontWeight: 700 }}>Payment</h3>
+                <button onClick={() => { setShowPayModal(false); setPayTx(null); setSessionAddons({}); setAddonPaymentPick(null) }} style={{ border: 'none', background: 'rgba(255,255,255,0.06)', borderRadius: 20, width: 30, height: 30, display: 'grid', placeItems: 'center', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
+                  <X size={14} />
+                </button>
               </div>
-            )}
 
-            {/* Product breakdown */}
-            <div style={{ padding: '16px 22px 0' }}>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Products</p>
-              {allItems.length === 0 ? (
-                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', padding: '8px 0' }}>No products linked — price will be manual</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {allItems.map((item, i) => (
-                    <div key={`item-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 13, color: item.label.toLowerCase().includes('cetak') || item.label.toLowerCase().includes('print') ? '#E0B88A' : 'rgba(255,255,255,0.7)' }}>{item.label}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{fmtRp(item.price)}</span>
-                    </div>
-                  ))}
+              {/* Customer info */}
+              {payReg && (
+                <div style={{ padding: '12px 22px 0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 15, fontWeight: 700 }}>{payReg.customer_name}</span>
+                    {payReg.instagram_handle && <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>@{payReg.instagram_handle.replace('@', '')}</span>}
+                  </div>
+                  <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>
+                    {payTx.session_id} · <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}>{(payReg.addons as BookingAddons | null)?.room ?? toStudioBucket(payReg)}</span>
+                    {(payReg.addons as BookingAddons | null)?.pax ? <span> · {(payReg.addons as BookingAddons | null)?.pax} pax</span> : null}
+                  </p>
+                  <div style={{ marginTop: 6 }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      fontSize: 11, fontWeight: 700, letterSpacing: '0.03em',
+                      padding: '3px 10px', borderRadius: 20,
+                      background: payReg.booking_type === 'ONLINE_QRIS' ? 'rgba(155,184,208,0.15)' : 'rgba(224,184,138,0.15)',
+                      color: payReg.booking_type === 'ONLINE_QRIS' ? '#9BB8D0' : '#E0B88A',
+                      border: `1px solid ${payReg.booking_type === 'ONLINE_QRIS' ? 'rgba(155,184,208,0.3)' : 'rgba(224,184,138,0.3)'}`,
+                    }}>
+                      {payReg.booking_type === 'ONLINE_QRIS' ? '💳 Booking via Online QRIS' : '📌 Booking via Keep Slot'}
+                    </span>
+                  </div>
                 </div>
               )}
-              {/* Subtotal */}
-              <div style={{ borderTop: '0.5px solid rgba(255,255,255,0.08)', marginTop: 10, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Subtotal</span>
-                <span style={{ fontSize: 15, fontWeight: 700 }}>{fmtRp(subtotal)}</span>
-              </div>
-              {/* Pre-paid line for split */}
-              {hasSplit && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-                  <span style={{ fontSize: 12, color: '#A8C5A0' }}>✅ Pre-paid via Online QRIS</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#A8C5A0' }}>−{fmtRp(baseTotal)}</span>
-                </div>
-              )}
-            </div>
 
-            {/* Session Add-Ons */}
-
-            {/* Discount */}
-            <div style={{ padding: '12px 22px 0' }}>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 6, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Discount</p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="number"
-                  placeholder="0"
-                  value={discountInput}
-                  onChange={e => setDiscountInput(e.target.value)}
-                  style={{ flex: '0 0 110px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', padding: '8px 10px', fontSize: 13, outline: 'none' }}
-                />
-                <input
-                  type="text"
-                  placeholder="Reason (optional)"
-                  value={discountReasonInput}
-                  onChange={e => setDiscountReasonInput(e.target.value)}
-                  style={{ flex: 1, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', padding: '8px 10px', fontSize: 13, outline: 'none' }}
-                />
-              </div>
-              {discountAmt > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                  <span style={{ fontSize: 13, color: '#C89696' }}>Discount</span>
-                  <span style={{ fontSize: 13, color: '#C89696', fontWeight: 600 }}>−{fmtRp(discountAmt)}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Payment method — split vs normal */}
-            {hasSplit ? (
-              <div style={{ padding: '12px 22px 0' }}>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Add-on payment method</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                  {(['CASH', 'QRIS', 'TRANSFER'] as PaymentMethod[]).map((m) => {
-                    const labels: Record<string, string> = { CASH: '💵 Cash', QRIS: '📱 QRIS', TRANSFER: '🏦 Transfer' }
-                    const selected = addonPaymentPick === m
-                    return (
-                      <button
-                        key={m}
-                        onClick={() => {
-                          setAddonPaymentPick(m)
-                          if (m !== 'CASH') setCashReceivedInput('')
-                        }}
-                        style={{
-                          border: `1.5px solid ${selected ? '#E0B88A' : 'rgba(255,255,255,0.08)'}`,
-                          borderRadius: 14,
-                          background: selected ? 'rgba(224,184,138,0.12)' : 'rgba(255,255,255,0.04)',
-                          color: '#fff',
-                          padding: '14px 12px',
-                          fontSize: 13,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        {labels[m]}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div style={{ padding: '12px 22px 0' }}>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Payment method</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {(['CASH', 'QRIS', 'TRANSFER', 'ONLINE_QRIS'] as PaymentMethod[]).map((m) => {
-                    const labels: Record<PaymentMethod, string> = { CASH: '💵 Cash', QRIS: '📱 QRIS', TRANSFER: '🏦 Transfer', ONLINE_QRIS: '🌐 Online QRIS' }
-                    const selected = paymentMethodPick === m
-                    return (
-                      <button
-                        key={m}
-                        onClick={() => {
-                          setPaymentMethodPick(m)
-                          if (m !== 'CASH') setCashReceivedInput('')
-                        }}
-                        style={{
-                          border: `1.5px solid ${selected ? '#622128' : 'rgba(255,255,255,0.08)'}`,
-                          borderRadius: 14,
-                          background: selected ? 'rgba(139,26,26,0.15)' : 'rgba(255,255,255,0.04)',
-                          color: '#fff',
-                          padding: '14px 12px',
-                          fontSize: 13,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        {labels[m]}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Cash Received & Change Calculation */}
-            {((hasSplit && addonPaymentPick === 'CASH') || (!hasSplit && paymentMethodPick === 'CASH')) && (
-              <div style={{ padding: '12px 22px 0' }}>
-                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 6, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Uang Diterima & Kembalian</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <input
-                    type="number"
-                    placeholder="Nominal Cash Diterima (Rp)"
-                    value={cashReceivedInput}
-                    onChange={e => setCashReceivedInput(e.target.value)}
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(224,184,138,0.3)', background: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: 14, fontWeight: 700, outline: 'none', boxSizing: 'border-box' }}
-                  />
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {[remainingToPay, 50000, 100000, 150000, 200000].filter((val, idx, self) => val > 0 && self.indexOf(val) === idx).map(val => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => setCashReceivedInput(String(val))}
-                        style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '5px 10px', fontSize: 11, fontWeight: 600, background: cashReceivedInput === String(val) ? '#E0B88A' : 'rgba(255,255,255,0.06)', color: cashReceivedInput === String(val) ? '#000' : '#fff', cursor: 'pointer' }}
-                      >
-                        {val === remainingToPay ? 'Pas' : fmtRp(val)}
-                      </button>
+              {/* Product breakdown */}
+              <div style={{ padding: '16px 22px 0' }}>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 8, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Products</p>
+                {allItems.length === 0 ? (
+                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.2)', padding: '8px 0' }}>No products linked — price will be manual</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {allItems.map((item, i) => (
+                      <div key={`item-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 13, color: item.label.toLowerCase().includes('cetak') || item.label.toLowerCase().includes('print') ? '#E0B88A' : 'rgba(255,255,255,0.7)' }}>{item.label}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{fmtRp(item.price)}</span>
+                      </div>
                     ))}
                   </div>
-                  {(() => {
-                    const received = parseInt(cashReceivedInput, 10) || 0
-                    if (received >= remainingToPay && remainingToPay > 0) {
-                      const change = received - remainingToPay
-                      return (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(168,197,160,0.15)', border: '1px solid rgba(168,197,160,0.3)', borderRadius: 10, padding: '8px 12px', marginTop: 2 }}>
-                          <span style={{ fontSize: 13, color: '#A8C5A0', fontWeight: 600 }}>💵 Kembalian:</span>
-                          <span style={{ fontSize: 16, color: '#A8C5A0', fontWeight: 800 }}>{fmtRp(change)}</span>
-                        </div>
-                      )
-                    } else if (received > 0 && received < remainingToPay) {
-                      return (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(200,150,150,0.15)', border: '1px solid rgba(200,150,150,0.3)', borderRadius: 10, padding: '8px 12px', marginTop: 2 }}>
-                          <span style={{ fontSize: 12, color: '#C89696', fontWeight: 600 }}>⚠️ Kurang:</span>
-                          <span style={{ fontSize: 13, color: '#C89696', fontWeight: 800 }}>{fmtRp(remainingToPay - received)}</span>
-                        </div>
-                      )
-                    }
-                    return null
-                  })()}
+                )}
+                {/* Subtotal */}
+                <div style={{ borderTop: '0.5px solid rgba(255,255,255,0.08)', marginTop: 10, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>Subtotal</span>
+                  <span style={{ fontSize: 15, fontWeight: 700 }}>{fmtRp(subtotal)}</span>
                 </div>
+                {/* Pre-paid line for split */}
+                {hasSplit && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                    <span style={{ fontSize: 12, color: '#A8C5A0' }}>✅ Pre-paid via Online QRIS</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#A8C5A0' }}>−{fmtRp(baseTotal)}</span>
+                  </div>
+                )}
               </div>
-            )}
 
-            {/* Grand total */}
-            <div style={{ padding: '14px 22px 4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '0.5px solid rgba(255,255,255,0.06)', marginTop: 14 }}>
-              <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span>
-              <span style={{ fontSize: 24, fontWeight: 800, color: '#A8C5A0' }}>{fmtRp(grandTotal)}</span>
-            </div>
+              {/* Session Add-Ons */}
 
-            {/* Remaining to pay (split) */}
-            {hasSplit && (
-              <div style={{ padding: '0 22px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#E0B88A' }}>Remaining to pay</span>
-                <span style={{ fontSize: 18, fontWeight: 800, color: '#E0B88A' }}>{fmtRp(remainingToPay)}</span>
+              {/* Discount */}
+              <div style={{ padding: '12px 22px 0' }}>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 6, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Discount</p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={discountInput}
+                    onChange={e => setDiscountInput(e.target.value)}
+                    style={{ flex: '0 0 110px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Reason (optional)"
+                    value={discountReasonInput}
+                    onChange={e => setDiscountReasonInput(e.target.value)}
+                    style={{ flex: 1, border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, background: 'rgba(255,255,255,0.04)', color: '#fff', padding: '8px 10px', fontSize: 13, outline: 'none' }}
+                  />
+                </div>
+                {discountAmt > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                    <span style={{ fontSize: 13, color: '#C89696' }}>Discount</span>
+                    <span style={{ fontSize: 13, color: '#C89696', fontWeight: 600 }}>−{fmtRp(discountAmt)}</span>
+                  </div>
+                )}
               </div>
-            )}
 
-            <div style={{ padding: '0 22px 22px' }}>
-              <button
-                onClick={() => {
-                  const recVal = parseInt(cashReceivedInput, 10) || 0
-                  const changeVal = Math.max(0, recVal - remainingToPay)
-                  if (hasSplit) {
-                    markTxPaid(payTx, 'ONLINE_QRIS', grandTotal, discountAmt, discountReasonInput, {
-                      baseAmount: baseTotal,
-                      baseMethod: 'ONLINE_QRIS',
-                      addonAmount: remainingToPay,
-                      addonMethod: addonPaymentPick ?? 'CASH',
-                      cashReceived: recVal > 0 ? recVal : undefined,
-                      changeAmt: recVal > 0 ? changeVal : undefined,
-                    }, mergedAddons)
-                  } else if (paymentMethodPick) {
-                    markTxPaid(payTx, paymentMethodPick, grandTotal, discountAmt, discountReasonInput, {
-                      baseAmount: grandTotal,
-                      baseMethod: paymentMethodPick,
-                      addonAmount: 0,
-                      addonMethod: paymentMethodPick,
-                      cashReceived: recVal > 0 ? recVal : undefined,
-                      changeAmt: recVal > 0 ? changeVal : undefined,
-                    }, mergedAddons)
+              {/* Payment method — split vs normal */}
+              {hasSplit ? (
+                <div style={{ padding: '12px 22px 0' }}>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Add-on payment method</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                    {(['CASH', 'QRIS', 'TRANSFER'] as PaymentMethod[]).map((m) => {
+                      const labels: Record<string, string> = { CASH: '💵 Cash', QRIS: '📱 QRIS', TRANSFER: '🏦 Transfer' }
+                      const selected = addonPaymentPick === m
+                      return (
+                        <button
+                          key={m}
+                          onClick={() => {
+                            setAddonPaymentPick(m)
+                            if (m !== 'CASH') setCashReceivedInput('')
+                          }}
+                          style={{
+                            border: `1.5px solid ${selected ? '#E0B88A' : 'rgba(255,255,255,0.08)'}`,
+                            borderRadius: 14,
+                            background: selected ? 'rgba(224,184,138,0.12)' : 'rgba(255,255,255,0.04)',
+                            color: '#fff',
+                            padding: '14px 12px',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {labels[m]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: '12px 22px 0' }}>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Payment method</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {(['CASH', 'QRIS', 'TRANSFER', 'ONLINE_QRIS'] as PaymentMethod[]).map((m) => {
+                      const labels: Record<PaymentMethod, string> = { CASH: '💵 Cash', QRIS: '📱 QRIS', TRANSFER: '🏦 Transfer', ONLINE_QRIS: '🌐 Online QRIS' }
+                      const selected = paymentMethodPick === m
+                      return (
+                        <button
+                          key={m}
+                          onClick={() => {
+                            setPaymentMethodPick(m)
+                            if (m !== 'CASH') setCashReceivedInput('')
+                          }}
+                          style={{
+                            border: `1.5px solid ${selected ? '#622128' : 'rgba(255,255,255,0.08)'}`,
+                            borderRadius: 14,
+                            background: selected ? 'rgba(139,26,26,0.15)' : 'rgba(255,255,255,0.04)',
+                            color: '#fff',
+                            padding: '14px 12px',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {labels[m]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Cash Received & Change Calculation */}
+              {((hasSplit && addonPaymentPick === 'CASH') || (!hasSplit && paymentMethodPick === 'CASH')) && (
+                <div style={{ padding: '12px 22px 0' }}>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 6, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Uang Diterima & Kembalian</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <input
+                      type="number"
+                      placeholder="Nominal Cash Diterima (Rp)"
+                      value={cashReceivedInput}
+                      onChange={e => setCashReceivedInput(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(224,184,138,0.3)', background: 'rgba(255,255,255,0.04)', color: '#fff', fontSize: 14, fontWeight: 700, outline: 'none', boxSizing: 'border-box' }}
+                    />
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {[remainingToPay, 50000, 100000, 150000, 200000].filter((val, idx, self) => val > 0 && self.indexOf(val) === idx).map(val => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setCashReceivedInput(String(val))}
+                          style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '5px 10px', fontSize: 11, fontWeight: 600, background: cashReceivedInput === String(val) ? '#E0B88A' : 'rgba(255,255,255,0.06)', color: cashReceivedInput === String(val) ? '#000' : '#fff', cursor: 'pointer' }}
+                        >
+                          {val === remainingToPay ? 'Pas' : fmtRp(val)}
+                        </button>
+                      ))}
+                    </div>
+                    {(() => {
+                      const received = parseInt(cashReceivedInput, 10) || 0
+                      if (received >= remainingToPay && remainingToPay > 0) {
+                        const change = received - remainingToPay
+                        return (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(168,197,160,0.15)', border: '1px solid rgba(168,197,160,0.3)', borderRadius: 10, padding: '8px 12px', marginTop: 2 }}>
+                            <span style={{ fontSize: 13, color: '#A8C5A0', fontWeight: 600 }}>💵 Kembalian:</span>
+                            <span style={{ fontSize: 16, color: '#A8C5A0', fontWeight: 800 }}>{fmtRp(change)}</span>
+                          </div>
+                        )
+                      } else if (received > 0 && received < remainingToPay) {
+                        return (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(200,150,150,0.15)', border: '1px solid rgba(200,150,150,0.3)', borderRadius: 10, padding: '8px 12px', marginTop: 2 }}>
+                            <span style={{ fontSize: 12, color: '#C89696', fontWeight: 600 }}>⚠️ Kurang:</span>
+                            <span style={{ fontSize: 13, color: '#C89696', fontWeight: 800 }}>{fmtRp(remainingToPay - received)}</span>
+                          </div>
+                        )
+                      }
+                      return null
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Grand total */}
+              <div style={{ padding: '14px 22px 4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '0.5px solid rgba(255,255,255,0.06)', marginTop: 14 }}>
+                <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span>
+                <span style={{ fontSize: 24, fontWeight: 800, color: '#A8C5A0' }}>{fmtRp(grandTotal)}</span>
+              </div>
+
+              {/* Remaining to pay (split) */}
+              {hasSplit && (
+                <div style={{ padding: '0 22px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#E0B88A' }}>Remaining to pay</span>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: '#E0B88A' }}>{fmtRp(remainingToPay)}</span>
+                </div>
+              )}
+
+              <div style={{ padding: '0 22px 22px' }}>
+                <button
+                  onClick={() => {
+                    const recVal = parseInt(cashReceivedInput, 10) || 0
+                    const changeVal = Math.max(0, recVal - remainingToPay)
+                    if (hasSplit) {
+                      markTxPaid(payTx, 'ONLINE_QRIS', grandTotal, discountAmt, discountReasonInput, {
+                        baseAmount: baseTotal,
+                        baseMethod: 'ONLINE_QRIS',
+                        addonAmount: remainingToPay,
+                        addonMethod: addonPaymentPick ?? 'CASH',
+                        cashReceived: recVal > 0 ? recVal : undefined,
+                        changeAmt: recVal > 0 ? changeVal : undefined,
+                      }, mergedAddons)
+                    } else if (paymentMethodPick) {
+                      markTxPaid(payTx, paymentMethodPick, grandTotal, discountAmt, discountReasonInput, {
+                        baseAmount: grandTotal,
+                        baseMethod: paymentMethodPick,
+                        addonAmount: 0,
+                        addonMethod: paymentMethodPick,
+                        cashReceived: recVal > 0 ? recVal : undefined,
+                        changeAmt: recVal > 0 ? changeVal : undefined,
+                      }, mergedAddons)
+                    }
+                  }}
+                  disabled={!canPay || actionLoading}
+                  style={{
+                    width: '100%',
+                    border: 'none',
+                    borderRadius: 14,
+                    background: canPay ? '#622128' : 'rgba(255,255,255,0.06)',
+                    color: canPay ? '#fff' : 'rgba(255,255,255,0.2)',
+                    padding: '14px',
+                    fontSize: 15,
+                    fontWeight: 700,
+                    cursor: canPay ? 'pointer' : 'default',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {actionLoading ? 'Processing...' : hasSplit
+                    ? (remainingToPay > 0 ? `Pay Add-ons ${fmtRp(remainingToPay)}` : `Confirm ${fmtRp(grandTotal)}`)
+                    : `Pay ${fmtRp(grandTotal)}`
                   }
-                }}
-                disabled={!canPay || actionLoading}
-                style={{
-                  width: '100%',
-                  border: 'none',
-                  borderRadius: 14,
-                  background: canPay ? '#622128' : 'rgba(255,255,255,0.06)',
-                  color: canPay ? '#fff' : 'rgba(255,255,255,0.2)',
-                  padding: '14px',
-                  fontSize: 15,
-                  fontWeight: 700,
-                  cursor: canPay ? 'pointer' : 'default',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {actionLoading ? 'Processing...' : hasSplit
-                  ? (remainingToPay > 0 ? `Pay Add-ons ${fmtRp(remainingToPay)}` : `Confirm ${fmtRp(grandTotal)}`)
-                  : `Pay ${fmtRp(grandTotal)}`
-                }
-              </button>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
         )
       })()}
 
@@ -2943,8 +2945,8 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                   <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', margin: 0 }}>Edit Transaksi</p>
                   {txEditSaveState === 'saving' && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em' }}>Menyimpan…</span>}
-                  {txEditSaveState === 'saved'  && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
-                  {txEditSaveState === 'error'  && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
+                  {txEditSaveState === 'saved' && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
+                  {txEditSaveState === 'error' && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
                 </div>
                 <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 14, padding: '14px 16px', border: '0.5px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
@@ -3259,14 +3261,14 @@ export default function App() {
             </div>
 
             <div style={{ padding: 14 }}>
-              <AttendanceBoard onLogout={handleLogout} onClockIn={(crewId) => { 
-                  setActiveCrewId(crewId); 
-                  localStorage.setItem('mera_pos_crew_id', crewId);
-                  setAttendance(prev => {
-                    if (prev.some(a => a.crew_id === crewId && a.status === 'ACTIVE')) return prev;
-                    return [...prev, { crew_id: crewId, status: 'ACTIVE' } as any];
-                  });
-                  setShowCrewAttendanceOverlay(false) 
+              <AttendanceBoard onLogout={handleLogout} onClockIn={(crewId) => {
+                setActiveCrewId(crewId);
+                localStorage.setItem('mera_pos_crew_id', crewId);
+                setAttendance(prev => {
+                  if (prev.some(a => a.crew_id === crewId && a.status === 'ACTIVE')) return prev;
+                  return [...prev, { crew_id: crewId, status: 'ACTIVE' } as any];
+                });
+                setShowCrewAttendanceOverlay(false)
               }} />
             </div>
           </div>
@@ -3310,8 +3312,8 @@ export default function App() {
           EXPIRED: { color: '#C89696', label: 'Expired' },
         }
 
-        const WEEKDAY_SLOTS = ['12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00','19:30','20:00','20:30','21:00']
-        const WEEKEND_SLOTS = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00','19:30','20:00','20:30','21:00']
+        const WEEKDAY_SLOTS = ['12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00']
+        const WEEKEND_SLOTS = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30', '21:00']
         const slotDate = editDateInput ? new Date(editDateInput + 'T00:00:00') : new Date()
         const slotDay = slotDate.getDay()
         const timeSlots = (slotDay === 0 || slotDay === 5 || slotDay === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS
@@ -3352,32 +3354,32 @@ export default function App() {
                 )}
               </div>
 
-                              {/* Booking details summary */}
-                <div style={{ marginBottom: 18, marginTop: 8, padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: 10, border: '0.5px solid rgba(255,255,255,0.06)' }}>
-                  <div style={{ fontSize: 12, color: '#A8C5A0', fontWeight: 700, marginBottom: 4 }}>Booking Details</div>
-                  <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.7 }}>
-                    <div>Package: <b>{products.find(p => p.id === editPackageId)?.nama || '-'}</b></div>
-                    <div>Studio: <b>{previewAddons.room || '-'}</b></div>
-                    <div>Payment Type: <b style={{ color: reg.booking_type === 'ONLINE_QRIS' ? '#9BB8D0' : '#E0B88A' }}>{reg.booking_type === 'ONLINE_QRIS' ? '💳 Online QRIS' : '📌 Keep Slot'}</b></div>
-                    {/* Background is not a property of BookingAddons; show dash or add logic if needed */}
-                    <div>Background: <b>-</b></div>
-                    <div>Pax: <b>{editPax}</b></div>
-                    <div>Add-ons: <b>{Object.entries(editAddons).filter(([_, v]) => v > 0).map(([k, v]) => `${k} (${v})`).join(', ') || '-'}</b></div>
-                    {/* Debug: show selected_addons array for pricing logic */}
-                    <div style={{ color: '#000000', fontSize: 11, marginTop: 4 }}>
-                      <span>selected_addons: [
-                        {(() => {
-                          const arr: string[] = [];
-                          Object.entries(editAddons).forEach(([name, qty]) => {
-                            for (let i = 0; i < qty; i++) arr.push(name)
-                          })
-                          return arr.map(a => `'${a}'`).join(', ')
-                        })()}
+              {/* Booking details summary */}
+              <div style={{ marginBottom: 18, marginTop: 8, padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: 10, border: '0.5px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ fontSize: 12, color: '#A8C5A0', fontWeight: 700, marginBottom: 4 }}>Booking Details</div>
+                <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.7 }}>
+                  <div>Package: <b>{products.find(p => p.id === editPackageId)?.nama || '-'}</b></div>
+                  <div>Studio: <b>{previewAddons.room || '-'}</b></div>
+                  <div>Payment Type: <b style={{ color: reg.booking_type === 'ONLINE_QRIS' ? '#9BB8D0' : '#E0B88A' }}>{reg.booking_type === 'ONLINE_QRIS' ? '💳 Online QRIS' : '📌 Keep Slot'}</b></div>
+                  {/* Background is not a property of BookingAddons; show dash or add logic if needed */}
+                  <div>Background: <b>-</b></div>
+                  <div>Pax: <b>{editPax}</b></div>
+                  <div>Add-ons: <b>{Object.entries(editAddons).filter(([_, v]) => v > 0).map(([k, v]) => `${k} (${v})`).join(', ') || '-'}</b></div>
+                  {/* Debug: show selected_addons array for pricing logic */}
+                  <div style={{ color: '#000000', fontSize: 11, marginTop: 4 }}>
+                    <span>selected_addons: [
+                      {(() => {
+                        const arr: string[] = [];
+                        Object.entries(editAddons).forEach(([name, qty]) => {
+                          for (let i = 0; i < qty; i++) arr.push(name)
+                        })
+                        return arr.map(a => `'${a}'`).join(', ')
+                      })()}
                       ]
                     </span>
-                    </div>
                   </div>
                 </div>
+              </div>
 
               {/* Scrollable edit fields */}
               <div style={{ flex: 1, overflow: 'auto', padding: '18px 22px' }}>
@@ -3385,8 +3387,8 @@ export default function App() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
                     <label style={{ ...labelSt, marginBottom: 0 }}>Date</label>
                     {dateSaveState === 'saving' && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em' }}>Menyimpan…</span>}
-                    {dateSaveState === 'saved'  && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
-                    {dateSaveState === 'error'  && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
+                    {dateSaveState === 'saved' && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
+                    {dateSaveState === 'error' && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
                   </div>
                   <input
                     type="date"
@@ -3441,8 +3443,8 @@ export default function App() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
                     <label style={{ ...labelSt, marginBottom: 0 }}>Time</label>
                     {timeSaveState === 'saving' && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em' }}>Menyimpan…</span>}
-                    {timeSaveState === 'saved'  && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
-                    {timeSaveState === 'error'  && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
+                    {timeSaveState === 'saved' && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
+                    {timeSaveState === 'error' && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
                   </div>
                   <select
                     value={editTimeInput}
@@ -3586,8 +3588,8 @@ export default function App() {
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <p style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: 0 }}>Price Preview</p>
                       {addonsSaveState === 'saving' && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.04em' }}>Menyimpan…</span>}
-                      {addonsSaveState === 'saved'  && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
-                      {addonsSaveState === 'error'  && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
+                      {addonsSaveState === 'saved' && <span style={{ fontSize: 10, color: '#A8C5A0', letterSpacing: '0.04em' }}>✓ Tersimpan</span>}
+                      {addonsSaveState === 'error' && <span style={{ fontSize: 10, color: '#C89696', letterSpacing: '0.04em' }}>✕ Gagal simpan</span>}
                     </div>
                     {previewItems.map((item, i) => (
                       <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -3688,10 +3690,10 @@ export default function App() {
                   const baseSlots = (day === 0 || day === 5 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
                   // Find all bookings for this date for Close Up Room or Pas Photo
                   const booked = registrations
-                    .filter(r => r.preferred_date === editDateInput && (r.addons?.room === 'Close Up Room' || r.addons?.room === 'Pas Photo') && ['PENDING','VERIFIED','PROCESSED'].includes(r.status))
+                    .filter(r => r.preferred_date === editDateInput && (r.addons?.room === 'Close Up Room' || r.addons?.room === 'Pas Photo') && ['PENDING', 'VERIFIED', 'PROCESSED'].includes(r.status))
                     .map(r => r.preferred_time);
                   // If today, filter out past slots
-                  const todayStr = new Date().toISOString().slice(0,10);
+                  const todayStr = new Date().toISOString().slice(0, 10);
                   let slots = baseSlots;
                   if (editDateInput === todayStr) {
                     const now = new Date();
@@ -3704,7 +3706,7 @@ export default function App() {
                 })()}
               </select>
             </div>
-            
+
             <div style={{ padding: 16, borderTop: '1px solid var(--mera-border)', display: 'flex', gap: 10 }}>
               <button
                 onClick={() => setEditRegTarget(null)}

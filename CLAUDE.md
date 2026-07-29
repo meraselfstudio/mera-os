@@ -259,7 +259,22 @@ Semua tipe TypeScript berada di `packages/supabase/src/types/database.types.ts`.
 | max_orang | number | Peserta maksimal per sesi |
 | default_bw | boolean | TRUE = B&W secara default |
 | is_addon | boolean | TRUE = add-on yang dapat dipilih, bukan paket utama |
+| deskripsi | string \| null | Deskripsi detail paket & fasilitas untuk UI |
+| pricing_basis | `'flat' \| 'qty'` | Dasar perhitungan kuantitas add-on |
 | metadata | JSONB | Digunakan oleh overlay frame kiosk (frame_url, thumbnail_url, type, slots) |
+
+### `studios`
+| Kolom | Tipe | Catatan |
+|--------|------|-------|
+| id | string PK | Contoh: `'Basic Studio'`, `'Close Up Room'`, `'Pas Photo'` |
+| name | string | |
+| emoji | string | Emoji ikon studio (misal 🖤, ✨, 🎩) |
+| description | string | Ringkasan keunggulan studio |
+| image_url | string | URL gambar thumbnail studio |
+| sort_order | integer | Urutan tampilan di UI |
+| allowed_categories | JSONB | Array kategori produk yang diizinkan |
+| shared_slots_group | string \| null | Grouping studio yang berbagi slot fisik yang sama (misal `'shared_closeup'`) |
+| is_active | boolean | |
 
 ### `registrations`
 | Kolom | Tipe | Catatan |
@@ -347,6 +362,8 @@ Semua tipe TypeScript berada di `packages/supabase/src/types/database.types.ts`.
 - Berjalan di Mac Mini di studio (hanya jaringan lokal)
 - Endpoints (dari `apps/kiosk/src/lib/api.ts`):
   - `POST /api/sessions` — memulai sesi foto baru
+  - `POST /api/sessions/create` — auto-provisioning folder sesi Capture One (`.cosessiondb`) & folder ekspor (`Color`/`BW`) di disk `MERADATA` Mac Mini
+  - `GET /api/sessions/:id/stats` — statistik live sesi (jumlah foto proxy, ekspor, status readiness Google Drive Sync)
   - `GET /api/sessions/:id/photos` — mengambil foto yang diambil
   - `GET /api/frames` — membuat daftar overlay frame yang tersedia
   - `POST /api/print` — memicu pekerjaan cetak
@@ -364,11 +381,10 @@ Semua tipe TypeScript berada di `packages/supabase/src/types/database.types.ts`.
 - Tautan unduhan dibagikan ke pelanggan melalui Instagram DM
 - Foto absensi kru juga disimpan melalui Google Drive (direferensikan dalam unggahan ganda AttendanceBoard)
 
-### Proxy `/api/upload` (Unggahan Ganda Foto Absensi)
-- Direferensikan di `AttendanceBoard.tsx` untuk unggahan foto kru ke Google Drive
-- **Status: mungkin hilang/direncanakan** — tidak ditemukan sebagai file route Next.js di repositori
-- Mungkin dilayani oleh server Node lokal terpisah atau merupakan fitur yang direncanakan
-- Tanpa endpoint ini, hanya jalur unggahan Supabase Storage yang berfungsi
+### Proxy Google Apps Script (Unggahan Foto Absensi & Photobooth)
+- Endpoint di `customer-portal`: `/api/upload-strip`
+- Endpoint web app Google Apps Script menerima `multipart/form-data` dari pos-dashboard dan customer-portal.
+- Berfungsi penuh untuk menyimpan strip photobooth gratis (opt-in) dan foto absensi kru (wajib) langsung ke Google Drive. URL dikonfigurasi melalui `NEXT_PUBLIC_APPS_SCRIPT_URL` & `VITE_APPS_SCRIPT_URL`.
 
 ### Instagram (Operasional, bukan teknis)
 - Tidak ada integrasi API — IG DM adalah bagian dari alur kerja operasional manual
@@ -460,9 +476,10 @@ Ini adalah fitur yang belum selesai ditemukan melalui inspeksi kode — dikonfir
 
 | Fitur | Lokasi | Status | Bukti |
 |---------|---------|--------|---------|
-| Frame Gallery (Kiosk) | `apps/kiosk/src/screens/FrameGalleryScreen.tsx` | Mati / sedang dikerjakan — tidak terhubung ke router | Data dummy hardcoded, gaya berbasis className (tidak konsisten), `useState(null)` untyped, tidak ada rute di `App.tsx` |
-| Proxy `/api/upload` untuk Google Drive | Direferensikan di `AttendanceBoard.tsx` | Hilang atau direncanakan | Tidak ditemukan sebagai API route Next.js; mungkin dilayani di tempat lain |
-| Pricelist statis → Berbasis DB | `apps/customer-portal/src/app/pricelist/page.tsx` | Divergensi yang diketahui | Semua harga hardcoded; tidak mengambil dari Supabase |
+| Otomasi Session & Folder Capture Engine | `apps/capture-engine/server.js` | SELESAI | Endpoint `POST /api/sessions/create` & `GET /api/sessions/:sessionId/stats` telah ditambahkan |
+| Katalog Produk & Studio Dinamis (Migrasi 019) | `supabase/migrations/019_*.sql` | SELESAI | Produk (Basic Studio, Close Up Room, Pas Photo, Add-ons 2026) & studio sharing slot (`shared_closeup`) disinkronkan ke Supabase |
+| Frame Gallery (Kiosk) | `apps/kiosk/src/screens/FrameGalleryScreen.tsx` | Sedang dikerjakan | Rencana integrasi dengan `products.metadata` Supabase & CUPS printer |
+| Proxy Unggahan GDrive | `apps/customer-portal/src/app/api/upload-strip/route.ts` & Apps Script | SELESAI | Sudah terhubung dan memproses unggahan strip photobooth serta absensi kru ke Google Drive. |
 | `product_id` di addons (v2.1) | `packages/supabase/src/types/database.types.ts` | Dirilis; pemesanan yang lebih lama tidak memiliki field ini | `addons.product_id` ditandai opsional; logika inferensi fallback dalam `calcBookingLineItems` menangani ketiadaannya |
 
 ---
@@ -655,3 +672,23 @@ pnpm clean
 11. **Harga di-snapshot saat pemesanan** — `registration.addons.computed_price` menangkap harga saat pengiriman. Mengubah harga produk dalam DB tidak secara retroaktif memperbarui harga perhitungan pada pemesanan lama.
 
 12. **Kiosk adalah sistem perangkat keras** — aplikasi `kiosk` tidak menulis pemesanan atau berbicara dengan portal pelanggan secara langsung. Ini berkomunikasi dengan server Capture Engine lokal di Mac Mini (`http://192.168.1.100:3100`). Tanpa server tersebut berjalan, aplikasi kiosk tidak memiliki backend.
+
+---
+
+## 15. Changelog Terkini & Pembaruan Sistem
+
+### 1. Integrasi Google Apps Script (Upload ke GDrive)
+- Script Google Apps Script telah diperbaiki (mendukung `doGet` dan `doPost`) dan izin telah disetel ke "Anyone".
+- Berfungsi sebagai backend proxy tanpa server untuk mengunggah foto absensi kru dan strip foto dari photobooth online gratis langsung ke Google Drive milik studio.
+- Environment variables (`VITE_APPS_SCRIPT_URL` & `NEXT_PUBLIC_APPS_SCRIPT_URL`) telah disetel di kedua aplikasi.
+
+### 2. Perubahan Studio & Background Assets
+- Studio "Majestic Studio" dan "Elevator Studio" telah disembunyikan/dihapus dari production.
+- Menghapus warna background lama (Brown, Dusty Pink, Blue).
+- Menambahkan aset warna background baru untuk studio (Soft Pink, Choco, Olive Green) di antarmuka BookingFlow dan Pricelist.
+
+### 3. Perbaikan Bug POS Dashboard (Crew Clock-In)
+- **Stuck Login Crew PRO**: Memperbaiki bug di mana kru berstatus PRO terjebak di layar "Clock In" bahkan setelah berhasil absen.
+- **Optimistic UI & Realtime**: Menambahkan *optimistic state update* saat klik clock-in dan me-listen ke `postgres_changes` untuk tabel `attendance` di `App.tsx` agar dashboard POS seketika terbuka tanpa menunggu interval fetch 15 detik.
+- Perbaikan alur "Back" pada layar absensi untuk memastikan navigasi kembali ke pilihan awal berfungsi semestinya.
+- **Link Domain**: Vercel project untuk domain `meraselfstudio.com` telah ditautkan kembali ke build `customer-portal` dengan benar.
