@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPOSClient } from '@mera/supabase'
 const supabase = createPOSClient()
-import { Clock, RefreshCw, CheckCircle2, Circle, AlertTriangle, Camera, XCircle, ArrowLeft, Download } from 'lucide-react'
+import { Clock, RefreshCw, CheckCircle2, Circle, AlertTriangle, Camera, XCircle, ArrowLeft, Download, LogIn } from 'lucide-react'
 import type { Crew, Attendance } from '@mera/supabase'
 
 // ── Shift Definitions ─────────────────────────────────────────
