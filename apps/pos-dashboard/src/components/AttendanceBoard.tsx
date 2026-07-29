@@ -80,7 +80,19 @@ function fmtTime(iso: string | null) {
     if (!iso) return '–'
     return new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
 }
-function todayISO() { return new Date().toISOString().slice(0, 10) }
+function todayISO() {
+    const now = new Date()
+    const wib = new Date(now.getTime() + 7 * 60 * 60 * 1000)
+    return wib.toISOString().slice(0, 10)
+}
+function wibDayToISOStart(dateStr: string): string {
+    try { return new Date(`${dateStr}T00:00:00+07:00`).toISOString() }
+    catch { return `${dateStr}T00:00:00Z` }
+}
+function wibDayToISOEnd(dateStr: string): string {
+    try { return new Date(`${dateStr}T23:59:59+07:00`).toISOString() }
+    catch { return `${dateStr}T23:59:59Z` }
+}
 
 // ── Webcam Hook ───────────────────────────────────────────────
 function useCamera() {
@@ -132,14 +144,16 @@ async function uploadPhoto(base64: string, filename: string, metadata?: any): Pr
         const { data, error } = await supabase.storage
             .from('attendance-photos')
             .upload(filename, blob, { contentType: 'image/jpeg', upsert: true })
-        if (error || !data?.path) return null
-        const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path)
 
         // Also upload to Google Drive via Apps Script (silent, best-effort)
         uploadToDriveBackground(base64, filename, metadata)
 
+        if (error || !data?.path) return null
+        const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path)
+
         return urlData.publicUrl
     } catch {
+        uploadToDriveBackground(base64, filename, metadata)
         return null
     }
 }
@@ -242,12 +256,15 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
 
     const load = useCallback(async () => {
         setLoading(true)
+        const day = todayISO()
+        const isoStart = wibDayToISOStart(day)
+        const isoEnd = wibDayToISOEnd(day)
         const [{ data: crewData }, { data: attData }] = await Promise.all([
             (supabase.from('crew') as any).select('*').order('nama'),
             (supabase.from('attendance') as any)
                 .select('*')
-                .gte('clock_in', `${todayISO()}T00:00:00`)
-                .lte('clock_in', `${todayISO()}T23:59:59`)
+                .gte('clock_in', isoStart)
+                .lte('clock_in', isoEnd)
                 .order('clock_in', { ascending: false }),
         ])
         setCrew((crewData ?? []) as Crew[])

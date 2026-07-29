@@ -41,6 +41,16 @@ function todayKey() {
   return wib.toISOString().slice(0, 10)
 }
 
+function wibDayToISOStart(dateStr: string): string {
+  try { return new Date(`${dateStr}T00:00:00+07:00`).toISOString() }
+  catch { return `${dateStr}T00:00:00Z` }
+}
+
+function wibDayToISOEnd(dateStr: string): string {
+  try { return new Date(`${dateStr}T23:59:59+07:00`).toISOString() }
+  catch { return `${dateStr}T23:59:59Z` }
+}
+
 function weekRange(): [string, string] {
   const now = new Date()
   const wib = new Date(now.getTime() + 7 * 60 * 60 * 1000)
@@ -292,10 +302,12 @@ export default function App() {
   // Core loader — accepts explicit ISO date range
   const loadRecapRange = useCallback(async (start: string, end: string) => {
     setMonthLoading(true)
+    const isoStart = wibDayToISOStart(start)
+    const isoEnd = wibDayToISOEnd(end)
     const [{ data: txD }, { data: expD }, { data: attD }, { data: crewD }] = await Promise.all([
-      supabase.from('transactions').select('*').gte('created_at', `${start}T00:00:00`).lte('created_at', `${end}T23:59:59`).order('created_at', { ascending: false }),
+      supabase.from('transactions').select('*').gte('created_at', isoStart).lte('created_at', isoEnd).order('created_at', { ascending: false }),
       supabase.from('expenses').select('*').gte('tanggal', start).lte('tanggal', end).order('tanggal', { ascending: false }),
-      supabase.from('attendance').select('*').gte('clock_in', `${start}T00:00:00`).lte('clock_in', `${end}T23:59:59`).order('clock_in', { ascending: false }),
+      supabase.from('attendance').select('*').gte('clock_in', isoStart).lte('clock_in', isoEnd).order('clock_in', { ascending: false }),
       supabase.from('crew').select('*').eq('is_active', true).order('nama'),
     ])
     setMonthTx((txD ?? []) as Transaction[])
@@ -875,14 +887,17 @@ export default function App() {
     const load = async () => {
       const day = todayKey()
       const [wkStart, wkEnd] = weekRange()
+      const isoStart = wibDayToISOStart(day)
+      const isoEnd = wibDayToISOEnd(day)
 
-      const [{ data: regData }, { data: txData }, { data: attData }, { data: expData }, { data: weekRegData }, { data: prodData }] = await Promise.all([
-        supabase.from('registrations').select('*').or(`preferred_date.eq.${day},created_at.gte.${day}T00:00:00`).order('created_at', { ascending: false }),
-        supabase.from('transactions').select('*').gte('created_at', `${day}T00:00:00`).lte('created_at', `${day}T23:59:59`).order('created_at', { ascending: false }),
-        supabase.from('attendance').select('*').gte('clock_in', `${day}T00:00:00`).lte('clock_in', `${day}T23:59:59`).order('clock_in', { ascending: false }),
+      const [{ data: regData }, { data: txData }, { data: attData }, { data: expData }, { data: weekRegData }, { data: prodData }, { data: crewData }] = await Promise.all([
+        supabase.from('registrations').select('*').or(`preferred_date.eq.${day},created_at.gte.${isoStart}`).order('created_at', { ascending: false }),
+        supabase.from('transactions').select('*').gte('created_at', isoStart).lte('created_at', isoEnd).order('created_at', { ascending: false }),
+        supabase.from('attendance').select('*').gte('clock_in', isoStart).lte('clock_in', isoEnd).order('clock_in', { ascending: false }),
         supabase.from('expenses').select('*').gte('tanggal', day).lte('tanggal', day).order('tanggal', { ascending: false }),
         supabase.from('registrations').select('*').gte('preferred_date', wkStart).lte('preferred_date', wkEnd).order('preferred_time', { ascending: true }),
         supabase.from('products').select('*').eq('is_active', true).order('kategori'),
+        supabase.from('crew').select('*').eq('is_active', true).order('nama'),
       ])
 
       if (!mounted) return
