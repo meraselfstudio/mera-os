@@ -13,7 +13,23 @@ import React, { useRef, useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 
-type Filter = 'bw' | 'none'
+export type Filter = 'none' | 'bw' | 'warm' | 'soft' | 'retro' | 'crimson'
+
+export const FILTERS: Array<{
+    id: Filter
+    label: string
+    icon: string
+    css: string
+    desc: string
+}> = [
+    { id: 'none', label: 'Natural', icon: '✨', css: 'none', desc: 'Jernih & Asli' },
+    { id: 'bw', label: 'Noir B&W', icon: '⬛', css: 'grayscale(100%) contrast(130%) brightness(102%)', desc: 'Monokrom Kontras' },
+    { id: 'warm', label: 'Warm 90s', icon: '🎞️', css: 'sepia(65%) saturate(180%) contrast(118%) brightness(106%) hue-rotate(-12deg)', desc: 'Hangat & Golden 90s' },
+    { id: 'soft', label: 'Soft Glow', icon: '🌸', css: 'brightness(120%) contrast(85%) saturate(140%) sepia(18%)', desc: 'Dreamy & Glowing Pastel' },
+    { id: 'retro', label: 'Retro Film', icon: '📼', css: 'contrast(145%) brightness(92%) saturate(140%) sepia(35%) hue-rotate(15deg)', desc: 'Kontras Analog Film' },
+    { id: 'crimson', label: 'Méra Red', icon: '🍒', css: 'sepia(75%) saturate(340%) hue-rotate(325deg) contrast(115%) brightness(96%)', desc: 'Dominan Merah Sinematik' },
+]
+
 type AppState = 'idle' | 'camera' | 'countdown' | 'capturing' | 'reviewing' | 'preview'
 type FrameColor = 'white' | 'black' | 'maroon'
 
@@ -157,10 +173,21 @@ export default function PhotoboothPage() {
 
         ctx.save()
         if (mirrored) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1) }
+
+        const activeFilter = FILTERS.find(f => f.id === filter)
+        if (activeFilter && activeFilter.css !== 'none') {
+            try {
+                ctx.filter = activeFilter.css
+            } catch {
+                /* fallback if ctx.filter unsupported */
+            }
+        }
+
         ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, SLOT_W, SLOT_H)
         ctx.restore()
 
-        if (filter === 'bw') {
+        // Fallback for B&W if ctx.filter was ignored
+        if (filter === 'bw' && ctx.filter === 'none') {
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height)
             const d = imgData.data
             for (let i = 0; i < d.length; i += 4) {
@@ -412,38 +439,30 @@ export default function PhotoboothPage() {
                 {/* ── State: Camera / Countdown / Capturing / Reviewing ── */}
                 {(appState === 'camera' || appState === 'countdown' || appState === 'capturing' || appState === 'reviewing') && (
                     <div>
-                        {/* Filter + Mirror */}
-                        <div style={{ display: 'flex', gap: 6, marginBottom: 14, alignItems: 'center' }}>
-                            {(['bw', 'none'] as Filter[]).map(f => (
-                                <button key={f} onClick={() => setFilter(f)} style={{
-                                    padding: '7px 18px', borderRadius: RADIUS_FULL, fontSize: 13, fontWeight: 600,
-                                    border: '1px solid ' + (filter === f ? MAROON : BORDER),
-                                    background: filter === f ? MAROON : SURFACE,
-                                    color: filter === f ? '#fff' : TEXT_SUB, cursor: 'pointer',
-                                    transition: 'all 150ms ease',
-                                }}>
-                                    {f === 'bw' ? '⬛ Black & White' : '🌈 Natural'}
-                                </button>
-                            ))}
+                        {/* Camera Tools (Switch & Mirror) */}
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 12, justifyContent: 'flex-end', alignItems: 'center' }}>
                             <button onClick={switchCamera} style={{
-                                marginLeft: 'auto', padding: '7px 14px', borderRadius: RADIUS_FULL,
-                                fontSize: 13, fontWeight: 600, border: '1px solid ' + BORDER,
+                                padding: '6px 14px', borderRadius: RADIUS_FULL,
+                                fontSize: 12, fontWeight: 700, border: '1px solid ' + BORDER,
                                 background: SURFACE, color: TEXT_SUB, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: 5,
                             }}>
-                                📷 {facingMode === 'user' ? 'Main Camera' : 'Selfie Camera'}
+                                📷 {facingMode === 'user' ? 'Kamera Belakang' : 'Kamera Depan'}
                             </button>
                             <button onClick={() => setMirrored(m => !m)} style={{
-                                padding: '7px 14px', borderRadius: RADIUS_FULL,
-                                fontSize: 13, fontWeight: 600, border: '1px solid ' + BORDER,
+                                padding: '6px 14px', borderRadius: RADIUS_FULL,
+                                fontSize: 12, fontWeight: 700, border: '1px solid ' + (mirrored ? MAROON : BORDER),
                                 background: mirrored ? MAROON : SURFACE,
                                 color: mirrored ? '#fff' : TEXT_SUB, cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: 5,
+                                transition: 'all 150ms ease',
                             }}>
-                                🔄 Mirror Camera
+                                🔄 Mirror {mirrored ? 'ON' : 'OFF'}
                             </button>
                         </div>
 
                         {/* Viewfinder — matches strip slot aspect */}
-                        <div style={{ position: 'relative', borderRadius: RADIUS, overflow: 'hidden', background: '#000', marginBottom: 14, boxShadow: SHADOW, aspectRatio: String(ASPECT) }}>
+                        <div style={{ position: 'relative', borderRadius: RADIUS, overflow: 'hidden', background: '#000', marginBottom: 12, boxShadow: SHADOW, aspectRatio: String(ASPECT) }}>
                             {/* Show captured photo during 2s review */}
                             {appState === 'reviewing' && photos.length > 0 ? (
                                 <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -459,7 +478,7 @@ export default function PhotoboothPage() {
                                 <video ref={videoRef} autoPlay playsInline muted style={{
                                     width: '100%', height: '100%', objectFit: 'cover',
                                     transform: mirrored ? 'scaleX(-1)' : 'none',
-                                    filter: filter === 'bw' ? 'grayscale(100%)' : 'none',
+                                    filter: FILTERS.find(f => f.id === filter)?.css ?? 'none',
                                 }} />
                             )}
 
@@ -475,6 +494,49 @@ export default function PhotoboothPage() {
                             {appState === 'capturing' && (
                                 <div style={{ position: 'absolute', inset: 0, background: '#fff', opacity: 0.8, animation: 'pb-flash 0.4s both' }} />
                             )}
+                        </div>
+
+                        {/* Filter Selection Dropdown (Below Preview) */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                            background: 'rgba(255, 255, 255, 0.75)',
+                            border: '1px solid ' + BORDER,
+                            borderRadius: RADIUS,
+                            padding: '10px 14px',
+                            marginBottom: 14,
+                            backdropFilter: 'blur(8px)',
+                        }}>
+                            <label htmlFor="filter-select" style={{ fontSize: 13, fontWeight: 700, color: TEXT, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                                <span>🎨</span>
+                                <span>Pilih Filter:</span>
+                            </label>
+                            <select
+                                id="filter-select"
+                                value={filter}
+                                onChange={(e) => setFilter(e.target.value as Filter)}
+                                style={{
+                                    flex: 1,
+                                    maxWidth: 240,
+                                    padding: '8px 12px',
+                                    borderRadius: 10,
+                                    border: '1.5px solid ' + MAROON,
+                                    background: '#fff',
+                                    color: MAROON,
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    outline: 'none',
+                                }}
+                            >
+                                {FILTERS.map(f => (
+                                    <option key={f.id} value={f.id}>
+                                        {f.icon} {f.label} — {f.desc}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
                         {/* Photo thumbnails */}

@@ -1,3 +1,5 @@
+'use client'
+
 import Link from 'next/link'
 import Image from 'next/image'
 import styles from './LandingPage.module.css'
@@ -70,88 +72,104 @@ export default function LandingPage({ photos, fontClassName }: LandingPageProps)
                 </svg>
 
                 <section className={styles.photoboothSection} style={{ position: 'relative', zIndex: 2, marginTop: '-32px' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(255, 255, 255, 0.15)', border: '1px solid rgba(255, 255, 255, 0.25)', padding: '5px 14px', borderRadius: 999, marginBottom: 12, backdropFilter: 'blur(8px)' }}>
+                        <span style={{ fontSize: 13 }}>✨</span>
+                        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#FFEBEF' }}>
+                            TRY IT FOR FREE
+
+                        </span>
+                    </div>
+
                     <h2 className={styles.photoboothHeading}>
                         <Image src="/mera-logo-white.png" alt="Méra" width={100} height={36} className={styles.photoboothLogo} />
                         <span>PhoneBooth</span>
                     </h2>
-                            <p className={styles.photoboothTagline}>Turn your selfies into photostrip!</p>
+                    <p className={styles.photoboothTagline}>Turn your selfies into photostrip!</p>
 
-                            <div className={styles.stripShowcase}>
-                                <Link href="/photobooth" className={`${styles.stripPreview} ${styles.stripTiltLeft}`}>
-                                    <Image src="/mera-photostrips-black.jpg" alt="Black Basic photostrip" width={602} height={1795} className={styles.stripImg} />
-                                    <span className={styles.stripLabel}></span>
-                                </Link>
-
-                                <Link href="/photobooth" className={`${styles.stripPreview} ${styles.stripTiltCenter}`}>
-                                    <Image src="/mera-photostrips-whitejpg.jpg" alt="White Basic photostrip" width={602} height={1795} className={styles.stripImg} />
-                                    <span className={styles.stripLabel}></span>
-                                </Link>
-
-                                <Link href="/photobooth" className={`${styles.stripPreview} ${styles.stripTiltRight}`}>
-                                    <Image src="/mera-photostrips-maroon.jpg" alt="Maroon Basic photostrip" width={602} height={1795} className={styles.stripImg} />
-                                    <span className={styles.stripLabel}></span>
-                                </Link>
-                            </div>
-
-                            <Link href="/photobooth" className={styles.photoboothCta}>Let&apos;s Snap! →</Link>
-                        </section>
-
-                        {/* Location section */}
-                        <div style={{ width: '100%', maxWidth: 520, margin: '0 auto', marginTop: '8px', marginBottom: '40px', padding: '0 16px', boxSizing: 'border-box' }}>
-                            {/* Section header */}
-                            <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                                <p style={{ margin: 30, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}></p>
-                                <h2 style={{ margin: '4px 0 2px', fontFamily: 'Times New Roman Condensed, Times New Roman, Times, serif', fontStyle: 'italic', fontSize: 22, fontWeight: 800, color: '#622128', lineHeight: 1.2 }}>Our Location</h2>
-                                <p style={{ margin: 10, fontSize: 10, color: '#622128' }}>Jalan Sawunggaling no.4, Magersari, Mojokerto</p>
-                            </div>
-
-                            {/* Map card */}
-                            <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                                <iframe
-                                    title="Méra Self Studio Location"
-                                    src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3955.805668331364!2d112.4400146!3d-7.486698199999999!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2e780d7da3e1e85d%3A0x6ac2f354ab61a4f4!2sMera%20Selfstudio!5e0!3m2!1sid!2sid!4v1776132096243!5m2!1sid!2sid"
-                                    width="100%"
-                                    height="240"
-                                    style={{ border: 0, display: 'block' }}
-                                    allowFullScreen={true}
-                                    loading="lazy"
-                                    referrerPolicy="no-referrer-when-downgrade"
-                                />
-                            </div>
-
-                            {/* OTW button */}
-                            <a
-                                href="https://www.google.com/maps/dir/?api=1&destination=-7.486698199999999,112.4400146&destination_place_id=0x2e780d7da3e1e85d:0x6ac2f354ab61a4f4"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: 8,
-                                    marginTop: 12,
-                                    padding: '14px 24px',
-                                    borderRadius: 26,
-                                    background: '#622128',
-                                    color: '#fff',
-                                    fontWeight: 700,
-                                    fontSize: 15,
-                                    textDecoration: 'none',
-                                    transition: 'opacity 0.15s',
-                                }}
-                            >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="white"/>
-                                </svg>
-                                OTW ke Méra
-                            </a>
-                        </div>
-
-                        <footer style={{ borderTop: '1px solid rgba(98,33,40,0.08)', padding: '24px 20px', textAlign: 'center' }}>
-                            <p style={{ margin: 0, fontSize: 11, color: '#000000ff', opacity: 0.3 }}>
-                                © 2026 Mera Self Studio</p>
-                        </footer>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 6, maxWidth: 360, margin: '0 auto 20px' }}>
+                        {['⚡️ Unlimited Snap', '🎞️ 3 Méra Frame', '✨ Filter', '📲 Save & Share'].map((f, i) => (
+                            <span key={i} style={{ fontSize: 11, fontWeight: 600, background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.95)', padding: '4px 10px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.15)' }}>
+                                {f}
+                            </span>
+                        ))}
                     </div>
-                </main>
-            );
+
+                    <div className={styles.stripShowcase}>
+                        <Link href="/photobooth" className={`${styles.stripPreview} ${styles.stripTiltLeft}`}>
+                            <Image src="/mera-photostrips-black.jpg" alt="Black photostrip" width={602} height={1795} className={styles.stripImg} />
+                            <span className={styles.stripLabel}></span>
+                        </Link>
+
+                        <Link href="/photobooth" className={`${styles.stripPreview} ${styles.stripTiltCenter}`}>
+                            <Image src="/mera-photostrips-whitejpg.jpg" alt="White photostrip" width={602} height={1795} className={styles.stripImg} />
+                            <span className={styles.stripLabel}></span>
+                        </Link>
+
+                        <Link href="/photobooth" className={`${styles.stripPreview} ${styles.stripTiltRight}`}>
+                            <Image src="/mera-photostrips-maroon.jpg" alt="Maroon photostrip" width={602} height={1795} className={styles.stripImg} />
+                            <span className={styles.stripLabel}></span>
+                        </Link>
+                    </div>
+
+                    <Link href="/photobooth" className={styles.photoboothCta}>📸 Free Photostrip! →</Link>
+                </section>
+
+                {/* Location section */}
+                <div style={{ width: '100%', maxWidth: 520, margin: '0 auto', marginTop: '8px', marginBottom: '40px', padding: '0 16px', boxSizing: 'border-box' }}>
+                    {/* Section header */}
+                    <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                        <p style={{ margin: 30, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}></p>
+                        <h2 style={{ margin: '4px 0 2px', fontFamily: 'Times New Roman Condensed, Times New Roman, Times, serif', fontStyle: 'italic', fontSize: 22, fontWeight: 800, color: '#622128', lineHeight: 1.2 }}>Our Location</h2>
+                        <p style={{ margin: 10, fontSize: 10, color: '#622128' }}>Jalan Sawunggaling no.4, Magersari, Mojokerto</p>
+                    </div>
+
+                    {/* Map card */}
+                    <div style={{ borderRadius: 16, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.35)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <iframe
+                            title="Méra Self Studio Location"
+                            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3955.805668331364!2d112.4400146!3d-7.486698199999999!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2e780d7da3e1e85d%3A0x6ac2f354ab61a4f4!2sMera%20Selfstudio!5e0!3m2!1sid!2sid!4v1776132096243!5m2!1sid!2sid"
+                            width="100%"
+                            height="240"
+                            style={{ border: 0, display: 'block' }}
+                            allowFullScreen={true}
+                            loading="lazy"
+                            referrerPolicy="no-referrer-when-downgrade"
+                        />
+                    </div>
+
+                    {/* OTW button */}
+                    <a
+                        href="https://www.google.com/maps/dir/?api=1&destination=-7.486698199999999,112.4400146&destination_place_id=0x2e780d7da3e1e85d:0x6ac2f354ab61a4f4"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            marginTop: 12,
+                            padding: '14px 24px',
+                            borderRadius: 26,
+                            background: '#622128',
+                            color: '#fff',
+                            fontWeight: 700,
+                            fontSize: 15,
+                            textDecoration: 'none',
+                            transition: 'opacity 0.15s',
+                        }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="white" />
+                        </svg>
+                        OTW ke Méra
+                    </a>
+                </div>
+
+                <footer style={{ borderTop: '1px solid rgba(98,33,40,0.08)', padding: '24px 20px', textAlign: 'center' }}>
+                    <p style={{ margin: 0, fontSize: 11, color: '#000000ff', opacity: 0.3 }}>
+                        © 2026 Mera Self Studio</p>
+                </footer>
+            </div>
+        </main>
+    );
 }

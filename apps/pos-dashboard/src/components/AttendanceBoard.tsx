@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPOSClient } from '@mera/supabase'
 const supabase = createPOSClient()
-import { Clock, RefreshCw, CheckCircle2, Circle, AlertTriangle, Camera, XCircle, ArrowLeft, Download } from 'lucide-react'
+import { Clock, RefreshCw, CheckCircle2, Circle, AlertTriangle, Camera, XCircle, ArrowLeft, Download, LogIn } from 'lucide-react'
 import type { Crew, Attendance } from '@mera/supabase'
 
 // ── Shift Definitions ─────────────────────────────────────────
@@ -10,33 +10,33 @@ const SHIFTS = [
     {
         key: 'Weekday Full Time',
         label: 'Weekday Full Time',
-        desc: 'Senin – Kamis · 12.00–21.00',
+        desc: 'Senin – Kamis · 11.30–21.00',
         rate: 75_000,
-        startH: 12, startM: 0,
+        startH: 11, startM: 30,
         days: [1, 2, 3, 4] as number[], // Mon-Thu
     },
     {
         key: 'Weekend Shift 1',
         label: 'Weekend Shift 1',
-        desc: "Jum'at – Minggu · 09.00–15.00",
+        desc: "Jum'at – Minggu · 08.30–15.00",
         rate: 35_000,
-        startH: 9, startM: 0,
+        startH: 8, startM: 30,
         days: [0, 5, 6] as number[], // Fri,Sat,Sun
     },
     {
         key: 'Weekend Shift 2',
         label: 'Weekend Shift 2',
-        desc: "Jum'at – Minggu · 15.00–21.00",
+        desc: "Jum'at – Minggu · 14.30–21.00",
         rate: 35_000,
-        startH: 15, startM: 0,
+        startH: 14, startM: 30,
         days: [0, 5, 6] as number[],
     },
     {
         key: 'Weekend Full Time',
         label: 'Weekend Full Time',
-        desc: "Jum'at – Minggu · 09.00–21.00",
+        desc: "Jum'at – Minggu · 08.30–21.00",
         rate: 100_000,
-        startH: 9, startM: 0,
+        startH: 8, startM: 30,
         days: [0, 5, 6] as number[],
     },
 ] as const
@@ -58,12 +58,13 @@ function calcLateMinutes(clockInISO: string, shift: typeof SHIFTS[number]): numb
     const start = new Date(d)
     start.setHours(shift.startH, shift.startM, 0, 0)
     const diffMin = Math.floor((d.getTime() - start.getTime()) / 60_000)
-    return diffMin > GRACE_MINUTES ? diffMin - GRACE_MINUTES : 0
+    return diffMin > 0 ? diffMin : 0
 }
 
 function calcPenalty(lateMin: number, isIntern: boolean): number {
-    if (isIntern) return 0
-    return Math.floor(lateMin / 10) * PENALTY_PER_10MIN
+    if (isIntern || lateMin <= GRACE_MINUTES) return 0
+    const overGrace = lateMin - GRACE_MINUTES
+    return Math.ceil(overGrace / 10) * PENALTY_PER_10MIN
 }
 
 function calcDailyBonus(omset: number, crewCount: number): number {
@@ -156,28 +157,57 @@ async function uploadPhoto(base64: string, filename: string, metadata?: any): Pr
     }
 }
 
-// ── Silent background upload to Google Drive via server-side proxy ──
+// ── Background upload to Google Drive via server-side proxy ──
 
-function uploadToDriveBackground(base64: string, filename: string, metadata?: any) {
+async function uploadToDriveBackground(base64: string, filename: string, metadata?: any) {
     const data = base64.split(',')[1]
     if (!data) return
 
+    const actionType = metadata?.type === 'OUT' ? 'Clock Out' : 'Clock In'
+    const payload = {
+        fileName: filename,
+        mimeType: 'image/jpeg',
+        data,
+        folderId: '1KfG7aIPXbZIoOG857fFl73jfYJozAYBI',
+        crewName: metadata?.crewName || 'Unknown',
+        type: metadata?.type || 'IN',
+        actionType: actionType,
+        subFolder: metadata?.crewName || 'Unknown',
+    }
+
+    // 1. Try server proxy (/api/upload)
+    try {
+        const proxyRes = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        })
+        if (proxyRes.ok) {
+            const result = await proxyRes.json().catch(() => null)
+            if (result?.ok) {
+                console.log('[Attendance] Drive upload success:', filename)
+                return
+            }
+        }
+    } catch {
+        // Fallback to direct Apps Script call
+    }
+
+    // 2. Direct Apps Script fetch fallback
     const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL
     if (!scriptUrl) return
 
-    // Sending directly to Apps Script using no-cors and text/plain to avoid CORS preflight issues
-    fetch(scriptUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-        body: JSON.stringify({
-            fileName: filename,
-            mimeType: 'image/jpeg',
-            data,
-            folderId: '1KfG7aIPXbZIoOG857fFl73jfYJozAYBI',
-            subFolder: metadata?.crewName || 'Unknown'
-        }),
-    }).catch(e => console.warn('Background upload failed', e))
+    try {
+        await fetch(scriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+            body: JSON.stringify(payload),
+        })
+        console.log('[Attendance] Direct Drive upload dispatched:', filename)
+    } catch (e) {
+        console.warn('[Attendance] Background Drive upload failed:', e)
+    }
 }
 
 // ── Export Intern PDF ─────────────────────────────────────────
@@ -659,11 +689,14 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
     // Fetch today's omset
     useEffect(() => {
         const fetch = async () => {
+            const day = todayISO()
+            const isoStart = wibDayToISOStart(day)
+            const isoEnd = wibDayToISOEnd(day)
             const { data } = await (supabase.from('transactions') as any)
                 .select('total_amount,payment_method')
                 .eq('status', 'PAID')
-                .gte('created_at', `${todayISO()}T00:00:00`)
-                .lte('created_at', `${todayISO()}T23:59:59`)
+                .gte('created_at', isoStart)
+                .lte('created_at', isoEnd)
             const rows = (data ?? []) as { total_amount: number; payment_method: string | null }[]
             const cash = rows.filter(r => r.payment_method === 'CASH').reduce((s, r) => s + r.total_amount, 0)
             const qris = rows.filter(r => ['QRIS', 'ONLINE_QRIS', 'TRANSFER'].includes(r.payment_method ?? '')).reduce((s, r) => s + r.total_amount, 0)

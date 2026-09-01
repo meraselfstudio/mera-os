@@ -29,7 +29,7 @@ export function createPOSClient() {
 
     const url = getEnv('NEXT_PUBLIC_SUPABASE_URL', 'VITE_SUPABASE_URL')
     const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY')
-    const posSecret = getEnv('', 'VITE_POS_SECRET')
+    const posSecret = getEnv('', 'VITE_POS_SECRET') || '9514fefb4ba4f05cc81ab45311adf1226ff64fac309c5636c352b74e89b2d8f0'
 
     if (!url || !key) {
         console.warn(

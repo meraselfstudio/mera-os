@@ -8,6 +8,7 @@ import { supabase } from '@mera/supabase/client'
 import type { Product, BookingType, Studio } from '@mera/supabase'
 import { calcBookingLineItems } from '@mera/supabase'
 import QRCode from 'react-qr-code'
+import PhoneboothPromoCard from './PhoneboothPromoCard'
 
 // ── Constants & Design Tokens ────────────────────────────────────
 
@@ -19,6 +20,7 @@ const TEXT = '#2e1b1f'
 const TEXT_SEC = '#4a3438'
 const MAROON = '#622128'
 const INSTAGRAM_DM_TARGET = 'mera.selfstudio'
+export const CLOSED_DATES = ['2026-08-29']
 
 export const VARIANTS = {
     'Basic Studio': [
@@ -269,6 +271,7 @@ export default function BookingFlow() {
 
     const availableSlots = useMemo(() => {
         if (!state.preferredDate) return []
+        if (CLOSED_DATES.includes(state.preferredDate)) return []
         const d = new Date(state.preferredDate)
         const day = d.getDay()
         const baseSlots = (day === 0 || day === 5 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS
@@ -285,6 +288,7 @@ export default function BookingFlow() {
     // Reschedule Available Slots
     const rescAvailableSlots = useMemo(() => {
         if (!rescDate) return []
+        if (CLOSED_DATES.includes(rescDate)) return []
         const d = new Date(rescDate)
         const day = d.getDay()
         const baseSlots = (day === 0 || day === 5 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS
@@ -357,6 +361,13 @@ export default function BookingFlow() {
 
     const handleSubmit = async () => {
         setLoading(true)
+
+        if (state.preferredDate && CLOSED_DATES.includes(state.preferredDate)) {
+            setLoading(false)
+            alert('Maaf, Méra Studio libur / tutup pada tanggal 29 Agustus 2026. Silakan pilih tanggal lain.')
+            setStep('datetime')
+            return
+        }
 
         if (state.preferredDate && state.preferredTime) {
             const { data: slotCheck } = await supabase
@@ -803,10 +814,11 @@ export default function BookingFlow() {
                             </label>
                             <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: 4, margin: '0 -20px', paddingInline: 20 }}>
                                 <div style={{ display: 'flex', gap: 8, width: 'max-content' }}>
-                                    {Array.from({ length: 14 }).map((_, i) => {
+                                    {Array.from({ length: 35 }).map((_, i) => {
                                         const d = new Date()
                                         d.setDate(d.getDate() + i)
                                         const iso = d.toISOString().split('T')[0]
+                                        const isClosed = CLOSED_DATES.includes(iso)
                                         const isSel = state.preferredDate === iso
                                         const dayName = DAY_SHORT[d.getDay()]
                                         const dateNum = d.getDate()
@@ -814,18 +826,24 @@ export default function BookingFlow() {
 
                                         return (
                                             <button key={iso}
-                                                onClick={() => setState(p => ({ ...p, preferredDate: iso, preferredTime: '' }))}
+                                                onClick={() => {
+                                                    if (isClosed) {
+                                                        alert(`Méra Studio Libur / Tutup pada tanggal ${dateNum} ${MONTH_ID[d.getMonth()]} 2026.`)
+                                                    }
+                                                    setState(p => ({ ...p, preferredDate: iso, preferredTime: '' }))
+                                                }}
                                                 style={{
-                                                    background: isSel ? MAROON : 'rgba(255,255,255,0.85)',
-                                                    color: isSel ? '#fff' : TEXT,
-                                                    border: isSel ? `2px solid ${MAROON}` : '1px solid rgba(98,33,40,0.12)',
+                                                    background: isClosed ? 'rgba(98,33,40,0.06)' : isSel ? MAROON : 'rgba(255,255,255,0.85)',
+                                                    color: isClosed ? 'rgba(98,33,40,0.45)' : isSel ? '#fff' : TEXT,
+                                                    border: isClosed ? '1px dashed rgba(98,33,40,0.3)' : isSel ? `2px solid ${MAROON}` : '1px solid rgba(98,33,40,0.12)',
                                                     borderRadius: 12, padding: '8px 12px',
                                                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                                                    cursor: 'pointer', minWidth: 54, flexShrink: 0
+                                                    cursor: isClosed ? 'not-allowed' : 'pointer', minWidth: 54, flexShrink: 0,
+                                                    opacity: isClosed ? 0.65 : 1
                                                 }}>
                                                 <span style={{ fontSize: 9, fontWeight: 700, opacity: isSel ? 0.8 : 0.5, textTransform: 'uppercase' }}>{dayName}</span>
                                                 <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.1 }}>{dateNum}</span>
-                                                <span style={{ fontSize: 9, fontWeight: 600, opacity: isSel ? 0.8 : 0.5 }}>{monthName}</span>
+                                                <span style={{ fontSize: 9, fontWeight: 700, color: isClosed ? MAROON : undefined, opacity: isSel ? 0.8 : 0.6 }}>{isClosed ? 'LIBUR' : monthName}</span>
                                             </button>
                                         )
                                     })}
@@ -845,7 +863,11 @@ export default function BookingFlow() {
                                     </span>
                                 </div>
 
-                                {availableSlots.length === 0 ? (
+                                {CLOSED_DATES.includes(state.preferredDate) ? (
+                                    <div style={{ textAlign: 'center', color: MAROON, fontSize: 13, padding: '16px 0', fontWeight: 700 }}>
+                                        🔴 Méra Studio Libur / Tutup pada tanggal ini ({state.preferredDate}). Pendaftaran tidak dibuka.
+                                    </div>
+                                ) : availableSlots.length === 0 ? (
                                     <p style={{ textAlign: 'center', color: TEXT_SEC, opacity: 0.6, fontSize: 12, padding: '12px 0', margin: 0 }}>
                                         Semua slot untuk tanggal ini sudah penuh. Silakan pilih tanggal lain.
                                     </p>
@@ -1066,6 +1088,9 @@ export default function BookingFlow() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Méra PhoneBooth Promo Card */}
+                        <PhoneboothPromoCard />
 
                         {/* Action Buttons */}
                         <div style={{ display: 'grid', gap: 10 }}>

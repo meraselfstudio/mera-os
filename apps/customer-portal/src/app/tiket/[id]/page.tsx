@@ -5,6 +5,7 @@ import { use } from 'react'
 import Link from 'next/link'
 import QRCode from 'react-qr-code'
 import { supabase } from '@mera/supabase/client'
+import PhoneboothPromoCard from '@/components/PhoneboothPromoCard'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -223,6 +224,9 @@ export default function TiketPage({ params }: { params: Promise<{ id: string }> 
             )}
           </div>
         </div>
+
+        {/* Méra PhoneBooth Promo Card */}
+        <PhoneboothPromoCard />
 
         {/* Action buttons */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

@@ -41,6 +41,17 @@ function todayKey() {
   return wib.toISOString().slice(0, 10)
 }
 
+function toWibDateKey(isoStr: string): string {
+  if (!isoStr) return ''
+  try {
+    const d = new Date(isoStr)
+    const wib = new Date(d.getTime() + 7 * 60 * 60 * 1000)
+    return wib.toISOString().slice(0, 10)
+  } catch {
+    return isoStr.slice(0, 10)
+  }
+}
+
 function wibDayToISOStart(dateStr: string): string {
   try { return new Date(`${dateStr}T00:00:00+07:00`).toISOString() }
   catch { return `${dateStr}T00:00:00Z` }
@@ -251,7 +262,7 @@ export default function App() {
   // ─── Booking detail drawer ───────────────────────
   const [detailReg, setDetailReg] = useState<Registration | null>(null)
   // ─── Booking mobile tab ──────────────────────────
-  const [bookingTab, setBookingTab] = useState<'lobby' | 'studio' | 'active' | 'paid'>('lobby')
+  const [bookingTab, setBookingTab] = useState<'pending' | 'verified' | 'studio' | 'active' | 'paid'>('pending')
 
   // ─── Schedule calendar state ─────────────────────
   const [calViewMode, setCalViewMode] = useState<'month' | 'week'>('month')
@@ -265,8 +276,8 @@ export default function App() {
   // Recap mode: 'monthly' (26-25 cutoff) | 'weekly' | 'custom'
   const [recapMode, setRecapMode] = useState<'monthly' | 'weekly' | 'custom'>('monthly')
   const [weekOffset, setWeekOffset] = useState(0) // 0 = current week, -1 = last week, etc.
-  const [customStart, setCustomStart] = useState(() => new Date().toISOString().slice(0, 10))
-  const [customEnd, setCustomEnd] = useState(() => new Date().toISOString().slice(0, 10))
+  const [customStart, setCustomStart] = useState(() => todayKey())
+  const [customEnd, setCustomEnd] = useState(() => todayKey())
   const [monthTx, setMonthTx] = useState<Transaction[]>([])
   const [monthExp, setMonthExp] = useState<Expense[]>([])
   const [monthAtt, setMonthAtt] = useState<Attendance[]>([])
@@ -321,12 +332,11 @@ export default function App() {
   // Monthly wrapper: 26th prev → 25th current (billing cycle)
   const loadMonthData = useCallback(async (ym: string) => {
     const [year, month] = ym.split('-').map(Number)
-    const startDate = new Date(year, month - 2, 26)
-    const endDate = new Date(year, month - 1, 25)
-    await loadRecapRange(
-      startDate.toISOString().slice(0, 10),
-      endDate.toISOString().slice(0, 10),
-    )
+    const prevYear = month === 1 ? year - 1 : year
+    const prevMonth = month === 1 ? 12 : month - 1
+    const start = `${prevYear}-${String(prevMonth).padStart(2, '0')}-26`
+    const end = `${year}-${String(month).padStart(2, '0')}-25`
+    await loadRecapRange(start, end)
   }, [loadRecapRange])
 
   // Week helper: Monday–Sunday of (today + weekOffset*7)
@@ -367,7 +377,7 @@ export default function App() {
   }, [calMonthKey, view, calViewMode])
 
   // ─── Booking status transitions ──────────────────
-  const advanceBooking = async (reg: Registration, newStatus: RegistrationStatus) => {
+  const advanceBooking = async (reg: Registration, newStatus: RegistrationStatus): Promise<Transaction | undefined> => {
     // Warn if verifying a booking that conflicts with an existing time slot
     if (newStatus === 'VERIFIED' && reg.preferred_date && reg.preferred_time) {
       const studio = toStudioBucket(reg)
@@ -382,11 +392,12 @@ export default function App() {
         const proceed = window.confirm(
           `⚠️ Konflik Jadwal!\n\n${conflict.customer_name} sudah booking di ${reg.preferred_date} jam ${reg.preferred_time} (${studio}).\n\nTetap verify booking ${reg.customer_name}?`
         )
-        if (!proceed) return
+        if (!proceed) return undefined
       }
     }
     setActionLoading(true)
     const update: Partial<Registration> = { status: newStatus }
+    let returnedTx: Transaction | undefined;
 
     // When moving to PROCESSED, create a transaction
     if (newStatus === 'PROCESSED') {
@@ -425,7 +436,7 @@ export default function App() {
           console.error('Failed to create transaction:', txErr)
           alert(`Gagal buat transaksi: ${txErr.message}`)
           setActionLoading(false)
-          return
+          return undefined
         }
 
         // Optimistic local transaction
@@ -443,6 +454,9 @@ export default function App() {
           created_at: new Date().toISOString(),
         }
         setTransactions(prev => [newTx, ...prev])
+        returnedTx = newTx
+      } else {
+        returnedTx = existingTx
       }
     }
 
@@ -451,10 +465,11 @@ export default function App() {
       console.error('Failed to update registration:', regErr)
       alert(`Gagal update booking: ${regErr.message}`)
       setActionLoading(false)
-      return
+      return returnedTx
     }
     setRegistrations(prev => prev.map(r => r.id === reg.id ? { ...r, ...update } : r))
     setActionLoading(false)
+    return returnedTx
   }
 
   // ─── Calculate total from registration + products ─
@@ -565,36 +580,53 @@ export default function App() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Delete booking (hard delete from Supabase) ────────────────────────
-  const handleDeleteBooking = async () => {
-    if (!detailReg) return
+  const handleDeleteBooking = async (regTarget?: Registration) => {
+    const target = regTarget || detailReg
+    if (!target) return
     const shouldDelete = window.confirm(
-      `Hapus booking "${detailReg.customer_name}" (${detailReg.preferred_date ?? ''} ${detailReg.preferred_time ?? ''})\n\nData akan dihapus permanen dari database. Tindakan ini tidak bisa dibatalkan.`
+      `Hapus booking "${target.customer_name}" (${target.preferred_date ?? ''} ${target.preferred_time ?? ''})\n\nData akan dihapus permanen dari database. Tindakan ini tidak bisa dibatalkan.`
     )
     if (!shouldDelete) return
     setActionLoading(true)
 
-    // Delete linked transaction (ACTIVE or VOID) first to avoid FK constraint issues
-    const linkedTx = transactions.find(t => t.registration_id === detailReg.id || t.session_id === detailReg.session_id)
-    if (linkedTx && linkedTx.status !== 'PAID') {
-      const { error: txErr } = await (supabase.from('transactions') as any).delete().eq('id', linkedTx.id)
-      if (txErr) {
-        alert('Gagal hapus transaksi terkait: ' + txErr.message)
+    try {
+      // 1. Delete linked non-PAID transactions in DB (by registration_id & session_id) to avoid FK constraint issues
+      await (supabase.from('transactions') as any)
+        .delete()
+        .eq('registration_id', target.id)
+        .neq('status', 'PAID')
+
+      if (target.session_id) {
+        await (supabase.from('transactions') as any)
+          .delete()
+          .eq('session_id', target.session_id)
+          .neq('status', 'PAID')
+      }
+
+      // 2. Unlink any remaining PAID transactions if present
+      await (supabase.from('transactions') as any)
+        .update({ registration_id: null })
+        .eq('registration_id', target.id)
+
+      // 3. Delete registration record
+      const { error: regErr } = await (supabase.from('registrations') as any).delete().eq('id', target.id)
+      if (regErr) {
+        alert('Gagal hapus booking: ' + regErr.message)
         setActionLoading(false)
         return
       }
-      setTransactions(prev => prev.filter(t => t.id !== linkedTx.id))
-    }
 
-    const { error: regErr } = await (supabase.from('registrations') as any).delete().eq('id', detailReg.id)
-    if (regErr) {
-      alert('Gagal hapus booking: ' + regErr.message)
+      setTransactions(prev => prev.filter(t => t.registration_id !== target.id && (target.session_id ? t.session_id !== target.session_id : true)))
+      setRegistrations(prev => prev.filter(r => r.id !== target.id))
+      setWeekRegistrations(prev => prev.filter(r => r.id !== target.id))
+      if (detailReg && detailReg.id === target.id) {
+        setDetailReg(null)
+      }
+    } catch (err: any) {
+      alert('Error saat menghapus booking: ' + (err?.message || String(err)))
+    } finally {
       setActionLoading(false)
-      return
     }
-
-    setRegistrations(prev => prev.filter(r => r.id !== detailReg.id))
-    setDetailReg(null)
-    setActionLoading(false)
   }
 
   // ─── Transaction payment ─────────────────────────
@@ -616,7 +648,7 @@ export default function App() {
   ) => {
     setActionLoading(true)
 
-    const reg = registrations.find(r => r.id === tx.registration_id || r.session_id === tx.session_id) ?? null
+    const reg = registrations.find(r => r.id === tx.registration_id || (tx.session_id && r.session_id === tx.session_id)) ?? null
 
     // Use merged addons (booking + session add-ons) if provided, else fall back to reg.addons
     const effectiveAddons = mergedAddons ?? (reg?.addons as BookingAddons | null)
@@ -638,9 +670,10 @@ export default function App() {
     }
 
     // If session add-ons were merged in, persist them to the registration first
-    if (mergedAddons && tx.registration_id) {
-      await supabase.from('registrations').update({ addons: mergedAddons } as never).eq('id', tx.registration_id)
-      setRegistrations(prev => prev.map(r => r.id === tx.registration_id ? { ...r, addons: mergedAddons } as Registration : r))
+    const targetRegId = tx.registration_id || reg?.id
+    if (mergedAddons && targetRegId) {
+      await supabase.from('registrations').update({ addons: mergedAddons } as never).eq('id', targetRegId)
+      setRegistrations(prev => prev.map(r => r.id === targetRegId ? { ...r, addons: mergedAddons } as Registration : r))
     }
 
     const { error: payErr } = await supabase.from('transactions').update({
@@ -659,9 +692,10 @@ export default function App() {
     }
 
     // Mark linked registration as COMPLETED (session finished and paid)
-    if (tx.registration_id) {
-      await supabase.from('registrations').update({ status: 'COMPLETED' } as never).eq('id', tx.registration_id)
-      setRegistrations(prev => prev.map(r => r.id === tx.registration_id ? { ...r, status: 'COMPLETED' as const } : r))
+    if (targetRegId) {
+      await supabase.from('registrations').update({ status: 'COMPLETED' } as never).eq('id', targetRegId)
+      setRegistrations(prev => prev.map(r => (r.id === targetRegId || (reg?.session_id && r.session_id === reg.session_id)) ? { ...r, status: 'COMPLETED' as const } : r))
+      setWeekRegistrations(prev => prev.map(r => (r.id === targetRegId || (reg?.session_id && r.session_id === reg.session_id)) ? { ...r, status: 'COMPLETED' as const } : r))
     }
 
     // Optimistic update — use correctTotal (gross pre-discount) to match DB
@@ -832,18 +866,29 @@ export default function App() {
     }
   }
 
+  const openReschedule = (r: Registration) => {
+    setEditRegTarget(r)
+    setEditDateInput(r.preferred_date || todayKey())
+    setEditTimeInput(r.preferred_time || '')
+  }
+
   const handleSaveReschedule = async () => {
     if (!editRegTarget || !editDateInput || !editTimeInput) return
     setActionLoading(true)
+    const updates = { preferred_date: editDateInput, preferred_time: editTimeInput }
     const { error } = await (supabase.from('registrations') as any)
-      .update({ preferred_date: editDateInput, preferred_time: editTimeInput })
+      .update(updates)
       .eq('id', editRegTarget.id)
     setActionLoading(false)
     if (error) {
-      alert('Failed to edit schedule: ' + error.message)
+      alert('Gagal reschedule booking: ' + error.message)
     } else {
+      setRegistrations(prev => prev.map(r => r.id === editRegTarget.id ? { ...r, ...updates } as Registration : r))
+      setWeekRegistrations(prev => prev.map(r => r.id === editRegTarget.id ? { ...r, ...updates } as Registration : r))
+      if (detailReg && detailReg.id === editRegTarget.id) {
+        setDetailReg(prev => prev ? { ...prev, ...updates } as Registration : null)
+      }
       setEditRegTarget(null)
-      window.location.reload()
     }
   }
 
@@ -864,8 +909,11 @@ export default function App() {
     if (error) {
       alert('Failed to edit booking details: ' + error.message)
     } else {
+      setRegistrations(prev => prev.map(r => r.id === editRegTarget.id ? { ...r, addons: newAddons } as Registration : r))
+      if (detailReg && detailReg.id === editRegTarget.id) {
+        setDetailReg(prev => prev ? { ...prev, addons: newAddons } as Registration : null)
+      }
       setEditRegTarget(null)
-      window.location.reload()
     }
   }
 
@@ -881,6 +929,18 @@ export default function App() {
     setView('schedule')
   }
 
+  // Fetch products once on mount (static data)
+  useEffect(() => {
+    supabase
+      .from('products')
+      .select('*')
+      .eq('is_active', true)
+      .order('kategori')
+      .then(({ data }) => {
+        if (data) setProducts(data as Product[])
+      })
+  }, [])
+
   useEffect(() => {
     let mounted = true
 
@@ -891,13 +951,12 @@ export default function App() {
       const isoStart = wibDayToISOStart(day)
       const isoEnd = wibDayToISOEnd(day)
 
-      const [{ data: regData }, { data: txData }, { data: attData }, { data: expData }, { data: weekRegData }, { data: prodData }] = await Promise.all([
+      const [{ data: regData }, { data: txData }, { data: attData }, { data: expData }, { data: weekRegData }] = await Promise.all([
         supabase.from('registrations').select('*').or(`preferred_date.eq.${day},created_at.gte.${isoStart}`).order('created_at', { ascending: false }),
         supabase.from('transactions').select('*').gte('created_at', isoStart).lte('created_at', isoEnd).order('created_at', { ascending: false }),
         supabase.from('attendance').select('*').gte('clock_in', isoStart).lte('clock_in', isoEnd).order('clock_in', { ascending: false }),
         supabase.from('expenses').select('*').gte('tanggal', day).lte('tanggal', day).order('tanggal', { ascending: false }),
         supabase.from('registrations').select('*').gte('preferred_date', wkStart).lte('preferred_date', wkEnd).order('preferred_time', { ascending: true }),
-        supabase.from('products').select('*').eq('is_active', true).order('kategori'),
       ])
 
       if (!mounted) return
@@ -912,31 +971,48 @@ export default function App() {
 
       if (missingRegIds.length > 0) {
         const { data: extraRegs } = await supabase.from('registrations').select('*').in('id', missingRegIds)
-        if (extraRegs) regList.push(...(extraRegs as Registration[]))
+        if (extraRegs && mounted) regList.push(...(extraRegs as Registration[]))
       }
 
+      if (!mounted) return
       setRegistrations(regList)
       setWeekRegistrations((weekRegData ?? []) as Registration[])
       setTransactions(txList)
       setAttendance((attData ?? []) as Attendance[])
       setExpenses((expData ?? []) as Expense[])
-      setProducts((prodData ?? []) as Product[])
       setLoading(false)
     }
 
     load()
-    const id = window.setInterval(load, 15000)
 
+    // 1. Instant Realtime synchronization on database changes
     const channel = supabase
       .channel('pos-reset-dashboard')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'registrations' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'registrations' }, () => { if (mounted) load() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => { if (mounted) load() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => { if (mounted) load() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => { if (mounted) load() })
       .subscribe()
+
+    // 2. Refresh immediately when window/tab is focused/visible
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && mounted) {
+        load()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    // 3. Relaxed fallback polling (every 5 minutes, only if tab is active)
+    const fallbackId = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && mounted) {
+        load()
+      }
+    }, 5 * 60 * 1000)
 
     return () => {
       mounted = false
-      window.clearInterval(id)
+      window.clearInterval(fallbackId)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       void supabase.removeChannel(channel)
     }
   }, [])
@@ -1701,9 +1777,21 @@ export default function App() {
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {r.status === 'PENDING' && qBtn('Verify', <Check size={11} />, '#9BB8D0', () => advanceBooking(r, 'VERIFIED'))}
                       {r.status === 'VERIFIED' && qBtn('Process →', <ChevronRight size={11} />, '#A8C5A0', () => advanceBooking(r, 'PROCESSED'))}
+                      {r.status === 'VERIFIED' && qBtn('Pay', <CreditCard size={11} />, '#A8C5A0', async () => {
+                        const tx = await advanceBooking(r, 'PROCESSED');
+                        if (tx) {
+                          setPayTx(tx);
+                          setShowPayModal(true);
+                          setPaymentMethodPick(r.booking_type === 'ONLINE_QRIS' ? 'ONLINE_QRIS' : null);
+                          setDiscountInput('');
+                          setDiscountReasonInput('');
+                        }
+                      })}
                       {r.status === 'PROCESSED' && !isPaid && linkedTx && qBtn('Pay', <CreditCard size={11} />, '#A8C5A0', () => { setPayTx(linkedTx); setShowPayModal(true); setPaymentMethodPick(r.booking_type === 'ONLINE_QRIS' ? 'ONLINE_QRIS' : null); setDiscountInput(''); setDiscountReasonInput('') })}
                       {r.status === 'PROCESSED' && isPaid && linkedTx && qBtn('Receipt', <Send size={11} />, '#7FC29B', () => openReceipt(linkedTx))}
                       {r.status === 'COMPLETED' && linkedTx && qBtn('Receipt', <Send size={11} />, '#7FC29B', () => openReceipt(linkedTx))}
+                      {!isPaid && r.status !== 'COMPLETED' && qBtn('Reschedule', <Calendar size={11} />, 'rgba(255,255,255,0.7)', () => openReschedule(r))}
+                      {!isPaid && r.status !== 'COMPLETED' && qBtn('Hapus', <X size={11} />, '#C89696', () => handleDeleteBooking(r))}
                     </div>
                   </div>
                 )
@@ -1788,10 +1876,11 @@ export default function App() {
               )
 
               const tabDefs: Array<{ key: typeof bookingTab; label: string; count: number; color: string }> = [
-                { key: 'lobby', label: 'Lobby', count: pending.length + verified.length, color: '#E0B88A' },
+                { key: 'pending', label: 'Pending', count: pending.length, color: '#E0B88A' },
+                { key: 'verified', label: 'Verified', count: verified.length, color: '#9BB8D0' },
                 { key: 'studio', label: 'In Studio', count: processed.length, color: '#A8C5A0' },
                 { key: 'active', label: 'Active TXs', count: activeTx.length, color: '#E0B88A' },
-                { key: 'paid', label: 'Paid', count: paidTx.length, color: '#7FC29B' },
+                { key: 'paid', label: 'Paid Today', count: paidTx.length, color: '#7FC29B' },
               ]
 
               return (
@@ -1839,20 +1928,22 @@ export default function App() {
 
                   {/* ── Mobile single-panel view (hidden on desktop) ── */}
                   <div className="gc-booking-mobile-panel" style={{ display: 'none' }}>
-                    {bookingTab === 'lobby' && bookingCol('Lobby', <Layers3 size={15} />, [...pending, ...verified], 'No bookings in lobby')}
+                    {bookingTab === 'pending' && bookingCol('Pending Bookings', <Clock3 size={15} />, pending, 'No pending bookings')}
+                    {bookingTab === 'verified' && bookingCol('Verified Bookings', <CheckCircle2 size={15} />, verified, 'No verified bookings')}
                     {bookingTab === 'studio' && bookingCol('In Studio', <Monitor size={15} />, processed, 'No active sessions')}
                     {bookingTab === 'active' && txCol('Active TXs', <CreditCard size={15} />, activeTx, 'No active transactions')}
                     {bookingTab === 'paid' && txCol('Paid Today', <Receipt size={15} />, paidTx, 'No paid transactions')}
                   </div>
 
-                  {/* ── Desktop 4-panel layout (hidden on mobile) ── */}
+                  {/* ── Desktop 5-panel layout (3 booking columns + 2 tx columns) ── */}
                   <div className="gc-booking-desktop-layout" style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, minHeight: 'calc(100vh - 230px)' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      {bookingCol('Lobby', <Layers3 size={15} />, [...pending, ...verified], 'No bookings in lobby')}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                      {bookingCol('Pending', <Clock3 size={15} />, pending, 'No pending bookings')}
+                      {bookingCol('Verified', <CheckCircle2 size={15} />, verified, 'No verified bookings')}
                       {bookingCol('In Studio', <Monitor size={15} />, processed, 'No active sessions')}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      {txCol('Active', <CreditCard size={15} />, activeTx, 'No active transactions')}
+                      {txCol('Active TXs', <CreditCard size={15} />, activeTx, 'No active transactions')}
                       {txCol('Paid Today', <Receipt size={15} />, paidTx, 'No paid transactions')}
                     </div>
                   </div>
@@ -2084,7 +2175,7 @@ export default function App() {
               // ── Daily breakdown ──
               const dailyMap = new Map<string, { revenue: number; tx: number; expense: number }>()
               for (const t of monthPaid) {
-                const d = t.created_at.slice(0, 10)
+                const d = toWibDateKey(t.created_at)
                 const cur = dailyMap.get(d) ?? { revenue: 0, tx: 0, expense: 0 }
                 cur.revenue += t.total_amount
                 cur.tx += 1
@@ -2129,9 +2220,11 @@ export default function App() {
                 if (recapMode === 'custom') return { start: customStart, end: customEnd }
                 // monthly: 26th prev → 25th current
                 const [y, m] = monthKey.split('-').map(Number)
+                const prevY = m === 1 ? y - 1 : y
+                const prevM = m === 1 ? 12 : m - 1
                 return {
-                  start: new Date(y, m - 2, 26).toISOString().slice(0, 10),
-                  end: new Date(y, m - 1, 25).toISOString().slice(0, 10),
+                  start: `${prevY}-${String(prevM).padStart(2, '0')}-26`,
+                  end: `${y}-${String(m).padStart(2, '0')}-25`,
                 }
               })()
 
@@ -2142,8 +2235,12 @@ export default function App() {
                   return `${fmt(customStart)} – ${fmt(customEnd)}`
                 }
                 const [y, m] = monthKey.split('-').map(Number)
+                const prevY = m === 1 ? y - 1 : y
+                const prevM = m === 1 ? 12 : m - 1
+                const dStart = new Date(prevY, prevM - 1, 26)
+                const dEnd = new Date(y, m - 1, 25)
                 const fmt = (d: Date) => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
-                return `${fmt(new Date(y, m - 2, 26))} – ${fmt(new Date(y, m - 1, 25))}`
+                return `${fmt(dStart)} – ${fmt(dEnd)}`
               })()
 
               const changeMonth = (delta: number) => {
@@ -3629,10 +3726,20 @@ export default function App() {
                     </button>
                   )}
                 </div>
+                {/* Reschedule booking button */}
+                {!isPaid && reg.status !== 'COMPLETED' && (
+                  <button
+                    onClick={() => openReschedule(reg)}
+                    disabled={actionLoading}
+                    style={{ width: '100%', padding: '9px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.85)', fontWeight: 600, fontSize: 12, cursor: actionLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: actionLoading ? 0.5 : 1 }}
+                  >
+                    <Calendar size={13} /> Reschedule Tanggal & Jam
+                  </button>
+                )}
                 {/* Delete booking – available for any non-completed booking */}
                 {!isPaid && reg.status !== 'COMPLETED' && (
                   <button
-                    onClick={handleDeleteBooking}
+                    onClick={() => handleDeleteBooking(reg)}
                     disabled={actionLoading}
                     style={{ width: '100%', padding: '9px', border: '1px solid rgba(200,150,150,0.2)', borderRadius: 10, background: 'rgba(200,150,150,0.05)', color: '#C89696', fontWeight: 600, fontSize: 12, cursor: actionLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, opacity: actionLoading ? 0.5 : 1 }}
                   >
@@ -3687,6 +3794,8 @@ export default function App() {
                     "17:00", "17:30", "18:00", "18:30",
                     "19:00", "19:30", "20:00", "20:30", "21:00"
                   ];
+                  const CLOSED_DATES = ['2026-08-29'];
+                  if (CLOSED_DATES.includes(editDateInput)) return [];
                   const baseSlots = (day === 0 || day === 5 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
                   // Find all bookings for this date for Close Up Room or Pas Photo
                   const booked = registrations
