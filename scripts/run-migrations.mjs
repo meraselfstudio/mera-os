@@ -17,6 +17,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 const MIGRATIONS = [
     join(__dir, '../supabase/migrations/019_update_products_from_pricelist.sql'),
+    join(__dir, '../supabase/migrations/021_add_grandmas_closet_studio.sql'),
 ]
 
 // Split SQL into individual statements and execute each

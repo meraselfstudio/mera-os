@@ -69,6 +69,8 @@ function CheckinContent() {
         'Basic Studio': '🖤',
         'Close Up Room': '✨',
         'Pas Photo': '🎩',
+        "Granma's Closet": '👗',
+        "Grandma's Closet": '👗',
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

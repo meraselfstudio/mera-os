@@ -45,14 +45,14 @@ export interface Studio {
     name: string
     description: string | null
     emoji: string | null
-    accent: string
-    bg_gradient: string
+    accent?: string
+    bg_gradient?: string
     image_url: string | null
     shared_slots_group: string | null
     allowed_categories: string[] | null
     sort_order: number
     is_active: boolean
-    created_at: string
+    created_at?: string
 }
 
 
@@ -175,6 +175,7 @@ export function calcBookingLineItems(
         if (roomLower === 'pas photo') kategori = 'pas photo'
         else if (roomLower === 'close up room') kategori = 'close up room'
         else if (roomLower === 'basic studio') kategori = 'basic studio'
+        else if (roomLower.includes('closet') || roomLower.includes('granma') || roomLower.includes('grandma')) kategori = "granma's closet"
 
         const candidates = products.filter(
             p => !p.is_addon && p.kategori.toLowerCase() === kategori,

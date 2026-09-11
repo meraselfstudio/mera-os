@@ -9,7 +9,7 @@ import AttendanceBoard from './components/AttendanceBoard'
 
 type ViewKey = 'schedule' | 'booking' | 'finance' | 'attendance' | 'monthly'
 type RoleKey = 'crew' | 'owner'
-type StudioBucket = 'BASIC' | 'CLOSEUP' | 'QUEUE'
+type StudioBucket = 'BASIC' | 'CLOSEUP' | 'GRANDMA' | 'QUEUE'
 
 const ownerNavItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: 'schedule', label: 'Schedule', icon: <Calendar size={18} /> },
@@ -152,6 +152,7 @@ function toStudioBucket(reg: Registration): StudioBucket {
   const room = `${addons?.room ?? ''}`.toLowerCase()
   if (room.includes('basic')) return 'BASIC'
   if (room.includes('close up') || room.includes('pas')) return 'CLOSEUP'
+  if (room.includes('granma') || room.includes('grandma') || room.includes('closet')) return 'GRANDMA'
   return 'QUEUE'
 }
 
@@ -1035,6 +1036,7 @@ export default function App() {
     return {
       BASIC: registrations.filter((r) => toStudioBucket(r) === 'BASIC'),
       CLOSEUP: registrations.filter((r) => toStudioBucket(r) === 'CLOSEUP'),
+      GRANDMA: registrations.filter((r) => toStudioBucket(r) === 'GRANDMA'),
       QUEUE: registrations.filter((r) => toStudioBucket(r) === 'QUEUE'),
     }
   }, [registrations])
@@ -1444,6 +1446,7 @@ export default function App() {
                 })
               const basicWeek = weekRegistrations.filter((r) => toStudioBucket(r) === 'BASIC')
               const closeUpWeek = weekRegistrations.filter((r) => toStudioBucket(r) === 'CLOSEUP')
+              const grandmaWeek = weekRegistrations.filter((r) => toStudioBucket(r) === 'GRANDMA')
 
               const weekCalGrid = (title: string, studios: StudioBucket[], accent: string, count: number) => (
                 <Card style={{ overflow: 'hidden' }}>
@@ -1678,9 +1681,10 @@ export default function App() {
 
                   {/* ── WEEK VIEW ── */}
                   {calViewMode === 'week' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
                       {weekCalGrid('Studio Basic', ['BASIC', 'QUEUE'], '#622128', basicWeek.length)}
                       {weekCalGrid('Close Up Room', ['CLOSEUP'], '#2E4B72', closeUpWeek.length)}
+                      {weekCalGrid("Granma's Closet", ['GRANDMA'], '#7A431D', grandmaWeek.length)}
                     </div>
                   )}
                 </div>
@@ -3797,9 +3801,16 @@ export default function App() {
                   const CLOSED_DATES = ['2026-08-29'];
                   if (CLOSED_DATES.includes(editDateInput)) return [];
                   const baseSlots = (day === 0 || day === 5 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
-                  // Find all bookings for this date for Close Up Room or Pas Photo
+                  // Find all bookings for this date for this studio
+                  const targetRoom = (editRegTarget?.addons as BookingAddons | null)?.room
+                  const isSharedCloseUp = targetRoom === 'Close Up Room' || targetRoom === 'Pas Photo'
                   const booked = registrations
-                    .filter(r => r.preferred_date === editDateInput && (r.addons?.room === 'Close Up Room' || r.addons?.room === 'Pas Photo') && ['PENDING', 'VERIFIED', 'PROCESSED'].includes(r.status))
+                    .filter(r => {
+                      if (r.preferred_date !== editDateInput || !['PENDING', 'VERIFIED', 'PROCESSED'].includes(r.status)) return false
+                      const rRoom = (r.addons as BookingAddons | null)?.room
+                      if (isSharedCloseUp) return rRoom === 'Close Up Room' || rRoom === 'Pas Photo'
+                      return rRoom === targetRoom
+                    })
                     .map(r => r.preferred_time);
                   // If today, filter out past slots
                   const todayStr = new Date().toISOString().slice(0, 10);

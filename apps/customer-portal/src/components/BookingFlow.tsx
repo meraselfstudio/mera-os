@@ -62,6 +62,74 @@ const STUDIO_CARD_IMAGES: Record<string, string> = {
     'Basic Studio': '/1.basic-studio-card.png',
     'Close Up Room': '/2.close-up-room-card.png',
     'Pas Photo': '/3.pas-photo-card.png',
+    "Granma's Closet": "/4.grandmas-closet-card.png",
+    "Grandma's Closet": "/4.grandmas-closet-card.png",
+}
+
+const DEFAULT_STUDIOS: Studio[] = [
+    {
+        id: 'Basic Studio',
+        name: 'Basic Studio',
+        emoji: '🖤',
+        description: 'Self Photo & Party Photo Session',
+        image_url: '/1.basic-studio-card.png',
+        sort_order: 1,
+        allowed_categories: ['basic studio'],
+        shared_slots_group: null,
+        is_active: true,
+    },
+    {
+        id: 'Close Up Room',
+        name: 'Close Up Room',
+        emoji: '✨',
+        description: 'Ganti 3 Background dalam Satu Sesi',
+        image_url: '/2.close-up-room-card.png',
+        sort_order: 2,
+        allowed_categories: ['close up room'],
+        shared_slots_group: 'shared_closeup',
+        is_active: true,
+    },
+    {
+        id: 'Pas Photo',
+        name: 'Pas Photo',
+        emoji: '🎩',
+        description: 'Pas Photo Formal & Studio',
+        image_url: '/3.pas-photo-card.png',
+        sort_order: 3,
+        allowed_categories: ['pas photo'],
+        shared_slots_group: 'shared_closeup',
+        is_active: true,
+    },
+    {
+        id: "Granma's Closet",
+        name: "Granma's Closet",
+        emoji: '👗',
+        description: 'Background "Dalam Lemari"',
+        image_url: "/4.grandmas-closet-card.png",
+        sort_order: 4,
+        allowed_categories: ["granma's closet", "grandma's closet"],
+        shared_slots_group: null,
+        is_active: true,
+    },
+]
+
+const FALLBACK_GRANMA_PRODUCT: Product = {
+    id: 9999,
+    nama: "Granma's Closet Session",
+    kategori: "Granma's Closet",
+    tipe_harga: 'normal',
+    harga_dasar: 70000,
+    tier_1: null,
+    tier_2: null,
+    tier_3: null,
+    tier_lebih: null,
+    max_orang: 2,
+    default_bw: false,
+    is_addon: false,
+    is_active: true,
+    pricing_basis: 'qty',
+    deskripsi: '1-2 orang • 10 menit sesi foto • foto di dalam lemari • unlimited jepret • free 1 print special frame • soft files berwarna',
+    metadata: null,
 }
 
 // ── Types ───────────────────────────────────────────────────────
@@ -108,6 +176,8 @@ function generateSessionId(name: string, room: string | null, variant: string | 
         code = 'CU'
     } else if (room === 'Pas Photo') {
         code = 'PS'
+    } else if (room === "Granma's Closet" || room === "Grandma's Closet") {
+        code = 'GC'
     } else {
         code = Math.random().toString(36).slice(2, 6).toUpperCase()
     }
@@ -171,7 +241,7 @@ export default function BookingFlow() {
     const [state, setState] = useState<BookingState>(INITIAL)
     const [allProducts, setAllProducts] = useState<Product[]>([])
     const [addonProducts, setAddonProducts] = useState<Product[]>([])
-    const [studios, setStudios] = useState<Studio[]>([])
+    const [studios, setStudios] = useState<Studio[]>(DEFAULT_STUDIOS)
     const [loading, setLoading] = useState(false)
     const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
 
@@ -187,13 +257,23 @@ export default function BookingFlow() {
     useEffect(() => {
         supabase.from('products').select('*').eq('is_active', true).order('id')
             .then(({ data }) => {
-                const all = (data ?? []) as Product[]
+                let all = (data ?? []) as Product[]
+                if (!all.some(p => p.kategori.toLowerCase().includes('closet') || p.nama.toLowerCase().includes('closet'))) {
+                    all = [...all, FALLBACK_GRANMA_PRODUCT]
+                }
                 setAllProducts(all.filter(p => !p.is_addon))
                 setAddonProducts(all.filter(p => p.is_addon))
             })
         supabase.from('studios').select('*').eq('is_active', true).order('sort_order')
             .then(({ data }) => {
-                if (data) setStudios(data as Studio[])
+                if (data && data.length > 0) {
+                    let list = data as Studio[]
+                    if (!list.some(s => s.id.toLowerCase().includes('closet'))) {
+                        const granmaDef = DEFAULT_STUDIOS.find(s => s.id === "Granma's Closet")
+                        if (granmaDef) list = [...list, granmaDef]
+                    }
+                    setStudios(list)
+                }
             })
     }, [])
 
@@ -216,6 +296,7 @@ export default function BookingFlow() {
                         if (!roomParam) {
                             if (product.kategori.toLowerCase().includes('close up')) detectedRoom = 'Close Up Room'
                             else if (product.kategori.toLowerCase().includes('pas photo')) detectedRoom = 'Pas Photo'
+                            else if (product.kategori.toLowerCase().includes('closet') || product.kategori.toLowerCase().includes('granma') || product.kategori.toLowerCase().includes('grandma')) detectedRoom = "Granma's Closet"
                         }
                         setState(p => ({ ...p, selectedRoom: detectedRoom, selectedPackage: product }))
                         setStep('datetime')

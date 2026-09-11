@@ -19,7 +19,7 @@ const STEPS = [
         number: '01',
         emoji: '📷',
         title: 'Pilih Studio',
-        desc: 'Pilih studio yang kamu inginkan: Basic Studio, Close Up Room, atau Pas Photo.',
+        desc: 'Pilih studio yang kamu inginkan: Basic Studio, Close Up Room, Pas Photo, atau Granma\'s Closet.',
         img: '/how-to-book-steps/step1.png',
     },
     {
