@@ -73,6 +73,15 @@
     flex-shrink: 0;
 }
 
+@keyframes photoSlide {
+    0% {
+        transform: translate3d(0, 0, 0);
+    }
+    100% {
+        transform: translate3d(-50%, 0, 0);
+    }
+}
+
 .photoRow {
     overflow: hidden;
     padding-bottom: 12px;
@@ -83,6 +92,11 @@
     align-items: flex-end;
     width: max-content;
     will-change: transform;
+    animation: photoSlide 35s linear infinite;
+}
+
+.photoTrack:hover {
+    animation-play-state: paused;
 }
 
 .photoItem {
@@ -234,10 +248,6 @@
     .stripImg { width: 130px; border-radius: 4px; }
     .stripLabel { font-size: var(--mera-step--1); margin-top: 10px; }
     .scallop { height: 96px; margin-top: -56px; }
-    .photoTrack { animation-duration: 20s; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .photoTrack { animation: none; }
+    .photoTrack { animation-duration: 25s; }
 }
 
