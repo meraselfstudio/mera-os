@@ -1,19 +1,21 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
-import { Banknote, BarChart3, Calendar, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock3, Copy, CreditCard, Delete, Download, ExternalLink, Layers3, LogOut, MessageCircle, Monitor, Plus, Receipt, Send, TrendingUp, Users, X } from 'lucide-react'
+import { Banknote, BarChart3, Calendar, Check, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock3, Coffee, Copy, CreditCard, Delete, Download, ExternalLink, Layers3, LogOut, MessageCircle, Monitor, Plus, Receipt, Send, TrendingUp, Users, X } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import { createPOSClient } from '@mera/supabase'
 const supabase = createPOSClient()
 import type { Attendance, Crew, Expense, Product, Registration, RegistrationStatus, Transaction, TransactionStatus, PaymentMethod, BookingAddons } from '@mera/supabase'
 import { hitungHargaBertingkat, calcBookingLineItems } from '@mera/supabase'
-import AttendanceBoard from './components/AttendanceBoard'
+import AttendanceBoard, { isCafeCrew } from './components/AttendanceBoard'
+import { CafePosView } from './components/cafe/CafePosView'
 
-type ViewKey = 'schedule' | 'booking' | 'finance' | 'attendance' | 'monthly'
+type ViewKey = 'schedule' | 'booking' | 'finance' | 'attendance' | 'monthly' | 'cafe_pos'
 type RoleKey = 'crew' | 'owner'
 type StudioBucket = 'BASIC' | 'CLOSEUP' | 'GRANDMA' | 'QUEUE'
 
 const ownerNavItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
   { key: 'schedule', label: 'Schedule', icon: <Calendar size={18} /> },
   { key: 'booking', label: 'Booking & POS', icon: <ClipboardList size={18} /> },
+  { key: 'cafe_pos', label: 'Méra Hause', icon: <Coffee size={18} /> },
   { key: 'finance', label: 'Today Recap', icon: <Banknote size={18} /> },
   { key: 'monthly', label: 'Monthly Recap', icon: <BarChart3 size={18} /> },
 ]
@@ -23,6 +25,11 @@ const crewNavItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }
   { key: 'booking', label: 'Booking & POS', icon: <ClipboardList size={18} /> },
   { key: 'finance', label: 'Today Recap', icon: <Banknote size={18} /> },
   { key: 'attendance', label: 'Attendance', icon: <Clock3 size={18} /> },
+]
+
+const cafeCrewNavItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
+  { key: 'cafe_pos', label: 'POS Méra Hause', icon: <Coffee size={18} /> },
+  { key: 'attendance', label: 'Absensi', icon: <Clock3 size={18} /> },
 ]
 
 const OWNER_PIN_LENGTH = 4
@@ -298,18 +305,33 @@ export default function App() {
     })
   }, [])
 
+  const activeCrew = useMemo(() => {
+    if (!activeCrewId) return null
+    return crewList.find(c => c.id === activeCrewId) ?? null
+  }, [activeCrewId, crewList])
+
+  const isCurrentCafeCrew = useMemo(() => {
+    return isCafeCrew(activeCrew)
+  }, [activeCrew])
+
   const isDashboardUnlocked = useMemo(() => {
-    if (role === 'owner') return true;
-    if (role !== 'crew') return false;
-    if (!activeCrewId) return false;
+    if (role === 'owner') return true
+    if (role !== 'crew') return false
+    if (!activeCrewId) return false
 
-    const activeCrew = crewList.find(c => c.id === activeCrewId);
-    if (activeCrew && activeCrew.status_gaji === 'INTERN') return false;
+    if (activeCrew && activeCrew.status_gaji === 'INTERN') return false
 
-    // Pro Crew (or active crew) must have an active attendance record today
-    const hasActiveAttendance = attendance.some(a => a.crew_id === activeCrewId && a.status === 'ACTIVE');
-    return hasActiveAttendance;
-  }, [role, activeCrewId, crewList, attendance]);
+    // Pro Crew and Cafe crew must have an active attendance record today
+    const hasActiveAttendance = attendance.some(a => a.crew_id === activeCrewId && a.status === 'ACTIVE')
+    return hasActiveAttendance
+  }, [role, activeCrewId, activeCrew, attendance])
+
+  // Automatically enforce cafe view for cafe crew
+  useEffect(() => {
+    if (isCurrentCafeCrew && view !== 'cafe_pos' && view !== 'attendance') {
+      setView('cafe_pos')
+    }
+  }, [isCurrentCafeCrew, view])
 
   // Core loader — accepts explicit ISO date range
   const loadRecapRange = useCallback(async (start: string, end: string) => {
@@ -910,9 +932,9 @@ export default function App() {
     if (error) {
       alert('Failed to edit booking details: ' + error.message)
     } else {
-      setRegistrations(prev => prev.map(r => r.id === editRegTarget.id ? { ...r, addons: newAddons } as Registration : r))
+      setRegistrations(prev => prev.map(r => r.id === editRegTarget.id ? { ...r, addons: newAddons } as unknown as Registration : r))
       if (detailReg && detailReg.id === editRegTarget.id) {
-        setDetailReg(prev => prev ? { ...prev, addons: newAddons } as Registration : null)
+        setDetailReg(prev => prev ? { ...prev, addons: newAddons } as unknown as Registration : null)
       }
       setEditRegTarget(null)
     }
@@ -1047,7 +1069,7 @@ export default function App() {
   const expenseTotal = expenses.reduce((sum, e) => sum + e.jumlah, 0)
   const expenseCash = expenses.filter(e => (e.metode_bayar ?? 'CASH') === 'CASH').reduce((s, e) => s + e.jumlah, 0)
   const expenseQris = expenses.filter(e => e.metode_bayar === 'QRIS').reduce((s, e) => s + e.jumlah, 0)
-  const navItems = role === 'owner' ? ownerNavItems : crewNavItems
+  const navItems = role === 'owner' ? ownerNavItems : isCurrentCafeCrew ? cafeCrewNavItems : crewNavItems
 
   if (!role) {
     return (
@@ -1336,7 +1358,7 @@ export default function App() {
         <div className="pos-header-logo" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <img src="/mera-logo-white.png" alt="Méra" style={{ height: 24 }} />
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', fontWeight: 500 }}>
-            {role === 'owner' ? 'Owner' : 'Crew'}
+            {role === 'owner' ? 'Owner' : isCurrentCafeCrew ? 'Méra Hause (Cafe)' : 'Crew'}
           </span>
         </div>
 
@@ -1403,11 +1425,36 @@ export default function App() {
       </header>
 
       {/* ─── Main content ────────────────────────────── */}
-      <main className="pos-main" style={{ flex: 1, overflow: 'auto', padding: '20px 24px', WebkitOverflowScrolling: 'touch' }}>
+      <main className="pos-main" style={{ flex: 1, overflow: 'auto', padding: isCurrentCafeCrew || view === 'cafe_pos' ? 0 : '20px 24px', WebkitOverflowScrolling: 'touch' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.3)' }}>Loading...</p>
           </div>
+        ) : isCurrentCafeCrew ? (
+          /* Cafe crew is strictly locked to POS Méra Hause and Attendance */
+          view === 'attendance' ? (
+            <div style={{ padding: '20px 24px' }}>
+              <AttendanceBoard
+                onLogout={handleLogout}
+                onClockIn={(crewId) => {
+                  setActiveCrewId(crewId)
+                  localStorage.setItem('mera_pos_crew_id', crewId)
+                  setView('cafe_pos')
+                  setShowCrewAttendanceOverlay(false)
+                }}
+              />
+            </div>
+          ) : (
+            <div style={{ height: 'calc(100vh - 54px)' }}>
+              <CafePosView
+                cashierName={activeCrew?.nama || 'Kasir Méra Hause'}
+                cashierId={activeCrew?.id}
+                role={role}
+                onOpenAttendance={() => setView('attendance')}
+                onLogout={handleLogout}
+              />
+            </div>
+          )
         ) : (
           <>
             {/* ═══════════════════════════════════════════════ */}
@@ -2626,6 +2673,21 @@ export default function App() {
                 </div>
               )
             })()}
+
+            {/* ═══════════════════════════════════════════════ */}
+            {/* 7. MÉRA HAUSE POS (FreeKasir Architecture)       */}
+            {/* ═══════════════════════════════════════════════ */}
+            {view === 'cafe_pos' && (
+              <div style={{ height: 'calc(100vh - 54px)' }}>
+                <CafePosView
+                  cashierName={activeCrew?.nama || (role === 'owner' ? 'Owner' : 'Kasir Méra Hause')}
+                  cashierId={activeCrew?.id}
+                  role={role}
+                  onOpenAttendance={() => setShowCrewAttendanceOverlay(true)}
+                  onLogout={handleLogout}
+                />
+              </div>
+            )}
           </>
         )}
       </main>
@@ -3363,13 +3425,17 @@ export default function App() {
 
             <div style={{ padding: 14 }}>
               <AttendanceBoard onLogout={handleLogout} onClockIn={(crewId) => {
+                const targetCrew = crewList.find(c => c.id === crewId);
                 setActiveCrewId(crewId);
                 localStorage.setItem('mera_pos_crew_id', crewId);
                 setAttendance(prev => {
                   if (prev.some(a => a.crew_id === crewId && a.status === 'ACTIVE')) return prev;
                   return [...prev, { crew_id: crewId, status: 'ACTIVE' } as any];
                 });
-                setShowCrewAttendanceOverlay(false)
+                if (isCafeCrew(targetCrew)) {
+                  setView('cafe_pos');
+                }
+                setShowCrewAttendanceOverlay(false);
               }} />
             </div>
           </div>

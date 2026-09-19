@@ -5,8 +5,9 @@ import { Clock, RefreshCw, CheckCircle2, Circle, AlertTriangle, Camera, XCircle,
 import type { Crew, Attendance } from '@mera/supabase'
 
 // ── Shift Definitions ─────────────────────────────────────────
+// Studio Shifts (Senin–Kamis 11.30–21.00, Jum'at–Minggu 08.30–21.00)
 // Days: 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat
-const SHIFTS = [
+const STUDIO_SHIFTS = [
     {
         key: 'Weekday Full Time',
         label: 'Weekday Full Time',
@@ -41,7 +42,44 @@ const SHIFTS = [
     },
 ] as const
 
-type ShiftKey = typeof SHIFTS[number]['key']
+// Méra Hause Cafe Shifts (Operasional 12.00–23.00, Base Rp 50.000, Solo Rp 100.000)
+const CAFE_SHIFTS = [
+    {
+        key: 'Cafe Shift 1',
+        label: 'Shift 1 (Méra Hause)',
+        desc: 'Shift 1 · 11.00–20.00',
+        rate: 50_000,
+        startH: 11, startM: 0,
+        days: [0, 1, 2, 3, 4, 5, 6] as number[],
+    },
+    {
+        key: 'Cafe Shift 2',
+        label: 'Shift 2 (Méra Hause)',
+        desc: 'Shift 2 · 15.00–23.00',
+        rate: 50_000,
+        startH: 15, startM: 0,
+        days: [0, 1, 2, 3, 4, 5, 6] as number[],
+    },
+    {
+        key: 'Méra Hause Full Time',
+        label: 'Full Time (Méra Hause)',
+        desc: 'Full Time · 11.00–23.00',
+        rate: 100_000,
+        startH: 11, startM: 0,
+        days: [0, 1, 2, 3, 4, 5, 6] as number[],
+    },
+] as const
+
+const ALL_SHIFTS = [...STUDIO_SHIFTS, ...CAFE_SHIFTS]
+type ShiftItem = typeof ALL_SHIFTS[number]
+type ShiftKey = ShiftItem['key']
+
+export function isCafeCrew(c?: Crew | { role?: string; nama?: string } | null): boolean {
+    if (!c) return false
+    const r = (c.role || '').toLowerCase()
+    const n = (c.nama || '').toLowerCase()
+    return r.includes('cafe') || r.includes('hause') || r.includes('barista') || n === 'nona' || n === 'rara'
+}
 
 // ── Bonus Parameters ──────────────────────────────────────────
 const TARGET_WEEKDAY = 1_000_000
@@ -53,7 +91,7 @@ function isWeekendDay(date: Date) {
     const d = date.getDay(); return d === 0 || d === 5 || d === 6
 }
 
-function calcLateMinutes(clockInISO: string, shift: typeof SHIFTS[number]): number {
+function calcLateMinutes(clockInISO: string, shift: ShiftItem): number {
     const d = new Date(clockInISO)
     const start = new Date(d)
     start.setHours(shift.startH, shift.startM, 0, 0)
@@ -276,7 +314,7 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
         const day = todayISO()
         const isoStart = wibDayToISOStart(day)
         const isoEnd = wibDayToISOEnd(day)
-        const [{ data: crewData }, { data: attData }] = await Promise.all([
+        let [{ data: crewData }, { data: attData }] = await Promise.all([
             (supabase.from('crew') as any).select('*').order('nama'),
             (supabase.from('attendance') as any)
                 .select('*')
@@ -284,6 +322,23 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                 .lte('clock_in', isoEnd)
                 .order('clock_in', { ascending: false }),
         ])
+
+        // Auto-seed Nona & Rara if not yet present in crew list
+        const existingList = (crewData ?? []) as Crew[]
+        const hasNona = existingList.some(c => c.nama.toLowerCase() === 'nona')
+        const hasRara = existingList.some(c => c.nama.toLowerCase() === 'rara')
+        if (!hasNona || !hasRara) {
+            const toInsert = []
+            if (!hasNona) toInsert.push({ nama: 'Nona', role: 'Méra Hause', status_gaji: 'PRO', is_active: true })
+            if (!hasRara) toInsert.push({ nama: 'Rara', role: 'Méra Hause', status_gaji: 'PRO', is_active: true })
+            if (toInsert.length > 0) {
+                const { data: insData } = await (supabase.from('crew') as any).insert(toInsert).select()
+                if (insData && insData.length > 0) {
+                    crewData = [...existingList, ...insData]
+                }
+            }
+        }
+
         setCrew((crewData ?? []) as Crew[])
         setAttendance((attData ?? []) as Attendance[])
         setLoading(false)
@@ -373,18 +428,19 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                 )}
                 {crew.map(c => {
                     const isIntern = (c as any).status_gaji === 'INTERN'
+                    const isCafe = isCafeCrew(c)
                     const activeAtt = activeAttByCrew.get(c.id)
                     const doneAtt = completedAttByCrew.get(c.id)
                     const isWorking = !!activeAtt
                     const isDone = !!doneAtt
 
                     let borderColor = 'var(--mera-border)'
-                    if (isWorking) borderColor = 'var(--mera-success)'
+                    if (isWorking) borderColor = isCafe ? '#f59e0b' : 'var(--mera-success)'
                     else if (isDone) borderColor = 'rgba(255,255,255,0.06)'
 
                     return (
                         <div key={c.id} style={{
-                            background: isWorking ? 'rgba(48,209,88,0.04)' : 'var(--mera-surface)',
+                            background: isWorking ? (isCafe ? 'rgba(245,158,11,0.05)' : 'rgba(48,209,88,0.04)') : 'var(--mera-surface)',
                             border: `1.5px solid ${borderColor}`,
                             borderRadius: 'var(--mera-radius-lg)',
                             padding: '16px 14px',
@@ -394,16 +450,26 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                                 <div style={{
                                     width: 44, height: 44, borderRadius: '50%',
-                                    background: isWorking ? 'rgba(48,209,88,0.15)' : isDone ? 'var(--mera-surface-raised)' : 'var(--mera-accent-light)',
-                                    border: `2px solid ${isWorking ? 'var(--mera-success)' : 'var(--mera-border-strong)'}`,
+                                    background: isWorking ? (isCafe ? 'rgba(245,158,11,0.15)' : 'rgba(48,209,88,0.15)') : isDone ? 'var(--mera-surface-raised)' : (isCafe ? 'rgba(245,158,11,0.1)' : 'var(--mera-accent-light)'),
+                                    border: `2px solid ${isWorking ? (isCafe ? '#f59e0b' : 'var(--mera-success)') : isDone ? 'var(--mera-border-strong)' : (isCafe ? 'rgba(245,158,11,0.3)' : 'var(--mera-border-strong)')}`,
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0,
                                 }}>
-                                    {isWorking ? <CheckCircle2 size={20} color="var(--mera-success)" /> : isDone ? <CheckCircle2 size={20} color="var(--mera-text-secondary)" /> : <Circle size={20} color="var(--mera-border-strong)" />}
+                                    {isWorking ? <CheckCircle2 size={20} color={isCafe ? '#f59e0b' : 'var(--mera-success)'} /> : isDone ? <CheckCircle2 size={20} color="var(--mera-text-secondary)" /> : <Circle size={20} color={isCafe ? '#f59e0b' : 'var(--mera-border-strong)'} />}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                     <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.nama}</p>
-                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                                        <span style={{ fontSize: 10, color: 'var(--mera-text-tertiary)' }}>{c.role}</span>
+                                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                                        <span style={{
+                                            fontSize: 10,
+                                            color: isCafe ? '#d97706' : 'var(--mera-text-tertiary)',
+                                            fontWeight: isCafe ? 700 : 500,
+                                            background: isCafe ? 'rgba(217, 119, 6, 0.12)' : 'transparent',
+                                            border: isCafe ? '1px solid rgba(217, 119, 6, 0.25)' : 'none',
+                                            padding: isCafe ? '1px 6px' : '0',
+                                            borderRadius: 4
+                                        }}>
+                                            {isCafe ? '☕ ' + (c.role === 'Crew' ? 'Méra Hause' : c.role) : c.role}
+                                        </span>
                                         {isIntern && (
                                             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--mera-warning)', background: 'var(--mera-warning-bg)', padding: '1px 6px', borderRadius: 9999 }}>Intern</span>
                                         )}
@@ -414,7 +480,7 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                             {/* Status info */}
                             {isWorking && activeAtt && (
                                 <div style={{ marginBottom: 10, fontSize: 11 }}>
-                                    <p style={{ color: 'var(--mera-success)', fontWeight: 600, marginBottom: 2 }}>
+                                    <p style={{ color: isCafe ? '#f59e0b' : 'var(--mera-success)', fontWeight: 600, marginBottom: 2 }}>
                                         ● Login {fmtTime(activeAtt.clock_in)}
                                     </p>
                                     <p style={{ color: 'var(--mera-text-tertiary)', marginBottom: 2 }}>
@@ -452,23 +518,23 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                                         onClick={() => { if (onClockIn) onClockIn(c.id) }}
                                         style={{
                                             width: '100%', padding: '9px', fontSize: 12, fontWeight: 700,
-                                            background: 'var(--mera-accent)', color: '#fff',
+                                            background: isCafe ? '#d97706' : 'var(--mera-accent)', color: '#fff',
                                             border: 'none', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                         }}
                                     >
-                                        <LogIn size={14} /> Masuk POS Dashboard
+                                        <LogIn size={14} /> {isCafe ? 'Masuk POS Méra Hause' : 'Masuk POS Dashboard'}
                                     </button>
                                     <button
                                         onClick={() => setClockOutTarget({ crew: c, att: activeAtt })}
                                         style={{
-                                            width: '100%', padding: '7px', fontSize: 11, fontWeight: 600,
-                                            background: 'transparent', color: 'var(--mera-text-tertiary)',
-                                            border: '1px solid var(--mera-border)', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
+                                            width: '100%', padding: isCafe ? '9px' : '7px', fontSize: isCafe ? 12 : 11, fontWeight: isCafe ? 700 : 600,
+                                            background: isCafe ? 'var(--mera-surface-raised)' : 'transparent', color: isCafe ? 'var(--mera-text-primary)' : 'var(--mera-text-tertiary)',
+                                            border: `1px solid ${isCafe ? 'rgba(217, 119, 6, 0.4)' : 'var(--mera-border)'}`, borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                         }}
                                     >
-                                        <Camera size={12} /> Clock Out / Selesai Shift
+                                        <Camera size={14} /> {isCafe ? 'Clock Out Absensi' : 'Clock Out / Selesai Shift'}
                                     </button>
                                 </div>
                             ) : !isDone && (
@@ -476,12 +542,12 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                                     onClick={() => setClockInTarget(c)}
                                     style={{
                                         width: '100%', padding: '9px', fontSize: 12, fontWeight: 700,
-                                        background: 'var(--mera-accent)', color: '#fff',
+                                        background: isCafe ? '#d97706' : 'var(--mera-accent)', color: '#fff',
                                         border: 'none', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                     }}
                                 >
-                                    <Camera size={14} /> Clock In & Login
+                                    <Camera size={14} /> {isCafe ? 'Clock In Absensi' : 'Clock In & Login'}
                                 </button>
                             )}
                         </div>
@@ -489,17 +555,20 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                 })}
             </div>
 
-
-
-
-
             {/* ── Clock-In Modal ─────────────────────────── */}
             {clockInTarget && (
                 <ClockInModal
                     crew={clockInTarget}
                     attendance={attendance}
                     onClose={() => setClockInTarget(null)}
-                    onDone={() => { setClockInTarget(null); load(); if (onClockIn) onClockIn(clockInTarget.id) }}
+                    onDone={() => {
+                        const targetId = clockInTarget.id
+                        const isCafe = isCafeCrew(clockInTarget)
+                        setClockInTarget(null)
+                        load()
+                        // Cafe crew does NOT login to POS dashboard
+                        if (!isCafe && onClockIn) onClockIn(targetId)
+                    }}
                 />
             )}
 
@@ -536,9 +605,11 @@ function ClockInModal({ crew, attendance, onClose, onDone }: {
     const cam = useCamera()
 
     const isIntern = (crew as any).status_gaji === 'INTERN'
+    const isCafe = isCafeCrew(crew)
     const nowDay = new Date().getDay()
-    const availableShifts = SHIFTS.filter(s => s.days.includes(nowDay))
-    const shift = SHIFTS.find(s => s.key === selectedShift)
+    const shiftPool = isCafe ? CAFE_SHIFTS : STUDIO_SHIFTS
+    const availableShifts = shiftPool.filter(s => s.days.includes(nowDay))
+    const shift = ALL_SHIFTS.find(s => s.key === selectedShift)
 
     const lateMin = shift ? calcLateMinutes(new Date().toISOString(), shift) : 0
     const penalty = shift ? calcPenalty(lateMin, isIntern) : 0
@@ -685,9 +756,11 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
     const cam = useCamera()
 
     const isIntern = (crew as any).status_gaji === 'INTERN'
+    const isCafe = isCafeCrew(crew)
 
     // Fetch today's omset
     useEffect(() => {
+        if (isCafe) return
         const fetch = async () => {
             const day = todayISO()
             const isoStart = wibDayToISOStart(day)
@@ -703,19 +776,28 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
             setOmset({ cash, qris, total: cash + qris })
         }
         fetch()
-    }, [])
+    }, [isCafe])
 
     useEffect(() => { cam.start() }, [])
     useEffect(() => () => cam.stop(), [])
 
-    // Calculate bonus for this crew member
-    const nonInternToday = attendance.filter(a => {
+    // Cafe attendance today
+    const cafeAttToday = attendance.filter(a => {
         const c = crew_list.find(cr => cr.id === a.crew_id)
-        return (c as any)?.status_gaji !== 'INTERN'
+        return isCafeCrew(c)
+    })
+    // Rule: jika 1 hari yang absen hanya 1 orang, crew yang bertugas mendapat 100.000/hari
+    const isSoloCafe = isCafe && (cafeAttToday.length <= 1)
+    const effectiveBaseRate = isSoloCafe && att.base_rate < 100_000 ? 100_000 : att.base_rate
+
+    // Calculate bonus for studio crew member only
+    const studioNonInternToday = attendance.filter(a => {
+        const c = crew_list.find(cr => cr.id === a.crew_id)
+        return (c as any)?.status_gaji !== 'INTERN' && !isCafeCrew(c)
     }).length
 
-    const bonus = omset && !isIntern ? calcDailyBonus(omset.total, nonInternToday) : 0
-    const net = isIntern ? 0 : att.base_rate - att.penalty_amount + bonus
+    const bonus = !isCafe && omset && !isIntern ? calcDailyBonus(omset.total, studioNonInternToday) : 0
+    const net = isIntern ? 0 : effectiveBaseRate - att.penalty_amount + bonus
     const target = isWeekendDay(new Date()) ? TARGET_WEEKEND : TARGET_WEEKDAY
 
     const handleCapture = () => {
@@ -740,13 +822,18 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
             })
         }
 
+        const updatePayload: any = {
+            clock_out: photoUrl ? new Date().toISOString() : new Date().toISOString(),
+            status: 'COMPLETED',
+            bonus_amount: isIntern || isCafe ? 0 : bonus,
+            photo_out_url: photoUrl,
+        }
+        if (isSoloCafe && att.base_rate < 100_000) {
+            updatePayload.base_rate = 100_000
+        }
+
         const { error } = await (supabase.from('attendance') as any)
-            .update({
-                clock_out: photoUrl ? new Date().toISOString() : new Date().toISOString(),
-                status: 'COMPLETED',
-                bonus_amount: isIntern ? 0 : bonus,
-                photo_out_url: photoUrl,
-            })
+            .update(updatePayload)
             .eq('id', att.id)
 
         setSaving(false)
@@ -757,8 +844,8 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
         <Modal onClose={onClose}>
             <ModalHeader title={`Clock Out — ${crew.nama}`} subtitle={`Masuk: ${fmtTime(att.clock_in)} · Shift: ${att.shift_type}`} onClose={onClose} />
 
-            {/* ── Omset Recap (PRO only) ─────────────── */}
-            {!isIntern && (
+            {/* ── Omset Recap (Studio PRO only) ─────────────── */}
+            {!isIntern && !isCafe && (
                 <div style={{ background: 'var(--mera-surface-raised)', borderRadius: 'var(--mera-radius-md)', padding: '12px 14px', marginBottom: 14 }}>
                     <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--mera-text-tertiary)', marginBottom: 8 }}>
                         Rekap Omset Hari Ini
@@ -794,6 +881,37 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
                                 </p>
                             )}
                         </>
+                    )}
+                </div>
+            )}
+
+            {/* ── Cafe Méra Hause Shift Recap ─────────────── */}
+            {isCafe && (
+                <div style={{ background: 'var(--mera-surface-raised)', borderRadius: 'var(--mera-radius-md)', padding: '12px 14px', marginBottom: 14 }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--mera-text-tertiary)', marginBottom: 8 }}>
+                        Info Shift Méra Hause
+                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                        <span style={{ fontSize: 12, color: 'var(--mera-text-secondary)' }}>☕ Shift</span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{att.shift_type}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                        <span style={{ fontSize: 12, color: 'var(--mera-text-secondary)' }}>👥 Total Kru Hadir Hari Ini</span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{cafeAttToday.length} orang</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--mera-border)', paddingTop: 8, marginTop: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>Gaji Harian</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--mera-success)' }}>{fmtRp(effectiveBaseRate)}</span>
+                    </div>
+                    {isSoloCafe && (
+                        <div style={{
+                            marginTop: 10, padding: '8px 10px', borderRadius: 'var(--mera-radius-sm)',
+                            background: 'rgba(217, 119, 6, 0.1)', border: '1px solid rgba(217, 119, 6, 0.25)',
+                            color: '#d97706', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6
+                        }}>
+                            <span>⭐</span>
+                            <span>Solo Shift: Hanya 1 kru yang hadir hari ini, rate disesuaikan menjadi Rp 100.000/hari.</span>
+                        </div>
                     )}
                 </div>
             )}

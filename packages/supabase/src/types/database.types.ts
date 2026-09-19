@@ -5,7 +5,7 @@
 // =============================================================
 
 // ── Crew ──────────────────────────────────────────────────────
-export type CrewRole = 'Admin' | 'Crew' | 'Intern'
+export type CrewRole = 'Admin' | 'Crew' | 'Intern' | 'Cafe'
 export type StatusGaji = 'PRO' | 'INTERN'
 
 export interface Crew {
@@ -393,6 +393,170 @@ export interface Database {
                 Row: PhoneBoothPhoto
                 Insert: Omit<PhoneBoothPhoto, 'id' | 'created_at'>
                 Update: Partial<Omit<PhoneBoothPhoto, 'id' | 'created_at'>>
+            }
+            cafe_categories: {
+                Row: {
+                    id: string
+                    name: string
+                    icon: string | null
+                    sort_order: number
+                    is_active: boolean
+                    created_at: string
+                }
+                Insert: {
+                    id?: string
+                    name: string
+                    icon?: string | null
+                    sort_order?: number
+                    is_active?: boolean
+                    created_at?: string
+                }
+                Update: Partial<{
+                    id: string
+                    name: string
+                    icon: string | null
+                    sort_order: number
+                    is_active: boolean
+                    created_at: string
+                }>
+            }
+            cafe_products: {
+                Row: {
+                    id: string
+                    category_id: string | null
+                    code: string | null
+                    name: string
+                    description: string | null
+                    price: number
+                    cost_price: number
+                    image_url: string | null
+                    is_available: boolean
+                    sort_order: number
+                    created_at: string
+                }
+                Insert: {
+                    id?: string
+                    category_id?: string | null
+                    code?: string | null
+                    name: string
+                    description?: string | null
+                    price?: number
+                    cost_price?: number
+                    image_url?: string | null
+                    is_available?: boolean
+                    sort_order?: number
+                    created_at?: string
+                }
+                Update: Partial<{
+                    id: string
+                    category_id: string | null
+                    code: string | null
+                    name: string
+                    description: string | null
+                    price: number
+                    cost_price: number
+                    image_url: string | null
+                    is_available: boolean
+                    sort_order: number
+                    created_at: string
+                }>
+            }
+            cafe_orders: {
+                Row: {
+                    id: string
+                    order_number: string
+                    order_type: 'DINE_IN' | 'TAKEAWAY'
+                    table_number: string | null
+                    customer_name: string | null
+                    subtotal: number
+                    discount_amount: number
+                    discount_type: 'PERCENT' | 'NOMINAL' | 'NONE' | null
+                    total_amount: number
+                    payment_method: 'CASH' | 'QRIS' | 'TRANSFER' | null
+                    cash_tendered: number
+                    change_amount: number
+                    status: 'OPEN_BILL' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+                    cashier_id: string | null
+                    cashier_name: string | null
+                    notes: string | null
+                    created_at: string
+                    updated_at: string
+                }
+                Insert: {
+                    id?: string
+                    order_number: string
+                    order_type?: 'DINE_IN' | 'TAKEAWAY'
+                    table_number?: string | null
+                    customer_name?: string | null
+                    subtotal?: number
+                    discount_amount?: number
+                    discount_type?: 'PERCENT' | 'NOMINAL' | 'NONE' | null
+                    total_amount?: number
+                    payment_method?: 'CASH' | 'QRIS' | 'TRANSFER' | null
+                    cash_tendered?: number
+                    change_amount?: number
+                    status?: 'OPEN_BILL' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+                    cashier_id?: string | null
+                    cashier_name?: string | null
+                    notes?: string | null
+                    created_at?: string
+                    updated_at?: string
+                }
+                Update: Partial<{
+                    id: string
+                    order_number: string
+                    order_type: 'DINE_IN' | 'TAKEAWAY'
+                    table_number: string | null
+                    customer_name: string | null
+                    subtotal: number
+                    discount_amount: number
+                    discount_type: 'PERCENT' | 'NOMINAL' | 'NONE' | null
+                    total_amount: number
+                    payment_method: 'CASH' | 'QRIS' | 'TRANSFER' | null
+                    cash_tendered: number
+                    change_amount: number
+                    status: 'OPEN_BILL' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+                    cashier_id: string | null
+                    cashier_name: string | null
+                    notes: string | null
+                    created_at: string
+                    updated_at: string
+                }>
+            }
+            cafe_order_items: {
+                Row: {
+                    id: string
+                    order_id: string
+                    product_id: string | null
+                    product_name: string
+                    price: number
+                    quantity: number
+                    notes: string | null
+                    subtotal: number
+                    created_at: string
+                }
+                Insert: {
+                    id?: string
+                    order_id: string
+                    product_id?: string | null
+                    product_name: string
+                    price?: number
+                    quantity?: number
+                    notes?: string | null
+                    subtotal?: number
+                    created_at?: string
+                }
+                Update: Partial<{
+                    id: string
+                    order_id: string
+                    product_id: string | null
+                    product_name: string
+                    price: number
+                    quantity: number
+                    notes: string | null
+                    subtotal: number
+                    created_at: string
+                }>
             }
         }
     }
