@@ -40,6 +40,23 @@ export interface BluetoothPrinterState {
   error: string | null
 }
 
+export interface CafeRecapPrintData {
+  dateStr: string
+  printedAt: string
+  cashierName: string
+  orderCount: number
+  totalCups: number
+  omset: number
+  cashTotal: number
+  qrisTotal: number
+  transferTotal: number
+  expenseTotal: number
+  cashExpenses: number
+  netCashInDrawer: number
+  topItems?: Array<{ name: string; qty: number; revenue: number }>
+  expenses?: Array<{ keterangan: string; jumlah: number; metode_bayar: string }>
+}
+
 class BluetoothPrinterManager {
   private device: any = null
   private characteristic: any = null
@@ -314,6 +331,128 @@ class BluetoothPrinterManager {
         success: true,
         method: 'browser',
         message: 'Printer Bluetooth belum tersambung. Membuka dialog cetak struk sistem...',
+      }
+    }
+
+    return {
+      success: false,
+      method: 'none',
+      message: 'Tidak ada printer yang tersedia.',
+    }
+  }
+
+  /**
+   * Format closing financial recap text to 58mm (32 chars per line)
+   */
+  public formatRecapText(recap: CafeRecapPrintData, lineWidth = 32): string {
+    const pad = (left: string, right: string, width = lineWidth) => {
+      const spaces = Math.max(1, width - left.length - right.length)
+      return left + ' '.repeat(spaces) + right
+    }
+
+    const divider = '-'.repeat(lineWidth)
+    const doubleDivider = '='.repeat(lineWidth)
+
+    let out = ''
+    out += CMD.RESET
+    out += CMD.ALIGN_CENTER
+    out += CMD.BOLD_ON
+    out += CMD.TEXT_DOUBLE_HEIGHT
+    out += 'MERA HAUSE\n'
+    out += CMD.TEXT_NORMAL
+    out += CMD.BOLD_OFF
+    out += 'LAPORAN CLOSING KEUANGAN\n'
+    out += doubleDivider + '\n'
+
+    out += CMD.ALIGN_LEFT
+    out += `Tanggal : ${recap.dateStr}\n`
+    out += `Waktu   : ${recap.printedAt}\n`
+    out += `Kasir   : ${recap.cashierName}\n`
+    out += divider + '\n'
+
+    out += CMD.BOLD_ON
+    out += 'RINGKASAN PENJUALAN\n'
+    out += CMD.BOLD_OFF
+    out += pad('Total Pesanan:', `${recap.orderCount} trx`) + '\n'
+    out += pad('Total Cup:', `${recap.totalCups} cup`) + '\n'
+    out += divider + '\n'
+
+    out += pad('Omset Tunai:', `Rp ${recap.cashTotal.toLocaleString('id-ID')}`) + '\n'
+    out += pad('Omset Non-Tunai:', `Rp ${(recap.qrisTotal + recap.transferTotal).toLocaleString('id-ID')}`) + '\n'
+    out += CMD.BOLD_ON
+    out += pad('TOTAL OMSET:', `Rp ${recap.omset.toLocaleString('id-ID')}`) + '\n'
+    out += CMD.BOLD_OFF
+    out += divider + '\n'
+
+    out += CMD.BOLD_ON
+    out += 'KAS LACI (CASH DRAWER)\n'
+    out += CMD.BOLD_OFF
+    out += pad('Kas Masuk (Tunai):', `Rp ${recap.cashTotal.toLocaleString('id-ID')}`) + '\n'
+    out += pad('Pengeluaran Kas:', `-Rp ${recap.cashExpenses.toLocaleString('id-ID')}`) + '\n'
+    out += CMD.BOLD_ON
+    out += pad('FISIK LACI BERSIH:', `Rp ${recap.netCashInDrawer.toLocaleString('id-ID')}`) + '\n'
+    out += CMD.BOLD_OFF
+    out += divider + '\n'
+
+    if (recap.topItems && recap.topItems.length > 0) {
+      out += CMD.BOLD_ON
+      out += 'MENU TERJUAL (TOP)\n'
+      out += CMD.BOLD_OFF
+      for (const item of recap.topItems.slice(0, 10)) {
+        out += `${item.name}\n`
+        out += pad(`  ${item.qty} cup`, `Rp ${item.revenue.toLocaleString('id-ID')}`) + '\n'
+      }
+      out += divider + '\n'
+    }
+
+    if (recap.expenses && recap.expenses.length > 0) {
+      out += CMD.BOLD_ON
+      out += 'RINCIAN BELANJA KASIR\n'
+      out += CMD.BOLD_OFF
+      for (const exp of recap.expenses) {
+        out += `${exp.keterangan}\n`
+        out += pad(`  [${exp.metode_bayar}]`, `-Rp ${exp.jumlah.toLocaleString('id-ID')}`) + '\n'
+      }
+      out += divider + '\n'
+    }
+
+    out += CMD.ALIGN_CENTER
+    out += '\n\nTtd Kasir           Ttd SPV/Owner\n\n\n'
+    out += '(.............)     (.............)\n'
+    out += CMD.FEED_4
+    out += CMD.CUT_PAPER
+
+    return out
+  }
+
+  /**
+   * Print closing financial recap
+   */
+  public async printRecap(recap: CafeRecapPrintData): Promise<{ success: boolean; method: 'bluetooth' | 'browser' | 'none'; message: string }> {
+    if (this.state.isConnected && this.characteristic) {
+      try {
+        const text = this.formatRecapText(recap)
+        const encoder = new TextEncoder()
+        const bytes = encoder.encode(text)
+        await this.writeRawBytes(bytes)
+        return {
+          success: true,
+          method: 'bluetooth',
+          message: `Laporan closing berhasil dicetak ke Bluetooth (${this.state.deviceName})!`,
+        }
+      } catch (err: any) {
+        console.error('Bluetooth recap print failed, falling back to browser print:', err)
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        window.print()
+      }, 200)
+      return {
+        success: true,
+        method: 'browser',
+        message: 'Membuka dialog cetak laporan sistem...',
       }
     }
 

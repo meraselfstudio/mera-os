@@ -24,6 +24,10 @@ import {
   Tag,
   Wallet,
   Lock,
+  Calendar,
+  Send,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { supabase } from '@mera/supabase'
 import type {
@@ -36,9 +40,10 @@ import type {
   CafePaymentMethod,
 } from './types'
 import { DEFAULT_CAFE_CATEGORIES, DEFAULT_CAFE_PRODUCTS } from './defaultMenu'
-import { bluetoothPrinter, type BluetoothPrinterState } from './bluetoothPrinter'
+import { bluetoothPrinter, type BluetoothPrinterState, type CafeRecapPrintData } from './bluetoothPrinter'
 import { CafeCheckoutModal } from './CafeCheckoutModal'
 import { CafeReceipt } from './CafeReceipt'
+import { CafeClosingReceipt } from './CafeClosingReceipt'
 
 export interface CafeExpense {
   id: string
@@ -60,6 +65,22 @@ interface CafePosViewProps {
 
 type CafeSubTab = 'kasir' | 'open_bills' | 'history' | 'expenses' | 'recap'
 
+export function getWibDate(date = new Date()): string {
+  const wib = new Date(date.getTime() + 7 * 60 * 60 * 1000)
+  return wib.toISOString().slice(0, 10)
+}
+
+export function toWibDateKey(isoStr?: string | null): string {
+  if (!isoStr) return ''
+  try {
+    const d = new Date(isoStr)
+    const wib = new Date(d.getTime() + 7 * 60 * 60 * 1000)
+    return wib.toISOString().slice(0, 10)
+  } catch {
+    return (isoStr || '').slice(0, 10)
+  }
+}
+
 export const CafePosView: React.FC<CafePosViewProps> = ({
   cashierName = 'Kasir Méra Hause',
   cashierId,
@@ -69,6 +90,10 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
 }) => {
   // Navigation & Sub-tabs
   const [activeTab, setActiveTab] = useState<CafeSubTab>('kasir')
+
+  // Date Selection for Finance Recap (Defaults to today in WIB)
+  const [selectedRecapDate, setSelectedRecapDate] = useState<string>(() => getWibDate())
+  const [closingReceiptModal, setClosingReceiptModal] = useState<CafeRecapPrintData | null>(null)
 
   // Categories & Products
   const [categories, setCategories] = useState<CafeCategory[]>(DEFAULT_CAFE_CATEGORIES)
@@ -474,7 +499,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
     }
 
     setExpenseSubmitting(true)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = getWibDate()
     const newExp: CafeExpense = {
       id: 'exp_' + Date.now(),
       tanggal: today,
@@ -587,57 +612,113 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
     return orders.filter((o) => o.status === 'PAID')
   }, [orders])
 
-  // Today Expenses Memos
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  // WIB Date Constants
+  const todayWibDate = useMemo(() => getWibDate(), [])
+  const yesterdayWibDate = useMemo(() => {
+    const y = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    return getWibDate(y)
+  }, [])
 
+  // Today Expenses Memos (For Expenses Tab)
   const todayExpenses = useMemo(() => {
-    return expenses.filter((e) => e.tanggal === todayStr)
-  }, [expenses, todayStr])
+    return expenses.filter(
+      (e) => (e.tanggal ? e.tanggal.slice(0, 10) : toWibDateKey(e.created_at)) === todayWibDate
+    )
+  }, [expenses, todayWibDate])
 
   const totalExpensesToday = useMemo(() => {
     return todayExpenses.reduce((sum, e) => sum + e.jumlah, 0)
   }, [todayExpenses])
 
   const cashExpensesToday = useMemo(() => {
-    return todayExpenses.filter((e) => (e.metode_bayar ?? 'CASH') === 'CASH').reduce((sum, e) => sum + e.jumlah, 0)
+    return todayExpenses
+      .filter((e) => (e.metode_bayar ?? 'CASH') === 'CASH')
+      .reduce((sum, e) => sum + e.jumlah, 0)
   }, [todayExpenses])
 
   const qrisExpensesToday = useMemo(() => {
-    return todayExpenses.filter((e) => e.metode_bayar === 'QRIS').reduce((sum, e) => sum + e.jumlah, 0)
+    return todayExpenses
+      .filter((e) => e.metode_bayar === 'QRIS')
+      .reduce((sum, e) => sum + e.jumlah, 0)
   }, [todayExpenses])
 
-  // Today's Cafe Recap
-  const todayRecap = useMemo(() => {
-    const todays = paidOrders.filter((o) => o.created_at.slice(0, 10) === todayStr)
+  // Selected Date Filtered Data (For Finance Recap Tab)
+  const selectedDateOrders = useMemo(() => {
+    return paidOrders.filter((o) => toWibDateKey(o.created_at) === selectedRecapDate)
+  }, [paidOrders, selectedRecapDate])
 
-    const omset = todays.reduce((sum, o) => sum + o.total_amount, 0)
-    const cashTotal = todays
+  const selectedDateExpenses = useMemo(() => {
+    return expenses.filter(
+      (e) => (e.tanggal ? e.tanggal.slice(0, 10) : toWibDateKey(e.created_at)) === selectedRecapDate
+    )
+  }, [expenses, selectedRecapDate])
+
+  const totalSelectedExpenses = useMemo(() => {
+    return selectedDateExpenses.reduce((sum, e) => sum + e.jumlah, 0)
+  }, [selectedDateExpenses])
+
+  const cashSelectedExpenses = useMemo(() => {
+    return selectedDateExpenses
+      .filter((e) => (e.metode_bayar ?? 'CASH') === 'CASH')
+      .reduce((sum, e) => sum + e.jumlah, 0)
+  }, [selectedDateExpenses])
+
+  const qrisSelectedExpenses = useMemo(() => {
+    return selectedDateExpenses
+      .filter((e) => e.metode_bayar === 'QRIS')
+      .reduce((sum, e) => sum + e.jumlah, 0)
+  }, [selectedDateExpenses])
+
+  // Comprehensive Finance Recap for Selected Date
+  const dateRecap = useMemo(() => {
+    const orders = selectedDateOrders
+    const omset = orders.reduce((sum, o) => sum + o.total_amount, 0)
+    const cashTotal = orders
       .filter((o) => o.payment_method === 'CASH')
       .reduce((sum, o) => sum + o.total_amount, 0)
-    const qrisTotal = todays
+    const qrisTotal = orders
       .filter((o) => o.payment_method === 'QRIS')
       .reduce((sum, o) => sum + o.total_amount, 0)
-    const transferTotal = todays
+    const transferTotal = orders
       .filter((o) => o.payment_method === 'TRANSFER')
       .reduce((sum, o) => sum + o.total_amount, 0)
 
     let totalCups = 0
     let totalHpp = 0
 
-    todays.forEach((o) => {
+    const itemMap = new Map<string, { name: string; qty: number; revenue: number }>()
+    const cashierMap = new Map<string, { cashier: string; count: number; total: number }>()
+
+    orders.forEach((o) => {
+      // Cashier breakdown
+      const cName = o.cashier_name || 'Kasir Méra Hause'
+      const curCashier = cashierMap.get(cName) ?? { cashier: cName, count: 0, total: 0 }
+      curCashier.count += 1
+      curCashier.total += o.total_amount
+      cashierMap.set(cName, curCashier)
+
+      // Item breakdown
       o.items?.forEach((it) => {
         totalCups += it.quantity
         const prod = products.find((p) => p.id === it.product_id)
         if (prod?.cost_price) {
           totalHpp += prod.cost_price * it.quantity
         }
+
+        const curItem = itemMap.get(it.product_name) ?? { name: it.product_name, qty: 0, revenue: 0 }
+        curItem.qty += it.quantity
+        curItem.revenue += it.subtotal
+        itemMap.set(it.product_name, curItem)
       })
     })
 
+    const topItems = [...itemMap.values()].sort((a, b) => b.qty - a.qty)
+    const cashierRows = [...cashierMap.values()].sort((a, b) => b.total - a.total)
     const grossProfit = omset - totalHpp
+    const netCashInDrawer = Math.max(0, cashTotal - cashSelectedExpenses)
 
     return {
-      orderCount: todays.length,
+      orderCount: orders.length,
       omset,
       cashTotal,
       qrisTotal,
@@ -645,8 +726,119 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
       totalCups,
       totalHpp,
       grossProfit,
+      netCashInDrawer,
+      topItems,
+      cashierRows,
     }
-  }, [paidOrders, products, todayStr])
+  }, [selectedDateOrders, products, cashSelectedExpenses])
+
+  // Formatted data for thermal Bluetooth / Browser closing receipt
+  const recapPrintData: CafeRecapPrintData = useMemo(() => {
+    return {
+      dateStr: new Date(selectedRecapDate + 'T00:00:00').toLocaleDateString('id-ID', { dateStyle: 'full' }),
+      printedAt: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      cashierName,
+      orderCount: dateRecap.orderCount,
+      totalCups: dateRecap.totalCups,
+      omset: dateRecap.omset,
+      cashTotal: dateRecap.cashTotal,
+      qrisTotal: dateRecap.qrisTotal,
+      transferTotal: dateRecap.transferTotal,
+      expenseTotal: totalSelectedExpenses,
+      cashExpenses: cashSelectedExpenses,
+      netCashInDrawer: dateRecap.netCashInDrawer,
+      topItems: dateRecap.topItems,
+      expenses: selectedDateExpenses.map((e) => ({
+        keterangan: e.keterangan,
+        jumlah: e.jumlah,
+        metode_bayar: e.metode_bayar ?? 'CASH',
+      })),
+    }
+  }, [
+    selectedRecapDate,
+    cashierName,
+    dateRecap,
+    totalSelectedExpenses,
+    cashSelectedExpenses,
+    selectedDateExpenses,
+  ])
+
+  // Generator WhatsApp Closing Report
+  const generateWhatsAppText = () => {
+    const formattedDate = new Date(selectedRecapDate + 'T00:00:00').toLocaleDateString('id-ID', {
+      dateStyle: 'full',
+    })
+    let msg = `*LAPORAN CLOSING KEUANGAN MÉRA HAUSE* ☕\n`
+    msg += `📅 Tanggal: ${formattedDate}\n`
+    msg += `🕒 Waktu Closing: ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB\n`
+    msg += `👤 Petugas Kasir: ${cashierName}\n`
+    msg += `------------------------------------\n\n`
+    msg += `📊 *RINGKASAN PENJUALAN*\n`
+    msg += `• Total Pesanan: ${dateRecap.orderCount} transaksi\n`
+    msg += `• Total Terjual: ${dateRecap.totalCups} cup\n`
+    msg += `• Tunai (Cash): Rp ${dateRecap.cashTotal.toLocaleString('id-ID')}\n`
+    msg += `• Non-Tunai (QRIS/TF): Rp ${(dateRecap.qrisTotal + dateRecap.transferTotal).toLocaleString('id-ID')}\n`
+    msg += `*TOTAL OMSET: Rp ${dateRecap.omset.toLocaleString('id-ID')}*\n\n`
+
+    msg += `💸 *PENGELUARAN / BELANJA OPERASIONAL*\n`
+    if (selectedDateExpenses.length === 0) {
+      msg += `• Tidak ada pengeluaran\n`
+    } else {
+      selectedDateExpenses.forEach((exp) => {
+        msg += `• ${exp.keterangan} [${exp.metode_bayar}]: -Rp ${exp.jumlah.toLocaleString('id-ID')}\n`
+      })
+      msg += `_Total Pengeluaran Kas Laci: -Rp ${cashSelectedExpenses.toLocaleString('id-ID')}_\n`
+    }
+    msg += `\n`
+
+    msg += `💵 *KAS FISIK LACI (WAJIB COCOK DENGAN UANG LACI)*\n`
+    msg += `*Rp ${dateRecap.netCashInDrawer.toLocaleString('id-ID')}*\n`
+    msg += `(Omset Tunai Rp ${dateRecap.cashTotal.toLocaleString('id-ID')} - Belanja Tunai Rp ${cashSelectedExpenses.toLocaleString('id-ID')})\n\n`
+
+    if (dateRecap.topItems.length > 0) {
+      msg += `🏆 *MENU TERLARIS:*\n`
+      dateRecap.topItems.slice(0, 5).forEach((item, i) => {
+        msg += `${i + 1}. ${item.name} (${item.qty} cup)\n`
+      })
+      msg += `\n`
+    }
+
+    if (dateRecap.cashierRows.length > 1) {
+      msg += `👥 *PERFORMA KASIR:*\n`
+      dateRecap.cashierRows.forEach((row) => {
+        msg += `• ${row.cashier}: ${row.count} trx (Rp ${row.total.toLocaleString('id-ID')})\n`
+      })
+      msg += `\n`
+    }
+
+    msg += `_Laporan dibuat otomatis dari Sistem POS Méra Hause (FreeKasir)_`
+    return msg
+  }
+
+  const handleShareWhatsApp = () => {
+    const text = generateWhatsAppText()
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
+  }
+
+  const handleCopyWhatsApp = () => {
+    const text = generateWhatsAppText()
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text)
+      showToast('Teks rekap berhasil disalin! Siap dikirim ke WhatsApp Owner')
+    } else {
+      showToast('Berhasil membuat rekap!')
+    }
+  }
+
+  const handleOpenPrintModal = () => {
+    setClosingReceiptModal(recapPrintData)
+  }
+
+  const handlePrintClosingSlip = async () => {
+    setClosingReceiptModal(recapPrintData)
+    const res = await bluetoothPrinter.printRecap(recapPrintData)
+    showToast(res.message)
+  }
 
   return (
     <div
@@ -2142,25 +2334,194 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
         )}
 
         {/* ─── Sub-Tab: Recap Harian ────────────────────────── */}
+        {/* ─── Sub-Tab: Recap Harian & Laporan Keuangan ─────── */}
         {activeTab === 'recap' && (
           <div style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
-            <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-              <div style={{ marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
-                  Rekap Penjualan & Keuangan Méra Hause
-                </h3>
-                <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', margin: '4px 0 0' }}>
-                  Ringkasan omset, pengeluaran harian, dan kas laci hari ini ({new Date().toLocaleDateString('id-ID', { dateStyle: 'full' })})
-                </p>
+            <div style={{ maxWidth: '860px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Header & Actions Bar */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  flexWrap: 'wrap',
+                  gap: '14px',
+                  paddingBottom: '16px',
+                  borderBottom: '1px solid rgba(255,255,255,0.08)',
+                }}
+              >
+                <div>
+                  <h3 style={{ fontSize: '20px', fontWeight: 800, margin: 0, color: '#fff' }}>
+                    Laporan Keuangan & Rekap Closing
+                  </h3>
+                  <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)', margin: '4px 0 0' }}>
+                    Ringkasan omset penjualan, rekonsiliasi kas laci kasir, dan performa menu
+                  </p>
+                </div>
+
+                {/* Quick Actions (Print & Share WA) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={handleCopyWhatsApp}
+                    title="Salin Format Rekap WhatsApp"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      background: 'rgba(255,255,255,0.05)',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Copy size={14} /> Salin WA
+                  </button>
+
+                  <button
+                    onClick={handleShareWhatsApp}
+                    title="Kirim Laporan Closing ke WhatsApp"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: '#25D366',
+                      color: '#000',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Send size={14} /> Kirim WA
+                  </button>
+
+                  <button
+                    onClick={handleOpenPrintModal}
+                    title="Cetak Struk Rekap Closing (Bluetooth / Thermal)"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: '#622128',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(98, 33, 40, 0.4)',
+                    }}
+                  >
+                    <Printer size={14} /> Cetak Struk Closing
+                  </button>
+                </div>
+              </div>
+
+              {/* Date Filter Bar */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: '12px',
+                  padding: '12px 16px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Calendar size={16} color="#E0B88A" />
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>
+                    Periode:
+                  </span>
+                  <span style={{ fontSize: '13px', color: '#E0B88A', fontWeight: 700 }}>
+                    {new Date(selectedRecapDate + 'T00:00:00').toLocaleDateString('id-ID', {
+                      dateStyle: 'full',
+                    })}
+                  </span>
+                  {selectedRecapDate === todayWibDate && (
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        background: 'rgba(34, 197, 94, 0.15)',
+                        color: '#4ade80',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      HARI INI
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    onClick={() => setSelectedRecapDate(todayWibDate)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: selectedRecapDate === todayWibDate ? '#622128' : 'rgba(255,255,255,0.06)',
+                      color: selectedRecapDate === todayWibDate ? '#fff' : 'rgba(255,255,255,0.7)',
+                    }}
+                  >
+                    Hari Ini
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedRecapDate(yesterdayWibDate)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: selectedRecapDate === yesterdayWibDate ? '#622128' : 'rgba(255,255,255,0.06)',
+                      color: selectedRecapDate === yesterdayWibDate ? '#fff' : 'rgba(255,255,255,0.7)',
+                    }}
+                  >
+                    Kemarin
+                  </button>
+
+                  <input
+                    type="date"
+                    value={selectedRecapDate}
+                    onChange={(e) => {
+                      if (e.target.value) setSelectedRecapDate(e.target.value)
+                    }}
+                    style={{
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      padding: '5px 10px',
+                      fontSize: '12px',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
               </div>
 
               {/* KPI Cards Grid */}
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
                   gap: '12px',
-                  marginBottom: '20px',
                 }}
               >
                 <div
@@ -2175,10 +2536,10 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                     TOTAL OMSET PENJUALAN
                   </div>
                   <div style={{ fontSize: '24px', fontWeight: 800, color: '#fff', marginTop: '6px' }}>
-                    Rp {todayRecap.omset.toLocaleString('id-ID')}
+                    Rp {dateRecap.omset.toLocaleString('id-ID')}
                   </div>
                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-                    {todayRecap.orderCount} transaksi sukses
+                    {dateRecap.orderCount} transaksi sukses
                   </div>
                 </div>
 
@@ -2190,21 +2551,34 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                     padding: '16px',
                   }}
                 >
-                  <div style={{ fontSize: '11px', color: totalExpensesToday > 0 ? '#C89696' : 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
-                    PENGELUARAN HARI INI
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: totalSelectedExpenses > 0 ? '#C89696' : 'rgba(255,255,255,0.5)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    TOTAL PENGELUARAN
                   </div>
-                  <div style={{ fontSize: '24px', fontWeight: 800, color: totalExpensesToday > 0 ? '#C89696' : '#fff', marginTop: '6px' }}>
-                    -Rp {totalExpensesToday.toLocaleString('id-ID')}
+                  <div
+                    style={{
+                      fontSize: '24px',
+                      fontWeight: 800,
+                      color: totalSelectedExpenses > 0 ? '#C89696' : '#fff',
+                      marginTop: '6px',
+                    }}
+                  >
+                    -Rp {totalSelectedExpenses.toLocaleString('id-ID')}
                   </div>
                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-                    {todayExpenses.length} belanja operasional
+                    {selectedDateExpenses.length} belanja operasional
                   </div>
                 </div>
 
                 <div
                   style={{
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    background: 'rgba(34, 197, 94, 0.08)',
+                    border: '1px solid rgba(34, 197, 94, 0.25)',
                     borderRadius: '12px',
                     padding: '16px',
                   }}
@@ -2213,10 +2587,10 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                     KAS LACI BERSIH (TUNAI FISIK)
                   </div>
                   <div style={{ fontSize: '24px', fontWeight: 800, color: '#4ade80', marginTop: '6px' }}>
-                    Rp {Math.max(0, todayRecap.cashTotal - cashExpensesToday).toLocaleString('id-ID')}
+                    Rp {dateRecap.netCashInDrawer.toLocaleString('id-ID')}
                   </div>
                   <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-                    Tunai Masuk ({todayRecap.cashTotal.toLocaleString('id-ID')}) − Keluar ({cashExpensesToday.toLocaleString('id-ID')})
+                    Tunai Masuk ({dateRecap.cashTotal.toLocaleString('id-ID')}) − Belanja ({cashSelectedExpenses.toLocaleString('id-ID')})
                   </div>
                 </div>
 
@@ -2232,28 +2606,246 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                     TOTAL CUP TERJUAL
                   </div>
                   <div style={{ fontSize: '24px', fontWeight: 800, color: '#fff', marginTop: '6px' }}>
-                    {todayRecap.totalCups} <span style={{ fontSize: '14px', fontWeight: 500 }}>cup</span>
+                    {dateRecap.totalCups} <span style={{ fontSize: '14px', fontWeight: 500 }}>cup</span>
                   </div>
                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-                    {todayRecap.orderCount} pesanan
+                    {dateRecap.orderCount} pesanan selesai
+                  </div>
+                </div>
+              </div>
+
+              {/* Cash Register Reconciliation Highlight */}
+              <div
+                style={{
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', marginBottom: '10px' }}>
+                  💵 Rekonsiliasi Kas Laci (Serah Terima Shift)
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: '12px',
+                    background: 'rgba(0,0,0,0.25)',
+                    padding: '12px',
+                    borderRadius: '10px',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)' }}>Omset Tunai Masuk (+)</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff', marginTop: '3px' }}>
+                      Rp {dateRecap.cashTotal.toLocaleString('id-ID')}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)' }}>Pengeluaran Kas Laci (−)</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: '#C89696', marginTop: '3px' }}>
+                      -Rp {cashSelectedExpenses.toLocaleString('id-ID')}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#4ade80', fontWeight: 700 }}>Uang Fisik Wajib di Laci (=)</div>
+                    <div style={{ fontSize: '18px', fontWeight: 800, color: '#4ade80', marginTop: '3px' }}>
+                      Rp {dateRecap.netCashInDrawer.toLocaleString('id-ID')}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Breakdown Payment Methods */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px' }}>
                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>OMSET TUNAI (CASH MASUK)</div>
                   <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginTop: '4px' }}>
-                    Rp {todayRecap.cashTotal.toLocaleString('id-ID')}
+                    Rp {dateRecap.cashTotal.toLocaleString('id-ID')}
                   </div>
                 </div>
                 <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px' }}>
                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>OMSET NON-TUNAI (QRIS / TRANSFER)</div>
                   <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginTop: '4px' }}>
-                    Rp {(todayRecap.qrisTotal + todayRecap.transferTotal).toLocaleString('id-ID')}
+                    Rp {(dateRecap.qrisTotal + dateRecap.transferTotal).toLocaleString('id-ID')}
                   </div>
                 </div>
+              </div>
+
+              {/* 2-Column: Menu Terlaris & Performa Kasir */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '14px' }}>
+                {/* Top Selling Products */}
+                <div
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>🏆 Menu Terlaris</span>
+                    <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', fontWeight: 400 }}>
+                      {dateRecap.topItems.length} jenis item
+                    </span>
+                  </div>
+
+                  {dateRecap.topItems.length === 0 ? (
+                    <div style={{ padding: '24px 0', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
+                      Belum ada penjualan menu pada tanggal ini.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {dateRecap.topItems.slice(0, 8).map((item, idx) => (
+                        <div
+                          key={item.name}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            background: 'rgba(255,255,255,0.02)',
+                            fontSize: '12px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span
+                              style={{
+                                width: '20px',
+                                height: '20px',
+                                borderRadius: '50%',
+                                background: idx === 0 ? '#E0B88A' : idx === 1 ? '#C89696' : 'rgba(255,255,255,0.1)',
+                                color: idx <= 1 ? '#000' : '#fff',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '10px',
+                                fontWeight: 800,
+                              }}
+                            >
+                              {idx + 1}
+                            </span>
+                            <span style={{ fontWeight: 600, color: '#fff' }}>{item.name}</span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>
+                              {item.qty} cup
+                            </span>
+                            <span style={{ color: '#E0B88A', fontWeight: 700 }}>
+                              Rp {item.revenue.toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Cashier / Shift Breakdown */}
+                <div
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', marginBottom: '12px' }}>
+                    👥 Performa Kasir / Shift
+                  </div>
+
+                  {dateRecap.cashierRows.length === 0 ? (
+                    <div style={{ padding: '24px 0', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
+                      Belum ada data kasir.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {dateRecap.cashierRows.map((row) => (
+                        <div
+                          key={row.cashier}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            background: 'rgba(255,255,255,0.02)',
+                            fontSize: '12px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 700, color: '#fff' }}>{row.cashier}</span>
+                            <span style={{ color: '#E0B88A', fontWeight: 700 }}>
+                              Rp {row.total.toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                            {row.count} transaksi diselesaikan
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Expense List for Selected Date */}
+              <div
+                style={{
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>🛒 Rincian Pengeluaran ({selectedDateExpenses.length} transaksi)</span>
+                  <span style={{ fontSize: '12px', color: '#E0B88A', fontWeight: 700 }}>
+                    Total: -Rp {totalSelectedExpenses.toLocaleString('id-ID')}
+                  </span>
+                </div>
+
+                {selectedDateExpenses.length === 0 ? (
+                  <div style={{ padding: '16px', textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: '12px' }}>
+                    Tidak ada catatan pengeluaran pada tanggal ini.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: '6px' }}>
+                    {selectedDateExpenses.map((exp) => (
+                      <div
+                        key={exp.id}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(255,255,255,0.02)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          fontSize: '12px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 600, color: '#fff' }}>{exp.keterangan}</span>
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: exp.metode_bayar === 'CASH' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                              color: exp.metode_bayar === 'CASH' ? '#4ade80' : '#38bdf8',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {exp.metode_bayar === 'CASH' ? 'KAS LACI' : 'NON-TUNAI'}
+                          </span>
+                        </div>
+                        <span style={{ color: '#E0B88A', fontWeight: 700 }}>
+                          -Rp {exp.jumlah.toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Owner Profit Insight */}
@@ -2274,11 +2866,11 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                       Estimasi Gross Margin / Laba Kotor (Owner Insight)
                     </div>
                     <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-                      Total HPP Bahan Terpakai: Rp {todayRecap.totalHpp.toLocaleString('id-ID')}
+                      Total HPP Bahan Terpakai: Rp {dateRecap.totalHpp.toLocaleString('id-ID')}
                     </div>
                   </div>
                   <div style={{ fontSize: '22px', fontWeight: 800, color: '#4ade80' }}>
-                    Rp {todayRecap.grossProfit.toLocaleString('id-ID')}
+                    Rp {dateRecap.grossProfit.toLocaleString('id-ID')}
                   </div>
                 </div>
               )}
@@ -2297,6 +2889,98 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
             handleCompletePayment(completed)
           }}
         />
+      )}
+
+      {/* Closing Receipt Modal */}
+      {closingReceiptModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              background: '#161618',
+              borderRadius: '16px',
+              padding: '24px',
+              maxWidth: '380px',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#fff' }}>
+                Struk Closing Kasir
+              </h3>
+              <button
+                onClick={() => setClosingReceiptModal(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'rgba(255,255,255,0.5)',
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <CafeClosingReceipt recap={closingReceiptModal} />
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setClosingReceiptModal(null)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'transparent',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '12px',
+                }}
+              >
+                Tutup
+              </button>
+              <button
+                onClick={handlePrintClosingSlip}
+                style={{
+                  flex: 1.5,
+                  padding: '10px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#622128',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 12px rgba(98, 33, 40, 0.4)',
+                }}
+              >
+                <Printer size={15} /> Cetak Struk Closing
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Reprint Receipt Modal */}
