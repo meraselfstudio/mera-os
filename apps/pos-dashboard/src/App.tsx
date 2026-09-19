@@ -301,7 +301,16 @@ export default function App() {
   // Initial fetch of active crews so crewList is populated for role/login checks
   useEffect(() => {
     supabase.from('crew').select('*').eq('is_active', true).order('nama').then(({ data }) => {
-      if (data) setCrewList(data as Crew[])
+      if (data) {
+        const seen = new Set<string>()
+        const unique = (data as Crew[]).filter(c => {
+          const key = c.nama.trim().toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        setCrewList(unique)
+      }
     })
   }, [])
 
@@ -347,7 +356,14 @@ export default function App() {
     setMonthTx((txD ?? []) as Transaction[])
     setMonthExp((expD ?? []) as Expense[])
     setMonthAtt((attD ?? []) as Attendance[])
-    setCrewList((crewD ?? []) as Crew[])
+    const seenCrew = new Set<string>()
+    const uniqueCrews = ((crewD ?? []) as Crew[]).filter(c => {
+      const key = c.nama.trim().toLowerCase()
+      if (seenCrew.has(key)) return false
+      seenCrew.add(key)
+      return true
+    })
+    setCrewList(uniqueCrews)
     setMonthLoading(false)
     setMonthLoaded(true)
   }, [])

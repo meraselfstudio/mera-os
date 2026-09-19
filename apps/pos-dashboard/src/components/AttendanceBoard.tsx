@@ -314,8 +314,8 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
         const day = todayISO()
         const isoStart = wibDayToISOStart(day)
         const isoEnd = wibDayToISOEnd(day)
-        let [{ data: crewData }, { data: attData }] = await Promise.all([
-            (supabase.from('crew') as any).select('*').order('nama'),
+        const [{ data: crewData }, { data: attData }] = await Promise.all([
+            (supabase.from('crew') as any).select('*').eq('is_active', true).order('nama'),
             (supabase.from('attendance') as any)
                 .select('*')
                 .gte('clock_in', isoStart)
@@ -323,23 +323,18 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                 .order('clock_in', { ascending: false }),
         ])
 
-        // Auto-seed Nona & Rara if not yet present in crew list
-        const existingList = (crewData ?? []) as Crew[]
-        const hasNona = existingList.some(c => c.nama.toLowerCase() === 'nona')
-        const hasRara = existingList.some(c => c.nama.toLowerCase() === 'rara')
-        if (!hasNona || !hasRara) {
-            const toInsert = []
-            if (!hasNona) toInsert.push({ nama: 'Nona', role: 'Méra Hause', status_gaji: 'PRO', is_active: true })
-            if (!hasRara) toInsert.push({ nama: 'Rara', role: 'Méra Hause', status_gaji: 'PRO', is_active: true })
-            if (toInsert.length > 0) {
-                const { data: insData } = await (supabase.from('crew') as any).insert(toInsert).select()
-                if (insData && insData.length > 0) {
-                    crewData = [...existingList, ...insData]
-                }
+        // Deduplicate crew by lowercase name to ensure clean UI
+        const seenNames = new Set<string>()
+        const uniqueCrew: Crew[] = []
+        for (const c of (crewData ?? []) as Crew[]) {
+            const key = c.nama.trim().toLowerCase()
+            if (!seenNames.has(key)) {
+                seenNames.add(key)
+                uniqueCrew.push(c)
             }
         }
 
-        setCrew((crewData ?? []) as Crew[])
+        setCrew(uniqueCrew)
         setAttendance((attData ?? []) as Attendance[])
         setLoading(false)
     }, [])
