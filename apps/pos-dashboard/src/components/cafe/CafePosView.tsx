@@ -22,6 +22,8 @@ import {
   FileText,
   AlertCircle,
   Tag,
+  Wallet,
+  Lock,
 } from 'lucide-react'
 import { supabase } from '@mera/supabase'
 import type {
@@ -38,6 +40,16 @@ import { bluetoothPrinter, type BluetoothPrinterState } from './bluetoothPrinter
 import { CafeCheckoutModal } from './CafeCheckoutModal'
 import { CafeReceipt } from './CafeReceipt'
 
+export interface CafeExpense {
+  id: string
+  tanggal: string
+  keterangan: string
+  kategori: string
+  jumlah: number
+  metode_bayar: 'CASH' | 'QRIS'
+  created_at: string
+}
+
 interface CafePosViewProps {
   cashierName?: string
   cashierId?: string
@@ -46,7 +58,7 @@ interface CafePosViewProps {
   onLogout?: () => void
 }
 
-type CafeSubTab = 'kasir' | 'open_bills' | 'history' | 'recap'
+type CafeSubTab = 'kasir' | 'open_bills' | 'history' | 'expenses' | 'recap'
 
 export const CafePosView: React.FC<CafePosViewProps> = ({
   cashierName = 'Kasir Méra Hause',
@@ -89,6 +101,28 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
     return []
   })
 
+  // Expenses State (Stored in Supabase + local cache fallback)
+  const [expenses, setExpenses] = useState<CafeExpense[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('mera_cafe_expenses_cache')
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch {
+          // ignore
+        }
+      }
+    }
+    return []
+  })
+
+  // Expense Form State
+  const [expenseKeterangan, setExpenseKeterangan] = useState<string>('')
+  const [expenseJumlah, setExpenseJumlah] = useState<string>('')
+  const [expenseKategori, setExpenseKategori] = useState<string>('Cafe: Bahan Baku')
+  const [expenseMetode, setExpenseMetode] = useState<'CASH' | 'QRIS'>('CASH')
+  const [expenseSubmitting, setExpenseSubmitting] = useState<boolean>(false)
+
   // Modals & UI States
   const [checkoutOrder, setCheckoutOrder] = useState<CafeOrder | null>(null)
   const [reprintOrder, setReprintOrder] = useState<CafeOrder | null>(null)
@@ -115,21 +149,30 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
     }
   }, [orders])
 
-  // Try fetching products & orders from Supabase if table exists
+  // Save expenses to local cache whenever updated
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('mera_cafe_expenses_cache', JSON.stringify(expenses))
+    }
+  }, [expenses])
+
+  // Try fetching products, orders & expenses from Supabase
   useEffect(() => {
     const fetchSupabaseData = async () => {
       try {
-        const [{ data: catData }, { data: prodData }, { data: ordData }] = await Promise.all([
+        const [{ data: catData }, { data: prodData }, { data: ordData }, { data: expData }] = await Promise.all([
           supabase.from('cafe_categories').select('*').order('sort_order'),
           supabase.from('cafe_products').select('*').order('sort_order'),
           supabase.from('cafe_orders').select('*, items:cafe_order_items(*)').order('created_at', { ascending: false }).limit(100),
+          supabase.from('expenses').select('*').or(`kategori.ilike.Cafe%,keterangan.ilike.%[Méra Hause]%,keterangan.ilike.%[Nona]%,keterangan.ilike.%[Rara]%`).order('tanggal', { ascending: false }).order('created_at', { ascending: false }).limit(100),
         ])
 
         if (catData && catData.length > 0) setCategories(catData as CafeCategory[])
         if (prodData && prodData.length > 0) setProducts(prodData as CafeProduct[])
         if (ordData && ordData.length > 0) setOrders(ordData as CafeOrder[])
+        if (expData && expData.length > 0) setExpenses(expData as CafeExpense[])
       } catch (err) {
-        console.log('Using local fallback cafe catalog:', err)
+        console.log('Using local fallback cafe catalog / expenses:', err)
       }
     }
     fetchSupabaseData()
@@ -387,6 +430,10 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
 
   // Cancel / Void Open Bill
   const handleCancelOpenBill = async (orderId: string) => {
+    if (role !== 'owner') {
+      showToast('Hanya Owner yang memiliki akses membatalkan pesanan.')
+      return
+    }
     if (!confirm('Yakin ingin membatalkan open bill ini?')) return
     setOrders((prev) => prev.filter((o) => o.id !== orderId))
     try {
@@ -395,6 +442,89 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
       // ignore
     }
     showToast('Open bill berhasil dibatalkan')
+  }
+
+  // Void / Cancel Paid Order (Owner only)
+  const handleVoidPaidOrder = async (orderId: string, orderNumber: string) => {
+    if (role !== 'owner') {
+      showToast('Hanya Owner yang memiliki akses membatalkan transaksi.')
+      return
+    }
+    if (!confirm(`Yakin ingin membatalkan transaksi #${orderNumber}? Transaksi ini akan dikeluarkan dari omset.`)) return
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: 'CANCELLED' as CafeOrderStatus } : o)))
+    try {
+      await (supabase.from('cafe_orders') as any).update({ status: 'CANCELLED' }).eq('id', orderId)
+    } catch (err) {
+      console.error('Error voiding order:', err)
+    }
+    showToast(`Transaksi #${orderNumber} berhasil dibatalkan`)
+  }
+
+  // Expense Handlers
+  const handleAddExpense = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    const cleanNominal = Number(expenseJumlah.replace(/\D/g, ''))
+    if (!expenseKeterangan.trim()) {
+      showToast('Harap masukkan keterangan pengeluaran')
+      return
+    }
+    if (!cleanNominal || cleanNominal <= 0) {
+      showToast('Harap masukkan nominal pengeluaran yang valid')
+      return
+    }
+
+    setExpenseSubmitting(true)
+    const today = new Date().toISOString().slice(0, 10)
+    const newExp: CafeExpense = {
+      id: 'exp_' + Date.now(),
+      tanggal: today,
+      keterangan: `[${cashierName}] ${expenseKeterangan.trim()}`,
+      kategori: expenseKategori,
+      jumlah: cleanNominal,
+      metode_bayar: expenseMetode,
+      created_at: new Date().toISOString(),
+    }
+
+    setExpenses((prev) => [newExp, ...prev])
+    setExpenseKeterangan('')
+    setExpenseJumlah('')
+    showToast('Pengeluaran berhasil dicatat!')
+
+    try {
+      const { data } = await (supabase.from('expenses') as any)
+        .insert({
+          tanggal: today,
+          keterangan: newExp.keterangan,
+          kategori: newExp.kategori,
+          jumlah: newExp.jumlah,
+          metode_bayar: newExp.metode_bayar,
+        })
+        .select('*')
+        .single()
+
+      if (data) {
+        setExpenses((prev) => prev.map((item) => (item.id === newExp.id ? (data as CafeExpense) : item)))
+      }
+    } catch (err) {
+      console.error('Error saving expense to Supabase:', err)
+    } finally {
+      setExpenseSubmitting(false)
+    }
+  }
+
+  const handleDeleteExpense = async (id: string) => {
+    if (role !== 'owner') {
+      showToast('Hanya Owner yang berhak menghapus data pengeluaran.')
+      return
+    }
+    if (!confirm('Yakin ingin menghapus catatan pengeluaran ini?')) return
+    setExpenses((prev) => prev.filter((item) => item.id !== id))
+    try {
+      await supabase.from('expenses').delete().eq('id', id)
+    } catch (err) {
+      console.error('Error deleting expense:', err)
+    }
+    showToast('Pengeluaran berhasil dihapus')
   }
 
   // Completed Payment Callback from Checkout Modal
@@ -457,9 +587,27 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
     return orders.filter((o) => o.status === 'PAID')
   }, [orders])
 
+  // Today Expenses Memos
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
+
+  const todayExpenses = useMemo(() => {
+    return expenses.filter((e) => e.tanggal === todayStr)
+  }, [expenses, todayStr])
+
+  const totalExpensesToday = useMemo(() => {
+    return todayExpenses.reduce((sum, e) => sum + e.jumlah, 0)
+  }, [todayExpenses])
+
+  const cashExpensesToday = useMemo(() => {
+    return todayExpenses.filter((e) => (e.metode_bayar ?? 'CASH') === 'CASH').reduce((sum, e) => sum + e.jumlah, 0)
+  }, [todayExpenses])
+
+  const qrisExpensesToday = useMemo(() => {
+    return todayExpenses.filter((e) => e.metode_bayar === 'QRIS').reduce((sum, e) => sum + e.jumlah, 0)
+  }, [todayExpenses])
+
   // Today's Cafe Recap
   const todayRecap = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10)
     const todays = paidOrders.filter((o) => o.created_at.slice(0, 10) === todayStr)
 
     const omset = todays.reduce((sum, o) => sum + o.total_amount, 0)
@@ -498,7 +646,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
       totalHpp,
       grossProfit,
     }
-  }, [paidOrders, products])
+  }, [paidOrders, products, todayStr])
 
   return (
     <div
@@ -601,6 +749,12 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                 badge: openBills.length > 0 ? openBills.length : null,
               },
               { key: 'history', label: 'Riwayat Struk', icon: Receipt, badge: null },
+              {
+                key: 'expenses',
+                label: `Pengeluaran (${todayExpenses.length})`,
+                icon: Wallet,
+                badge: todayExpenses.length > 0 ? todayExpenses.length : null,
+              },
               { key: 'recap', label: 'Rekap Harian', icon: TrendingUp, badge: null },
             ] as const
           ).map((tab) => {
@@ -1469,20 +1623,22 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                           >
                             Lanjutkan Bayar
                           </button>
-                          <button
-                            onClick={() => handleCancelOpenBill(ord.id)}
-                            style={{
-                              padding: '8px 12px',
-                              borderRadius: '8px',
-                              border: '1px solid rgba(239, 68, 68, 0.4)',
-                              background: 'rgba(239, 68, 68, 0.1)',
-                              color: '#ef4444',
-                              fontSize: '12px',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Batalkan
-                          </button>
+                          {role === 'owner' && (
+                            <button
+                              onClick={() => handleCancelOpenBill(ord.id)}
+                              style={{
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                color: '#ef4444',
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Batalkan
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1505,6 +1661,29 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                   Daftar transaksi yang telah dibayar lunas
                 </p>
               </div>
+
+              {/* Security Lock Banner for Crew (Nona & Rara) */}
+              {role !== 'owner' && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '11px',
+                    color: 'rgba(255,255,255,0.55)',
+                    background: 'rgba(255,255,255,0.03)',
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    marginBottom: '16px',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <Lock size={14} color="#E0B88A" />
+                  <span>
+                    Riwayat pesanan terkunci permanen. Penghapusan struk dan pembatalan transaksi hanya dapat diakses oleh <strong>Owner</strong>.
+                  </span>
+                </div>
+              )}
 
               {paidOrders.length === 0 ? (
                 <div
@@ -1581,29 +1760,383 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => setReprintOrder(ord)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            border: '1px solid rgba(255, 255, 255, 0.15)',
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            color: '#fff',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <Printer size={13} /> Cetak Struk
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            onClick={() => setReprintOrder(ord)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '8px 12px',
+                              borderRadius: '8px',
+                              border: '1px solid rgba(255, 255, 255, 0.15)',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              color: '#fff',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <Printer size={13} /> Cetak Struk
+                          </button>
+
+                          {role === 'owner' && (
+                            <button
+                              onClick={() => handleVoidPaidOrder(ord.id, ord.order_number)}
+                              title="Batalkan / Void Transaksi (Khusus Owner)"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '8px 10px',
+                                borderRadius: '8px',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                background: 'rgba(239, 68, 68, 0.08)',
+                                color: '#ef4444',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <Trash2 size={12} /> Void
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ─── Sub-Tab: Pengeluaran Operasional Harian ──────── */}
+        {activeTab === 'expenses' && (
+          <div style={{ flex: 1, padding: '24px', overflowY: 'auto' }}>
+            <div style={{ maxWidth: '820px', margin: '0 auto' }}>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
+                    Pengeluaran Harian Méra Hause
+                  </h3>
+                  <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', margin: '4px 0 0' }}>
+                    Catat pembelian bahan baku, es batu, cup, dan belanja harian cafe
+                  </p>
+                </div>
+                <div style={{ fontSize: '12px', color: '#E0B88A', fontWeight: 600, background: 'rgba(98, 33, 40, 0.25)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(139, 26, 26, 0.4)' }}>
+                  Hari ini: {new Date().toLocaleDateString('id-ID', { dateStyle: 'medium' })}
+                </div>
+              </div>
+
+              {/* Summary KPI Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '22px' }}>
+                <div style={{ background: 'rgba(98, 33, 40, 0.2)', border: '1px solid rgba(139, 26, 26, 0.4)', borderRadius: '12px', padding: '16px' }}>
+                  <div style={{ fontSize: '11px', color: '#E0B88A', fontWeight: 600 }}>TOTAL PENGELUARAN HARI INI</div>
+                  <div style={{ fontSize: '22px', fontWeight: 800, color: '#fff', marginTop: '6px' }}>
+                    Rp {totalExpensesToday.toLocaleString('id-ID')}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                    {todayExpenses.length} transaksi belanja
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '16px' }}>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>DARI KAS LACI (TUNAI)</div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#4ade80', marginTop: '6px' }}>
+                    Rp {cashExpensesToday.toLocaleString('id-ID')}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginTop: '2px' }}>
+                    Memotong uang tunai di laci
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '16px' }}>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>NON-TUNAI / QRIS</div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#38bdf8', marginTop: '6px' }}>
+                    Rp {qrisExpensesToday.toLocaleString('id-ID')}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginTop: '2px' }}>
+                    Transfer rekening / QRIS
+                  </div>
+                </div>
+              </div>
+
+              {/* Input Form Card */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '20px', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                  <Plus size={16} color="#E0B88A" />
+                  <h4 style={{ fontSize: '14px', fontWeight: 700, margin: 0, color: '#fff' }}>Input Pengeluaran Baru</h4>
+                </div>
+
+                {/* Quick Presets */}
+                <div style={{ marginBottom: '14px' }}>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginBottom: '8px', fontWeight: 600 }}>Pilihan Cepat Cafe:</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {[
+                      { label: '🧊 Es Batu Kristal', name: 'Es Batu Kristal', cat: 'Cafe: Es Batu & Air' },
+                      { label: '🥛 Susu UHT Diamond', name: 'Susu UHT Diamond', cat: 'Cafe: Bahan Baku' },
+                      { label: '🥤 Cup 16oz + Sedotan', name: 'Cup 16oz + Sedotan + Lid', cat: 'Cafe: Kemasan & Cup' },
+                      { label: '💧 Air Galon Aqua', name: 'Air Galon Aqua', cat: 'Cafe: Es Batu & Air' },
+                      { label: '🔥 Gas Elpiji 3kg', name: 'Gas Elpiji 3kg', cat: 'Cafe: Operasional' },
+                      { label: '🧻 Tissue & Plastik', name: 'Tissue & Plastik Takeaway', cat: 'Cafe: Operasional' },
+                    ].map((p) => (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => {
+                          setExpenseKeterangan(p.name)
+                          setExpenseKategori(p.cat)
+                        }}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          background: 'rgba(255,255,255,0.04)',
+                          color: 'rgba(255,255,255,0.7)',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <form onSubmit={handleAddExpense} style={{ display: 'grid', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px', fontWeight: 600 }}>
+                        Keterangan Belanja / Pengeluaran *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: Beli Es Batu 2 Karung, Susu UHT, dsb..."
+                        value={expenseKeterangan}
+                        onChange={(e) => setExpenseKeterangan(e.target.value)}
+                        style={{
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(255, 255, 255, 0.06)',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          color: '#fff',
+                          fontSize: '13px',
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px', fontWeight: 600 }}>
+                        Nominal (Rp) *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="0"
+                        value={expenseJumlah ? Number(expenseJumlah.replace(/\D/g, '')).toLocaleString('id-ID') : ''}
+                        onChange={(e) => setExpenseJumlah(e.target.value.replace(/\D/g, ''))}
+                        style={{
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          background: 'rgba(255, 255, 255, 0.06)',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          color: '#E0B88A',
+                          fontSize: '14px',
+                          fontWeight: 700,
+                          outline: 'none',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr auto', gap: '10px', alignItems: 'flex-end' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px', fontWeight: 600 }}>
+                        Kategori Pengeluaran
+                      </label>
+                      <select
+                        value={expenseKategori}
+                        onChange={(e) => setExpenseKategori(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          background: '#1c1c20',
+                          border: '1px solid rgba(255, 255, 255, 0.12)',
+                          color: '#fff',
+                          fontSize: '12px',
+                          outline: 'none',
+                        }}
+                      >
+                        <option value="Cafe: Bahan Baku">☕ Bahan Baku (Kopi, Susu, Sirup, Powder)</option>
+                        <option value="Cafe: Es Batu & Air">🧊 Es Batu & Air Galon</option>
+                        <option value="Cafe: Kemasan & Cup">📦 Kemasan (Cup, Sedotan, Plastik, Seal)</option>
+                        <option value="Cafe: Operasional">🧹 Operasional (Gas, Sabun, Tissue, Lap)</option>
+                        <option value="Cafe: Lain-lain">📝 Lain-lain</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px', fontWeight: 600 }}>
+                        Sumber Dana (Metode Bayar)
+                      </label>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setExpenseMetode('CASH')}
+                          style={{
+                            flex: 1,
+                            padding: '9px 10px',
+                            borderRadius: '8px',
+                            border: expenseMetode === 'CASH' ? '1.5px solid rgba(139, 26, 26, 0.8)' : '1px solid rgba(255,255,255,0.1)',
+                            background: expenseMetode === 'CASH' ? '#622128' : 'rgba(255,255,255,0.04)',
+                            color: expenseMetode === 'CASH' ? '#fff' : 'rgba(255,255,255,0.6)',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Tunai (Kas)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpenseMetode('QRIS')}
+                          style={{
+                            flex: 1,
+                            padding: '9px 10px',
+                            borderRadius: '8px',
+                            border: expenseMetode === 'QRIS' ? '1.5px solid rgba(139, 26, 26, 0.8)' : '1px solid rgba(255,255,255,0.1)',
+                            background: expenseMetode === 'QRIS' ? '#622128' : 'rgba(255,255,255,0.04)',
+                            color: expenseMetode === 'QRIS' ? '#fff' : 'rgba(255,255,255,0.6)',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Non-Tunai
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={expenseSubmitting || !expenseKeterangan.trim() || !expenseJumlah}
+                      style={{
+                        padding: '10px 20px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: '#622128',
+                        color: '#fff',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        cursor: expenseSubmitting || !expenseKeterangan.trim() || !expenseJumlah ? 'not-allowed' : 'pointer',
+                        opacity: expenseSubmitting || !expenseKeterangan.trim() || !expenseJumlah ? 0.5 : 1,
+                        boxShadow: '0 4px 14px rgba(98, 33, 40, 0.4)',
+                        height: '42px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {expenseSubmitting ? 'Menyimpan...' : '+ Simpan Pengeluaran'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Expense History List */}
+              <div>
+                <h4 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '12px', color: '#fff' }}>
+                  Daftar Pengeluaran Hari Ini ({todayExpenses.length})
+                </h4>
+
+                {todayExpenses.length === 0 ? (
+                  <div style={{ padding: '36px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', color: 'rgba(255,255,255,0.4)', fontSize: '13px' }}>
+                    Belum ada pengeluaran yang dicatat hari ini.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: '8px' }}>
+                    {todayExpenses.map((exp) => (
+                      <div
+                        key={exp.id}
+                        style={{
+                          padding: '14px 16px',
+                          borderRadius: '10px',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          border: '1px solid rgba(255, 255, 255, 0.06)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 700, fontSize: '13px', color: '#fff' }}>
+                              {exp.keterangan}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                background: 'rgba(98, 33, 40, 0.35)',
+                                border: '1px solid rgba(139, 26, 26, 0.5)',
+                                color: '#E0B88A',
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {exp.kategori.replace('Cafe: ', '')}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                background: exp.metode_bayar === 'CASH' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                                color: exp.metode_bayar === 'CASH' ? '#4ade80' : '#38bdf8',
+                                padding: '2px 6px',
+                                borderRadius: '6px',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {exp.metode_bayar === 'CASH' ? 'KAS LACI' : 'NON-TUNAI'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}>
+                            {new Date(exp.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} • Dicatat oleh kru
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#E0B88A' }}>
+                            -Rp {exp.jumlah.toLocaleString('id-ID')}
+                          </div>
+
+                          {role === 'owner' && (
+                            <button
+                              onClick={() => handleDeleteExpense(exp.id)}
+                              title="Hapus Pengeluaran (Khusus Owner)"
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                color: '#ef4444',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '11px',
+                              }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -1614,10 +2147,10 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
             <div style={{ maxWidth: '800px', margin: '0 auto' }}>
               <div style={{ marginBottom: '20px' }}>
                 <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
-                  Rekap Penjualan Harian Méra Hause
+                  Rekap Penjualan & Keuangan Méra Hause
                 </h3>
                 <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)', margin: '4px 0 0' }}>
-                  Ringkasan omset dan cup terjual hari ini ({new Date().toLocaleDateString('id-ID', { dateStyle: 'full' })})
+                  Ringkasan omset, pengeluaran harian, dan kas laci hari ini ({new Date().toLocaleDateString('id-ID', { dateStyle: 'full' })})
                 </p>
               </div>
 
@@ -1639,7 +2172,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                   }}
                 >
                   <div style={{ fontSize: '11px', color: '#E0B88A', fontWeight: 600 }}>
-                    TOTAL OMSET HARI INI
+                    TOTAL OMSET PENJUALAN
                   </div>
                   <div style={{ fontSize: '24px', fontWeight: 800, color: '#fff', marginTop: '6px' }}>
                     Rp {todayRecap.omset.toLocaleString('id-ID')}
@@ -1657,42 +2190,67 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                     padding: '16px',
                   }}
                 >
+                  <div style={{ fontSize: '11px', color: totalExpensesToday > 0 ? '#C89696' : 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
+                    PENGELUARAN HARI INI
+                  </div>
+                  <div style={{ fontSize: '24px', fontWeight: 800, color: totalExpensesToday > 0 ? '#C89696' : '#fff', marginTop: '6px' }}>
+                    -Rp {totalExpensesToday.toLocaleString('id-ID')}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                    {todayExpenses.length} belanja operasional
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                  }}
+                >
+                  <div style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600 }}>
+                    KAS LACI BERSIH (TUNAI FISIK)
+                  </div>
+                  <div style={{ fontSize: '24px', fontWeight: 800, color: '#4ade80', marginTop: '6px' }}>
+                    Rp {Math.max(0, todayRecap.cashTotal - cashExpensesToday).toLocaleString('id-ID')}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                    Tunai Masuk ({todayRecap.cashTotal.toLocaleString('id-ID')}) − Keluar ({cashExpensesToday.toLocaleString('id-ID')})
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                  }}
+                >
                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
                     TOTAL CUP TERJUAL
                   </div>
                   <div style={{ fontSize: '24px', fontWeight: 800, color: '#fff', marginTop: '6px' }}>
                     {todayRecap.totalCups} <span style={{ fontSize: '14px', fontWeight: 500 }}>cup</span>
                   </div>
-                </div>
-
-                <div
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '12px',
-                    padding: '16px',
-                  }}
-                >
-                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
-                    TUNAI (CASH)
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                    {todayRecap.orderCount} pesanan
                   </div>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#4ade80', marginTop: '6px' }}>
+                </div>
+              </div>
+
+              {/* Breakdown Payment Methods */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px' }}>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>OMSET TUNAI (CASH MASUK)</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginTop: '4px' }}>
                     Rp {todayRecap.cashTotal.toLocaleString('id-ID')}
                   </div>
                 </div>
-
-                <div
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '12px',
-                    padding: '16px',
-                  }}
-                >
-                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>
-                    QRIS & TRANSFER
-                  </div>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#38bdf8', marginTop: '6px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px' }}>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>OMSET NON-TUNAI (QRIS / TRANSFER)</div>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#38bdf8', marginTop: '4px' }}>
                     Rp {(todayRecap.qrisTotal + todayRecap.transferTotal).toLocaleString('id-ID')}
                   </div>
                 </div>
