@@ -149,8 +149,8 @@ export const CafeCheckoutModal: React.FC<CafeCheckoutModalProps> = ({
                 width: '32px',
                 height: '32px',
                 borderRadius: '8px',
-                background: isFinished ? 'rgba(34, 197, 94, 0.15)' : 'rgba(217, 119, 6, 0.15)',
-                color: isFinished ? '#22c55e' : '#d97706',
+                background: isFinished ? 'rgba(168, 197, 160, 0.2)' : 'rgba(98, 33, 40, 0.25)',
+                color: isFinished ? '#A8C5A0' : '#E0B88A',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -243,7 +243,7 @@ export const CafeCheckoutModal: React.FC<CafeCheckoutModalProps> = ({
                     padding: '12px',
                     borderRadius: '10px',
                     border: 'none',
-                    background: '#d97706',
+                    background: '#622128',
                     color: '#fff',
                     fontWeight: 600,
                     fontSize: '13px',
@@ -300,9 +300,9 @@ export const CafeCheckoutModal: React.FC<CafeCheckoutModalProps> = ({
                       fontSize: '11px',
                       fontWeight: 600,
                       borderRadius: '6px',
-                      border: '1px solid #d97706',
-                      background: 'rgba(217, 119, 6, 0.15)',
-                      color: '#f59e0b',
+                      border: '1px solid rgba(139, 26, 26, 0.6)',
+                      background: 'rgba(98, 33, 40, 0.25)',
+                      color: '#E0B88A',
                       cursor: 'pointer',
                     }}
                   >
@@ -314,14 +314,14 @@ export const CafeCheckoutModal: React.FC<CafeCheckoutModalProps> = ({
               {/* Total Summary Card */}
               <div
                 style={{
-                  background: 'rgba(217, 119, 6, 0.08)',
-                  border: '1px solid rgba(217, 119, 6, 0.25)',
+                  background: 'rgba(98, 33, 40, 0.2)',
+                  border: '1px solid rgba(139, 26, 26, 0.4)',
                   borderRadius: '12px',
                   padding: '16px',
                   textAlign: 'center',
                 }}
               >
-                <div style={{ fontSize: '11px', color: '#d97706', fontWeight: 600, textTransform: 'uppercase' }}>
+                <div style={{ fontSize: '11px', color: '#E0B88A', fontWeight: 600, textTransform: 'uppercase' }}>
                   Total Tagihan
                 </div>
                 <div style={{ fontSize: '32px', fontWeight: 700, color: '#fff', marginTop: '4px' }}>
@@ -355,9 +355,9 @@ export const CafeCheckoutModal: React.FC<CafeCheckoutModalProps> = ({
                           gap: '6px',
                           padding: '12px 8px',
                           borderRadius: '10px',
-                          border: active ? '1.5px solid #d97706' : '1px solid rgba(255,255,255,0.08)',
-                          background: active ? 'rgba(217, 119, 6, 0.15)' : 'rgba(255,255,255,0.03)',
-                          color: active ? '#f59e0b' : 'rgba(255,255,255,0.6)',
+                          border: active ? '1.5px solid rgba(139, 26, 26, 0.8)' : '1px solid rgba(255,255,255,0.08)',
+                          background: active ? 'rgba(98, 33, 40, 0.3)' : 'rgba(255,255,255,0.03)',
+                          color: active ? '#E0B88A' : 'rgba(255,255,255,0.6)',
                           cursor: 'pointer',
                           fontWeight: 600,
                           fontSize: '12px',
@@ -421,9 +421,9 @@ export const CafeCheckoutModal: React.FC<CafeCheckoutModalProps> = ({
                         style={{
                           padding: '6px 12px',
                           borderRadius: '8px',
-                          border: cashTendered === amt ? '1px solid #d97706' : '1px solid rgba(255,255,255,0.1)',
-                          background: cashTendered === amt ? 'rgba(217, 119, 6, 0.2)' : 'rgba(255,255,255,0.04)',
-                          color: cashTendered === amt ? '#f59e0b' : 'rgba(255,255,255,0.8)',
+                          border: cashTendered === amt ? '1px solid rgba(139, 26, 26, 0.8)' : '1px solid rgba(255,255,255,0.1)',
+                          background: cashTendered === amt ? 'rgba(98, 33, 40, 0.4)' : 'rgba(255,255,255,0.04)',
+                          color: cashTendered === amt ? '#E0B88A' : 'rgba(255,255,255,0.8)',
                           fontSize: '11px',
                           fontWeight: 600,
                           cursor: 'pointer',
@@ -517,7 +517,7 @@ export const CafeCheckoutModal: React.FC<CafeCheckoutModalProps> = ({
                 padding: '12px',
                 borderRadius: '10px',
                 border: 'none',
-                background: isCashSufficient && !isProcessing ? '#d97706' : 'rgba(255,255,255,0.1)',
+                background: isCashSufficient && !isProcessing ? '#622128' : 'rgba(255,255,255,0.1)',
                 color: isCashSufficient && !isProcessing ? '#fff' : 'rgba(255,255,255,0.3)',
                 fontWeight: 700,
                 fontSize: '14px',
@@ -526,7 +526,7 @@ export const CafeCheckoutModal: React.FC<CafeCheckoutModalProps> = ({
                 justifyContent: 'center',
                 gap: '8px',
                 cursor: isCashSufficient && !isProcessing ? 'pointer' : 'not-allowed',
-                boxShadow: isCashSufficient ? '0 4px 16px rgba(217, 119, 6, 0.35)' : 'none',
+                boxShadow: isCashSufficient ? '0 4px 16px rgba(98, 33, 40, 0.4)' : 'none',
               }}
             >
               <Printer size={18} />

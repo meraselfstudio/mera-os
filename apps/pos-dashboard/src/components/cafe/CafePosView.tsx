@@ -532,10 +532,10 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+              background: 'linear-gradient(135deg, #622128 0%, #401419 100%)',
               padding: '6px 12px',
               borderRadius: '10px',
-              boxShadow: '0 2px 10px rgba(217, 119, 6, 0.3)',
+              boxShadow: '0 2px 10px rgba(98, 33, 40, 0.4)',
             }}
           >
             <Coffee size={18} color="#fff" />
@@ -567,9 +567,9 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                   gap: '4px',
                   fontSize: '11px',
                   fontWeight: 600,
-                  color: '#d97706',
-                  background: 'rgba(217, 119, 6, 0.12)',
-                  border: '1px solid rgba(217, 119, 6, 0.3)',
+                  color: '#E0B88A',
+                  background: 'rgba(98, 33, 40, 0.25)',
+                  border: '1px solid rgba(139, 26, 26, 0.45)',
                   padding: '4px 10px',
                   borderRadius: '6px',
                   cursor: 'pointer',
@@ -617,7 +617,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                   padding: '6px 14px',
                   borderRadius: '8px',
                   border: 'none',
-                  background: active ? 'rgba(217, 119, 6, 0.35)' : 'transparent',
+                  background: active ? '#622128' : 'transparent',
                   color: active ? '#fff' : 'rgba(255, 255, 255, 0.55)',
                   fontSize: '12px',
                   fontWeight: 600,
@@ -708,7 +708,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
             top: '60px',
             right: '24px',
             background: '#1e1e24',
-            border: '1px solid #d97706',
+            border: '1px solid rgba(139, 26, 26, 0.6)',
             color: '#fff',
             padding: '10px 16px',
             borderRadius: '10px',
@@ -721,7 +721,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
             gap: '8px',
           }}
         >
-          <Sparkles size={16} color="#d97706" />
+          <Sparkles size={16} color="#E0B88A" />
           <span>{toastMessage}</span>
         </div>
       )}
@@ -801,7 +801,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                       border: 'none',
                       background:
                         selectedCategoryId === 'all'
-                          ? '#d97706'
+                          ? '#622128'
                           : 'rgba(255, 255, 255, 0.06)',
                       color: selectedCategoryId === 'all' ? '#fff' : 'rgba(255, 255, 255, 0.65)',
                       fontSize: '12px',
@@ -827,7 +827,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                           padding: '7px 14px',
                           borderRadius: '8px',
                           border: 'none',
-                          background: active ? '#d97706' : 'rgba(255, 255, 255, 0.06)',
+                          background: active ? '#622128' : 'rgba(255, 255, 255, 0.06)',
                           color: active ? '#fff' : 'rgba(255, 255, 255, 0.65)',
                           fontSize: '12px',
                           fontWeight: 600,
@@ -874,10 +874,10 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                       onClick={() => handleAddToCart(prod)}
                       style={{
                         background: inCartItem
-                          ? 'rgba(217, 119, 6, 0.12)'
+                          ? 'rgba(98, 33, 40, 0.25)'
                           : 'rgba(255, 255, 255, 0.04)',
                         border: inCartItem
-                          ? '1.5px solid #d97706'
+                          ? '1.5px solid rgba(139, 26, 26, 0.8)'
                           : '1px solid rgba(255, 255, 255, 0.08)',
                         borderRadius: '12px',
                         padding: '14px',
@@ -897,7 +897,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                             position: 'absolute',
                             top: '8px',
                             right: '8px',
-                            background: '#d97706',
+                            background: '#622128',
                             color: '#fff',
                             width: '24px',
                             height: '24px',
@@ -907,7 +907,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                             justifyContent: 'center',
                             fontSize: '12px',
                             fontWeight: 700,
-                            boxShadow: '0 2px 8px rgba(217, 119, 6, 0.5)',
+                            boxShadow: '0 2px 8px rgba(98, 33, 40, 0.6)',
                           }}
                         >
                           {inCartItem.quantity}
@@ -951,7 +951,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                           justifyContent: 'space-between',
                         }}
                       >
-                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#f59e0b' }}>
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#E0B88A' }}>
                           Rp {prod.price.toLocaleString('id-ID')}
                         </div>
                         {role === 'owner' && prod.cost_price && (
@@ -1003,7 +1003,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                       padding: '7px',
                       borderRadius: '6px',
                       border: 'none',
-                      background: orderType === 'DINE_IN' ? '#d97706' : 'transparent',
+                      background: orderType === 'DINE_IN' ? '#622128' : 'transparent',
                       color: orderType === 'DINE_IN' ? '#fff' : 'rgba(255, 255, 255, 0.5)',
                       fontSize: '12px',
                       fontWeight: 700,
@@ -1018,7 +1018,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                       padding: '7px',
                       borderRadius: '6px',
                       border: 'none',
-                      background: orderType === 'TAKEAWAY' ? '#d97706' : 'transparent',
+                      background: orderType === 'TAKEAWAY' ? '#622128' : 'transparent',
                       color: orderType === 'TAKEAWAY' ? '#fff' : 'rgba(255, 255, 255, 0.5)',
                       fontSize: '12px',
                       fontWeight: 700,
@@ -1050,22 +1050,23 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                   ) : (
                     <div
                       style={{
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid rgba(255, 255, 255, 0.06)',
+                        color: 'rgba(255, 255, 255, 0.4)',
+                        fontSize: '11px',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '11px',
-                        color: 'rgba(255,255,255,0.4)',
-                        background: 'rgba(255,255,255,0.02)',
-                        borderRadius: '6px',
                       }}
                     >
-                      Bungkus
+                      Bawa Pulang
                     </div>
                   )}
 
                   <input
                     type="text"
-                    placeholder="Nama Pelanggan..."
+                    placeholder="Nama Tamu (opsional)..."
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     style={{
@@ -1082,24 +1083,34 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
               </div>
 
               {/* Cart Items List */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
                 {cart.length === 0 ? (
                   <div
                     style={{
-                      height: '100%',
+                      flex: 1,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
                       justifyContent: 'center',
                       color: 'rgba(255, 255, 255, 0.3)',
-                      gap: '10px',
+                      gap: '8px',
+                      padding: '30px 0',
                     }}
                   >
-                    <ShoppingCart size={36} />
-                    <div style={{ fontSize: '13px', fontWeight: 600 }}>Keranjang Kosong</div>
-                    <div style={{ fontSize: '11px', textAlign: 'center', maxWidth: '200px' }}>
-                      Pilih menu di sebelah kiri untuk menambahkan pesanan
-                    </div>
+                    <ShoppingCart size={36} strokeWidth={1.5} />
+                    <span style={{ fontSize: '13px' }}>Keranjang masih kosong</span>
+                    <span style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.2)' }}>
+                      Pilih menu di sebelah kiri untuk menambah
+                    </span>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1107,13 +1118,10 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                       <div
                         key={item.product.id}
                         style={{
-                          padding: '10px',
-                          borderRadius: '8px',
-                          background: 'rgba(255, 255, 255, 0.03)',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          borderRadius: '10px',
+                          padding: '10px 12px',
                           border: '1px solid rgba(255, 255, 255, 0.06)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px',
                         }}
                       >
                         <div
@@ -1127,7 +1135,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                             <div style={{ fontSize: '12px', fontWeight: 700, color: '#fff' }}>
                               {item.product.name}
                             </div>
-                            <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 600 }}>
+                            <div style={{ fontSize: '11px', color: '#E0B88A', fontWeight: 600 }}>
                               Rp {item.product.price.toLocaleString('id-ID')}
                             </div>
                           </div>
@@ -1219,7 +1227,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                                 padding: '4px 8px',
                                 borderRadius: '4px',
                                 border: 'none',
-                                background: '#d97706',
+                                background: '#622128',
                                 color: '#fff',
                                 fontSize: '10px',
                                 fontWeight: 700,
@@ -1237,7 +1245,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                             }}
                             style={{
                               fontSize: '10px',
-                              color: item.notes ? '#f59e0b' : 'rgba(255,255,255,0.3)',
+                              color: item.notes ? '#E0B88A' : 'rgba(255,255,255,0.3)',
                               cursor: 'pointer',
                               fontStyle: item.notes ? 'normal' : 'italic',
                             }}
@@ -1301,7 +1309,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                   }}
                 >
                   <span style={{ fontSize: '13px', fontWeight: 600 }}>Total Tagihan:</span>
-                  <span style={{ fontSize: '20px', fontWeight: 800, color: '#f59e0b' }}>
+                  <span style={{ fontSize: '20px', fontWeight: 800, color: '#E0B88A' }}>
                     Rp {cartTotal.toLocaleString('id-ID')}
                   </span>
                 </div>
@@ -1332,7 +1340,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                       padding: '12px',
                       borderRadius: '10px',
                       border: 'none',
-                      background: cart.length === 0 ? 'rgba(255,255,255,0.1)' : '#d97706',
+                      background: cart.length === 0 ? 'rgba(255,255,255,0.1)' : '#622128',
                       color: cart.length === 0 ? 'rgba(255,255,255,0.3)' : '#fff',
                       fontSize: '14px',
                       fontWeight: 800,
@@ -1342,7 +1350,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                       gap: '8px',
                       cursor: cart.length === 0 ? 'not-allowed' : 'pointer',
                       boxShadow:
-                        cart.length === 0 ? 'none' : '0 4px 16px rgba(217, 119, 6, 0.4)',
+                        cart.length === 0 ? 'none' : '0 4px 16px rgba(98, 33, 40, 0.4)',
                     }}
                   >
                     <CreditCard size={16} /> Bayar (POS)
@@ -1402,8 +1410,9 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                           <span
                             style={{
                               fontSize: '10px',
-                              background: '#d97706',
-                              color: '#fff',
+                              background: 'rgba(98, 33, 40, 0.4)',
+                              border: '1px solid rgba(139, 26, 26, 0.6)',
+                              color: '#E0B88A',
                               padding: '2px 8px',
                               borderRadius: '10px',
                               fontWeight: 700,
@@ -1433,7 +1442,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#f59e0b' }}>
+                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#E0B88A' }}>
                             Rp {ord.total_amount.toLocaleString('id-ID')}
                           </div>
                           <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>
@@ -1451,7 +1460,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                               padding: '8px 14px',
                               borderRadius: '8px',
                               border: 'none',
-                              background: '#d97706',
+                              background: '#622128',
                               color: '#fff',
                               fontSize: '12px',
                               fontWeight: 700,
@@ -1561,7 +1570,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#f59e0b' }}>
+                          <div style={{ fontSize: '15px', fontWeight: 800, color: '#E0B88A' }}>
                             Rp {ord.total_amount.toLocaleString('id-ID')}
                           </div>
                           <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>
@@ -1623,13 +1632,13 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
               >
                 <div
                   style={{
-                    background: 'rgba(217, 119, 6, 0.1)',
-                    border: '1px solid rgba(217, 119, 6, 0.3)',
+                    background: 'rgba(98, 33, 40, 0.25)',
+                    border: '1px solid rgba(139, 26, 26, 0.45)',
                     borderRadius: '12px',
                     padding: '16px',
                   }}
                 >
-                  <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 600 }}>
+                  <div style={{ fontSize: '11px', color: '#E0B88A', fontWeight: 600 }}>
                     TOTAL OMSET HARI INI
                   </div>
                   <div style={{ fontSize: '24px', fontWeight: 800, color: '#fff', marginTop: '6px' }}>
@@ -1804,7 +1813,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                   padding: '10px',
                   borderRadius: '8px',
                   border: 'none',
-                  background: '#d97706',
+                  background: '#622128',
                   color: '#fff',
                   cursor: 'pointer',
                   fontWeight: 700,

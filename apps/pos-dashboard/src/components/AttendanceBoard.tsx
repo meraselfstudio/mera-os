@@ -430,12 +430,12 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                     const isDone = !!doneAtt
 
                     let borderColor = 'var(--mera-border)'
-                    if (isWorking) borderColor = isCafe ? '#f59e0b' : 'var(--mera-success)'
+                    if (isWorking) borderColor = 'var(--mera-success)'
                     else if (isDone) borderColor = 'rgba(255,255,255,0.06)'
 
                     return (
                         <div key={c.id} style={{
-                            background: isWorking ? (isCafe ? 'rgba(245,158,11,0.05)' : 'rgba(48,209,88,0.04)') : 'var(--mera-surface)',
+                            background: isWorking ? 'rgba(48,209,88,0.04)' : 'var(--mera-surface)',
                             border: `1.5px solid ${borderColor}`,
                             borderRadius: 'var(--mera-radius-lg)',
                             padding: '16px 14px',
@@ -445,21 +445,21 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                                 <div style={{
                                     width: 44, height: 44, borderRadius: '50%',
-                                    background: isWorking ? (isCafe ? 'rgba(245,158,11,0.15)' : 'rgba(48,209,88,0.15)') : isDone ? 'var(--mera-surface-raised)' : (isCafe ? 'rgba(245,158,11,0.1)' : 'var(--mera-accent-light)'),
-                                    border: `2px solid ${isWorking ? (isCafe ? '#f59e0b' : 'var(--mera-success)') : isDone ? 'var(--mera-border-strong)' : (isCafe ? 'rgba(245,158,11,0.3)' : 'var(--mera-border-strong)')}`,
+                                    background: isWorking ? 'rgba(48,209,88,0.15)' : isDone ? 'var(--mera-surface-raised)' : 'var(--mera-accent-light)',
+                                    border: `2px solid ${isWorking ? 'var(--mera-success)' : isDone ? 'var(--mera-border-strong)' : 'var(--mera-border-strong)'}`,
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0,
                                 }}>
-                                    {isWorking ? <CheckCircle2 size={20} color={isCafe ? '#f59e0b' : 'var(--mera-success)'} /> : isDone ? <CheckCircle2 size={20} color="var(--mera-text-secondary)" /> : <Circle size={20} color={isCafe ? '#f59e0b' : 'var(--mera-border-strong)'} />}
+                                    {isWorking ? <CheckCircle2 size={20} color="var(--mera-success)" /> : isDone ? <CheckCircle2 size={20} color="var(--mera-text-secondary)" /> : <Circle size={20} color="var(--mera-border-strong)" />}
                                 </div>
                                 <div style={{ minWidth: 0 }}>
                                     <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.nama}</p>
                                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                                         <span style={{
                                             fontSize: 10,
-                                            color: isCafe ? '#d97706' : 'var(--mera-text-tertiary)',
+                                            color: isCafe ? '#E0B88A' : 'var(--mera-text-tertiary)',
                                             fontWeight: isCafe ? 700 : 500,
-                                            background: isCafe ? 'rgba(217, 119, 6, 0.12)' : 'transparent',
-                                            border: isCafe ? '1px solid rgba(217, 119, 6, 0.25)' : 'none',
+                                            background: isCafe ? 'rgba(98, 33, 40, 0.25)' : 'transparent',
+                                            border: isCafe ? '1px solid rgba(139, 26, 26, 0.4)' : 'none',
                                             padding: isCafe ? '1px 6px' : '0',
                                             borderRadius: 4
                                         }}>
@@ -475,7 +475,7 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                             {/* Status info */}
                             {isWorking && activeAtt && (
                                 <div style={{ marginBottom: 10, fontSize: 11 }}>
-                                    <p style={{ color: isCafe ? '#f59e0b' : 'var(--mera-success)', fontWeight: 600, marginBottom: 2 }}>
+                                    <p style={{ color: 'var(--mera-success)', fontWeight: 600, marginBottom: 2 }}>
                                         ● Login {fmtTime(activeAtt.clock_in)}
                                     </p>
                                     <p style={{ color: 'var(--mera-text-tertiary)', marginBottom: 2 }}>
@@ -513,7 +513,7 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                                         onClick={() => { if (onClockIn) onClockIn(c.id) }}
                                         style={{
                                             width: '100%', padding: '9px', fontSize: 12, fontWeight: 700,
-                                            background: isCafe ? '#d97706' : 'var(--mera-accent)', color: '#fff',
+                                            background: 'var(--mera-accent)', color: '#fff',
                                             border: 'none', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                         }}
@@ -525,7 +525,7 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                                         style={{
                                             width: '100%', padding: isCafe ? '9px' : '7px', fontSize: isCafe ? 12 : 11, fontWeight: isCafe ? 700 : 600,
                                             background: isCafe ? 'var(--mera-surface-raised)' : 'transparent', color: isCafe ? 'var(--mera-text-primary)' : 'var(--mera-text-tertiary)',
-                                            border: `1px solid ${isCafe ? 'rgba(217, 119, 6, 0.4)' : 'var(--mera-border)'}`, borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
+                                            border: '1px solid var(--mera-border)', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                         }}
                                     >
@@ -537,7 +537,7 @@ export default function AttendanceBoard({ onLogout, onClockIn }: { onLogout?: ()
                                     onClick={() => setClockInTarget(c)}
                                     style={{
                                         width: '100%', padding: '9px', fontSize: 12, fontWeight: 700,
-                                        background: isCafe ? '#d97706' : 'var(--mera-accent)', color: '#fff',
+                                        background: 'var(--mera-accent)', color: '#fff',
                                         border: 'none', borderRadius: 'var(--mera-radius-md)', cursor: 'pointer',
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
                                     }}
@@ -901,8 +901,8 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
                     {isSoloCafe && (
                         <div style={{
                             marginTop: 10, padding: '8px 10px', borderRadius: 'var(--mera-radius-sm)',
-                            background: 'rgba(217, 119, 6, 0.1)', border: '1px solid rgba(217, 119, 6, 0.25)',
-                            color: '#d97706', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6
+                            background: 'rgba(98, 33, 40, 0.2)', border: '1px solid rgba(139, 26, 26, 0.35)',
+                            color: '#E0B88A', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6
                         }}>
                             <span>⭐</span>
                             <span>Solo Shift: Hanya 1 kru yang hadir hari ini, rate disesuaikan menjadi Rp 100.000/hari.</span>
