@@ -78,7 +78,7 @@ export function isCafeCrew(c?: Crew | { role?: string; nama?: string } | null): 
     if (!c) return false
     const r = (c.role || '').toLowerCase()
     const n = (c.nama || '').toLowerCase()
-    return r.includes('cafe') || r.includes('hause') || r.includes('barista') || n === 'nona' || n === 'rara'
+    return r.includes('cafe') || r.includes('hause') || r.includes('barista') || n === 'nona' || n === 'rara' || n === 'izza'
 }
 
 // ── Bonus Parameters ──────────────────────────────────────────

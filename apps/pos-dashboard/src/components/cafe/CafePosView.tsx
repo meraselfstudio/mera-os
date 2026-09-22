@@ -189,7 +189,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
           supabase.from('cafe_categories').select('*').order('sort_order'),
           supabase.from('cafe_products').select('*').order('sort_order'),
           supabase.from('cafe_orders').select('*, items:cafe_order_items(*)').order('created_at', { ascending: false }).limit(100),
-          supabase.from('expenses').select('*').or(`kategori.ilike.Cafe%,keterangan.ilike.%[Méra Hause]%,keterangan.ilike.%[Nona]%,keterangan.ilike.%[Rara]%`).order('tanggal', { ascending: false }).order('created_at', { ascending: false }).limit(100),
+          supabase.from('expenses').select('*').or(`kategori.ilike.Cafe%,keterangan.ilike.%[Méra Hause]%,keterangan.ilike.%[Nona]%,keterangan.ilike.%[Rara]%,keterangan.ilike.%[Izza]%`).order('tanggal', { ascending: false }).order('created_at', { ascending: false }).limit(100),
         ])
 
         if (catData && catData.length > 0) setCategories(catData as CafeCategory[])
@@ -1854,7 +1854,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                 </p>
               </div>
 
-              {/* Security Lock Banner for Crew (Nona & Rara) */}
+              {/* Security Lock Banner for Crew (Nona & Izza) */}
               {role !== 'owner' && (
                 <div
                   style={{
