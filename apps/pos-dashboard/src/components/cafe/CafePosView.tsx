@@ -28,9 +28,6 @@ import {
   Send,
   Copy,
   Check,
-  Package,
-  Layers3,
-  AlertTriangle,
 } from 'lucide-react'
 import { supabase } from '@mera/supabase'
 import type {
@@ -41,21 +38,12 @@ import type {
   CafeOrderType,
   CafeOrderStatus,
   CafePaymentMethod,
-  CafeIngredient,
-  CafeRecipeItem,
-  CafeStockMutation,
 } from './types'
 import { DEFAULT_CAFE_CATEGORIES, DEFAULT_CAFE_PRODUCTS } from './defaultMenu'
-import {
-  DEFAULT_CAFE_INGREDIENTS,
-  getRecipeItemsForProduct,
-  calculateProductStockStatus,
-} from './defaultInventory'
 import { bluetoothPrinter, type BluetoothPrinterState, type CafeRecapPrintData } from './bluetoothPrinter'
 import { CafeCheckoutModal } from './CafeCheckoutModal'
 import { CafeReceipt } from './CafeReceipt'
 import { CafeClosingReceipt } from './CafeClosingReceipt'
-import { CafeInventoryView } from './CafeInventoryView'
 
 export interface CafeExpense {
   id: string
@@ -75,7 +63,7 @@ interface CafePosViewProps {
   onLogout?: () => void
 }
 
-type CafeSubTab = 'kasir' | 'open_bills' | 'history' | 'inventory' | 'expenses' | 'recap'
+type CafeSubTab = 'kasir' | 'open_bills' | 'history' | 'expenses' | 'recap'
 
 export function getWibDate(date = new Date()): string {
   const wib = new Date(date.getTime() + 7 * 60 * 60 * 1000)
@@ -153,78 +141,6 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
     return []
   })
 
-  // ─── Inventory & Ingredients State ──────────────────────────
-  const [ingredients, setIngredients] = useState<CafeIngredient[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('mera_cafe_ingredients_cache')
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed
-        } catch {
-          // ignore
-        }
-      }
-    }
-    return DEFAULT_CAFE_INGREDIENTS
-  })
-
-  const [recipes, setRecipes] = useState<CafeRecipeItem[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('mera_cafe_recipes_cache')
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed
-        } catch {
-          // ignore
-        }
-      }
-    }
-    return []
-  })
-
-  const [mutations, setMutations] = useState<CafeStockMutation[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('mera_cafe_mutations_cache')
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed)) return parsed
-        } catch {
-          // ignore
-        }
-      }
-    }
-    return []
-  })
-
-  // Save ingredients to local cache
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('mera_cafe_ingredients_cache', JSON.stringify(ingredients))
-    }
-  }, [ingredients])
-
-  // Save recipes to local cache
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('mera_cafe_recipes_cache', JSON.stringify(recipes))
-    }
-  }, [recipes])
-
-  // Save mutations to local cache
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('mera_cafe_mutations_cache', JSON.stringify(mutations))
-    }
-  }, [mutations])
-
-  // Low stock count (items with stock <= minimum_stock or stock <= 0)
-  const lowStockCount = useMemo(() => {
-    return ingredients.filter((i) => i.current_stock <= i.minimum_stock).length
-  }, [ingredients])
-
   // Expense Form State
   const [expenseKeterangan, setExpenseKeterangan] = useState<string>('')
   const [expenseJumlah, setExpenseJumlah] = useState<string>('')
@@ -269,33 +185,19 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
   useEffect(() => {
     const fetchSupabaseData = async () => {
       try {
-        const [
-          { data: catData },
-          { data: prodData },
-          { data: ordData },
-          { data: expData },
-          { data: ingData },
-          { data: recData },
-          { data: mutData },
-        ] = await Promise.all([
+        const [{ data: catData }, { data: prodData }, { data: ordData }, { data: expData }] = await Promise.all([
           supabase.from('cafe_categories').select('*').order('sort_order'),
           supabase.from('cafe_products').select('*').order('sort_order'),
           supabase.from('cafe_orders').select('*, items:cafe_order_items(*)').order('created_at', { ascending: false }).limit(100),
           supabase.from('expenses').select('*').or(`kategori.ilike.Cafe%,keterangan.ilike.%[Méra Hause]%,keterangan.ilike.%[Nona]%,keterangan.ilike.%[Rara]%`).order('tanggal', { ascending: false }).order('created_at', { ascending: false }).limit(100),
-          supabase.from('cafe_ingredients').select('*').order('category').order('name'),
-          supabase.from('cafe_recipes').select('*'),
-          supabase.from('cafe_stock_mutations').select('*').order('created_at', { ascending: false }).limit(100),
         ])
 
         if (catData && catData.length > 0) setCategories(catData as CafeCategory[])
         if (prodData && prodData.length > 0) setProducts(prodData as CafeProduct[])
         if (ordData && ordData.length > 0) setOrders(ordData as CafeOrder[])
         if (expData && expData.length > 0) setExpenses(expData as CafeExpense[])
-        if (ingData && ingData.length > 0) setIngredients(ingData as CafeIngredient[])
-        if (recData && recData.length > 0) setRecipes(recData as CafeRecipeItem[])
-        if (mutData && mutData.length > 0) setMutations(mutData as CafeStockMutation[])
       } catch (err) {
-        console.log('Using local fallback cafe catalog / inventory:', err)
+        console.log('Using local fallback cafe catalog / expenses:', err)
       }
     }
     fetchSupabaseData()
@@ -339,26 +241,12 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
 
   // Cart Handlers
   const handleAddToCart = (product: CafeProduct) => {
-    const stockStatus = calculateProductStockStatus(product, recipes, ingredients)
-    if (stockStatus.status === 'OUT_OF_STOCK') {
-      showToast(
-        `Bahan baku untuk ${product.name} sedang habis (${stockStatus.bottleneckIngredient?.name || 'Stok 0'})!`
-      )
-      return
-    }
-
     setCart((prev) => {
       const existingIdx = prev.findIndex((item) => item.product.id === product.id)
       if (existingIdx >= 0) {
         const updated = [...prev]
         const item = updated[existingIdx]
         const newQty = item.quantity + 1
-        if (stockStatus.estimatedPortions > 0 && newQty > stockStatus.estimatedPortions) {
-          showToast(
-            `Sisa bahan baku hanya cukup untuk ${stockStatus.estimatedPortions} porsi!`
-          )
-          return prev
-        }
         updated[existingIdx] = {
           ...item,
           quantity: newQty,
@@ -587,118 +475,14 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
       showToast('Hanya Owner yang memiliki akses membatalkan transaksi.')
       return
     }
-    if (
-      !confirm(
-        `Yakin ingin membatalkan transaksi #${orderNumber}? Transaksi ini akan dikeluarkan dari omset dan stok bahan akan dikembalikan.`
-      )
-    )
-      return
-
-    const targetOrder = orders.find((o) => o.id === orderId)
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: 'CANCELLED' as CafeOrderStatus } : o))
-    )
-
+    if (!confirm(`Yakin ingin membatalkan transaksi #${orderNumber}? Transaksi ini akan dikeluarkan dari omset.`)) return
+    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: 'CANCELLED' as CafeOrderStatus } : o)))
     try {
       await (supabase.from('cafe_orders') as any).update({ status: 'CANCELLED' }).eq('id', orderId)
     } catch (err) {
       console.error('Error voiding order:', err)
     }
-
-    // ─── Automatic Inventory Restoration on Void ───
-    if (targetOrder?.items && targetOrder.items.length > 0) {
-      const restoreMap = new Map<
-        string,
-        { ingredient: CafeIngredient; qty: number; productsSummary: string[] }
-      >()
-
-      for (const item of targetOrder.items) {
-        const recipeItems = getRecipeItemsForProduct(
-          { id: item.product_id || '', name: item.product_name },
-          recipes,
-          ingredients
-        )
-        for (const rItem of recipeItems) {
-          const ingId = rItem.ingredient.id
-          const totalRestore = rItem.quantity * item.quantity
-          const existing = restoreMap.get(ingId)
-          if (existing) {
-            existing.qty += totalRestore
-            existing.productsSummary.push(`${item.quantity}x ${item.product_name}`)
-          } else {
-            restoreMap.set(ingId, {
-              ingredient: rItem.ingredient,
-              qty: totalRestore,
-              productsSummary: [`${item.quantity}x ${item.product_name}`],
-            })
-          }
-        }
-      }
-
-      if (restoreMap.size > 0) {
-        const restoreMutations: CafeStockMutation[] = []
-        const updatedIngredientsMap = new Map<string, number>()
-
-        setIngredients((prev) => {
-          return prev.map((ing) => {
-            const restore = restoreMap.get(ing.id)
-            if (!restore) return ing
-            const prevStock = ing.current_stock
-            const newStock = prevStock + restore.qty
-            updatedIngredientsMap.set(ing.id, newStock)
-
-            restoreMutations.push({
-              id: `MUT-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-              ingredient_id: ing.id,
-              ingredient_name: ing.name,
-              type: 'CANCEL_RESTORE',
-              quantity: restore.qty,
-              previous_stock: prevStock,
-              final_stock: newStock,
-              reference_id: orderId,
-              notes: `Batal Transaksi #${orderNumber} (${restore.productsSummary.join(', ')})`,
-              created_by: cashierName,
-              created_at: new Date().toISOString(),
-            })
-
-            return {
-              ...ing,
-              current_stock: newStock,
-            }
-          })
-        })
-
-        if (restoreMutations.length > 0) {
-          setMutations((prev) => [...restoreMutations, ...prev])
-        }
-
-        try {
-          for (const [ingId, newStock] of updatedIngredientsMap.entries()) {
-            await (supabase.from('cafe_ingredients') as any)
-              .update({ current_stock: newStock })
-              .eq('id', ingId)
-          }
-          if (restoreMutations.length > 0) {
-            await (supabase.from('cafe_stock_mutations') as any).insert(
-              restoreMutations.map((m) => ({
-                ingredient_id: m.ingredient_id,
-                type: m.type,
-                quantity: m.quantity,
-                previous_stock: m.previous_stock,
-                final_stock: m.final_stock,
-                reference_id: m.reference_id,
-                notes: m.notes,
-                created_by: m.created_by,
-              }))
-            )
-          }
-        } catch (err) {
-          console.error('Failed to sync inventory restore to Supabase:', err)
-        }
-      }
-    }
-
-    showToast(`Transaksi #${orderNumber} berhasil dibatalkan & stok dikembalikan`)
+    showToast(`Transaksi #${orderNumber} berhasil dibatalkan`)
   }
 
   // Expense Handlers
@@ -768,138 +552,6 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
     showToast('Pengeluaran berhasil dihapus')
   }
 
-  // ─── Inventory Restock & Stock Opname Handlers ────────────
-  const handleRestock = async (
-    ingredientId: string,
-    addQty: number,
-    cost: number,
-    autoRecordExpense: boolean,
-    notes: string
-  ) => {
-    const target = ingredients.find((i) => i.id === ingredientId)
-    if (!target) return
-
-    const prevStock = target.current_stock
-    const newStock = prevStock + addQty
-
-    setIngredients((prev) =>
-      prev.map((i) => (i.id === ingredientId ? { ...i, current_stock: newStock } : i))
-    )
-
-    const newMutation: CafeStockMutation = {
-      id: `MUT-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      ingredient_id: ingredientId,
-      ingredient_name: target.name,
-      type: 'RESTOCK',
-      quantity: addQty,
-      previous_stock: prevStock,
-      final_stock: newStock,
-      notes: notes || 'Pembelian / Restock Bahan Baku',
-      created_by: cashierName,
-      created_at: new Date().toISOString(),
-    }
-
-    setMutations((prev) => [newMutation, ...prev])
-
-    try {
-      await (supabase.from('cafe_ingredients') as any)
-        .update({ current_stock: newStock })
-        .eq('id', ingredientId)
-      await (supabase.from('cafe_stock_mutations') as any).insert({
-        ingredient_id: ingredientId,
-        type: 'RESTOCK',
-        quantity: addQty,
-        previous_stock: prevStock,
-        final_stock: newStock,
-        notes: newMutation.notes,
-        created_by: cashierName,
-      })
-    } catch (err) {
-      console.error('Supabase restock sync failed:', err)
-    }
-
-    // Auto-record expense if requested
-    if (autoRecordExpense && cost > 0) {
-      const today = getWibDate()
-      const newExp: CafeExpense = {
-        id: `EXP-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        tanggal: today,
-        keterangan: `[Restock] ${target.name} (+${addQty} ${target.unit})${notes ? ` - ${notes}` : ''} [${cashierName}]`,
-        kategori: 'Cafe: Bahan Baku',
-        jumlah: cost,
-        metode_bayar: 'CASH',
-        created_at: new Date().toISOString(),
-      }
-      setExpenses((prev) => [newExp, ...prev])
-      try {
-        await (supabase.from('expenses') as any).insert({
-          id: newExp.id,
-          tanggal: newExp.tanggal,
-          keterangan: newExp.keterangan,
-          kategori: newExp.kategori,
-          jumlah: newExp.jumlah,
-          metode_bayar: newExp.metode_bayar,
-          user_name: cashierName,
-        })
-      } catch {
-        // ignore
-      }
-    }
-
-    showToast(`Restock ${target.name} (+${addQty} ${target.unit}) berhasil disimpan!`)
-  }
-
-  const handleOpname = async (
-    ingredientId: string,
-    physicalStock: number,
-    reason: string
-  ) => {
-    const target = ingredients.find((i) => i.id === ingredientId)
-    if (!target) return
-
-    const prevStock = target.current_stock
-    const diff = physicalStock - prevStock
-    const newStock = physicalStock
-
-    setIngredients((prev) =>
-      prev.map((i) => (i.id === ingredientId ? { ...i, current_stock: newStock } : i))
-    )
-
-    const newMutation: CafeStockMutation = {
-      id: `OPN-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      ingredient_id: ingredientId,
-      ingredient_name: target.name,
-      type: 'OPNAME',
-      quantity: diff,
-      previous_stock: prevStock,
-      final_stock: newStock,
-      notes: `Stok Opname Fisik: ${physicalStock} ${target.unit} (${diff >= 0 ? `+${diff}` : diff} ${target.unit})${reason ? ` - ${reason}` : ''}`,
-      created_by: cashierName,
-      created_at: new Date().toISOString(),
-    }
-
-    setMutations((prev) => [newMutation, ...prev])
-
-    try {
-      await (supabase.from('cafe_ingredients') as any)
-        .update({ current_stock: newStock })
-        .eq('id', ingredientId)
-      await (supabase.from('cafe_stock_mutations') as any).insert({
-        ingredient_id: ingredientId,
-        type: 'OPNAME',
-        quantity: diff,
-        previous_stock: prevStock,
-        final_stock: newStock,
-        notes: newMutation.notes,
-        created_by: cashierName,
-      })
-    } catch (err) {
-      console.error('Supabase opname sync failed:', err)
-    }
-
-    showToast(`Stok Opname ${target.name} berhasil disimpan (${physicalStock} ${target.unit})!`)
-  }
-
   // Completed Payment Callback from Checkout Modal
   const handleCompletePayment = async (completedOrder: CafeOrder) => {
     setOrders((prev) => {
@@ -912,101 +564,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
 
     handleClearCart()
 
-    // ─── Automatic Inventory Deduction (BOM Recipe per Cup/Portion) ───
-    if (completedOrder.items && completedOrder.items.length > 0) {
-      const deductionsMap = new Map<
-        string,
-        { ingredient: CafeIngredient; qty: number; productsSummary: string[] }
-      >()
-
-      for (const item of completedOrder.items) {
-        const recipeItems = getRecipeItemsForProduct(
-          { id: item.product_id || '', name: item.product_name },
-          recipes,
-          ingredients
-        )
-        for (const rItem of recipeItems) {
-          const ingId = rItem.ingredient.id
-          const totalDeduct = rItem.quantity * item.quantity
-          const existing = deductionsMap.get(ingId)
-          if (existing) {
-            existing.qty += totalDeduct
-            existing.productsSummary.push(`${item.quantity}x ${item.product_name}`)
-          } else {
-            deductionsMap.set(ingId, {
-              ingredient: rItem.ingredient,
-              qty: totalDeduct,
-              productsSummary: [`${item.quantity}x ${item.product_name}`],
-            })
-          }
-        }
-      }
-
-      if (deductionsMap.size > 0) {
-        const newMutationsList: CafeStockMutation[] = []
-        const updatedIngredientsMap = new Map<string, number>()
-
-        setIngredients((prev) => {
-          return prev.map((ing) => {
-            const deduction = deductionsMap.get(ing.id)
-            if (!deduction) return ing
-            const prevStock = ing.current_stock
-            const newStock = Math.max(0, prevStock - deduction.qty)
-            updatedIngredientsMap.set(ing.id, newStock)
-
-            newMutationsList.push({
-              id: `MUT-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-              ingredient_id: ing.id,
-              ingredient_name: ing.name,
-              type: 'SALE',
-              quantity: -deduction.qty,
-              previous_stock: prevStock,
-              final_stock: newStock,
-              reference_id: completedOrder.id,
-              notes: `Terjual di #${completedOrder.order_number} (${deduction.productsSummary.join(', ')})`,
-              created_by: completedOrder.cashier_name || cashierName,
-              created_at: new Date().toISOString(),
-            })
-
-            return {
-              ...ing,
-              current_stock: newStock,
-            }
-          })
-        })
-
-        if (newMutationsList.length > 0) {
-          setMutations((prev) => [...newMutationsList, ...prev])
-        }
-
-        // Sync to Supabase in background
-        try {
-          for (const [ingId, newStock] of updatedIngredientsMap.entries()) {
-            await (supabase.from('cafe_ingredients') as any)
-              .update({ current_stock: newStock })
-              .eq('id', ingId)
-          }
-          if (newMutationsList.length > 0) {
-            await (supabase.from('cafe_stock_mutations') as any).insert(
-              newMutationsList.map((m) => ({
-                ingredient_id: m.ingredient_id,
-                type: m.type,
-                quantity: m.quantity,
-                previous_stock: m.previous_stock,
-                final_stock: m.final_stock,
-                reference_id: m.reference_id,
-                notes: m.notes,
-                created_by: m.created_by,
-              }))
-            )
-          }
-        } catch (err) {
-          console.error('Failed to sync inventory deduction to Supabase:', err)
-        }
-      }
-    }
-
-    // Sync order to Supabase
+    // Sync to Supabase
     try {
       await (supabase.from('cafe_orders') as any).upsert({
         id: completedOrder.id,
@@ -1384,12 +942,6 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
               },
               { key: 'history', label: 'Riwayat Struk', icon: Receipt, badge: null },
               {
-                key: 'inventory',
-                label: 'Stok Bahan',
-                icon: Package,
-                badge: lowStockCount > 0 ? lowStockCount : null,
-              },
-              {
                 key: 'expenses',
                 label: `Pengeluaran (${todayExpenses.length})`,
                 icon: Wallet,
@@ -1662,10 +1214,6 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
               >
                 {filteredProducts.map((prod) => {
                   const inCartItem = cart.find((c) => c.product.id === prod.id)
-                  const stockStatus = calculateProductStockStatus(prod, recipes, ingredients)
-                  const isOutOfStock = stockStatus.status === 'OUT_OF_STOCK'
-                  const isLowStock = stockStatus.status === 'LOW_STOCK'
-
                   return (
                     <div
                       key={prod.id}
@@ -1673,70 +1221,27 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                       style={{
                         background: inCartItem
                           ? 'rgba(98, 33, 40, 0.25)'
-                          : isOutOfStock
-                          ? 'rgba(255, 255, 255, 0.02)'
                           : 'rgba(255, 255, 255, 0.04)',
                         border: inCartItem
                           ? '1.5px solid rgba(139, 26, 26, 0.8)'
-                          : isOutOfStock
-                          ? '1px dashed rgba(239, 68, 68, 0.35)'
                           : '1px solid rgba(255, 255, 255, 0.08)',
                         borderRadius: '12px',
                         padding: '14px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
-                        cursor: isOutOfStock ? 'not-allowed' : 'pointer',
-                        opacity: isOutOfStock ? 0.55 : 1,
+                        cursor: 'pointer',
                         transition: 'all 0.15s ease',
                         position: 'relative',
                         minHeight: '120px',
                       }}
                     >
-                      {/* Stock Status Badge */}
-                      {isOutOfStock ? (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '8px',
-                            right: '8px',
-                            background: '#ef4444',
-                            color: '#fff',
-                            padding: '2px 7px',
-                            borderRadius: '6px',
-                            fontSize: '10px',
-                            fontWeight: 800,
-                            letterSpacing: '0.05em',
-                            boxShadow: '0 2px 6px rgba(239, 68, 68, 0.4)',
-                          }}
-                        >
-                          HABIS
-                        </div>
-                      ) : isLowStock ? (
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '8px',
-                            right: '8px',
-                            background: 'rgba(245, 158, 11, 0.2)',
-                            border: '1px solid rgba(245, 158, 11, 0.4)',
-                            color: '#fbbf24',
-                            padding: '2px 6px',
-                            borderRadius: '6px',
-                            fontSize: '9px',
-                            fontWeight: 700,
-                          }}
-                        >
-                          Sisa ~{stockStatus.estimatedPortions}
-                        </div>
-                      ) : null}
-
                       {/* Quantity in Cart Badge */}
                       {inCartItem && (
                         <div
                           style={{
                             position: 'absolute',
-                            top: isOutOfStock || isLowStock ? '32px' : '8px',
+                            top: '8px',
                             right: '8px',
                             background: '#622128',
                             color: '#fff',
@@ -1762,7 +1267,7 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
                             fontWeight: 700,
                             color: '#fff',
                             marginBottom: '4px',
-                            paddingRight: isOutOfStock || isLowStock || inCartItem ? '54px' : '0',
+                            paddingRight: inCartItem ? '24px' : '0',
                           }}
                         >
                           {prod.name}
@@ -2496,19 +2001,6 @@ export const CafePosView: React.FC<CafePosViewProps> = ({
               )}
             </div>
           </div>
-        )}
-
-        {/* ─── Sub-Tab: Stok & Resep Bahan Baku (BOM & Opname) ─ */}
-        {activeTab === 'inventory' && (
-          <CafeInventoryView
-            ingredients={ingredients}
-            recipes={recipes}
-            mutations={mutations}
-            onRestock={handleRestock}
-            onOpname={handleOpname}
-            cashierName={cashierName}
-            role={role}
-          />
         )}
 
         {/* ─── Sub-Tab: Pengeluaran Operasional Harian ──────── */}
