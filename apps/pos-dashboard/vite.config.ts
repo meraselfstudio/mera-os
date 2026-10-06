@@ -20,32 +20,15 @@ export default defineConfig(({ mode }) => {
                         let bodyStr = ''
                         req.on('data', chunk => { bodyStr += chunk })
                         req.on('end', async () => {
-                            if (!appsScriptUrl) {
-                                res.statusCode = 500
-                                res.setHeader('Content-Type', 'application/json')
-                                return res.end(JSON.stringify({ ok: false, error: 'VITE_APPS_SCRIPT_URL not configured' }))
-                            }
+                            const targetUrl = appsScriptUrl || 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
 
                             try {
-                                let response = await fetch(appsScriptUrl, {
+                                const response = await fetch(targetUrl, {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
                                     body: bodyStr,
-                                    redirect: 'manual',
+                                    redirect: 'follow',
                                 })
-
-                                let redirects = 0
-                                while ((response.status === 301 || response.status === 302 || response.status === 307 || response.status === 308) && redirects < 5) {
-                                    const location = response.headers.get('location')
-                                    if (!location) break
-                                    response = await fetch(location, {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-                                        body: bodyStr,
-                                        redirect: 'manual',
-                                    })
-                                    redirects++
-                                }
 
                                 const text = await response.text()
                                 res.setHeader('Content-Type', 'application/json')

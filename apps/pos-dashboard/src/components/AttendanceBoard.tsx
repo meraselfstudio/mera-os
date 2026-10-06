@@ -162,21 +162,87 @@ function useCamera() {
         setReady(false)
     }, [])
 
-    const capture = useCallback((): string | null => {
+    const capture = useCallback((meta?: { crewName?: string; type?: string; shift?: string }): string | null => {
         const video = videoRef.current
         if (!video) return null
         const canvas = document.createElement('canvas')
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        canvas.getContext('2d')?.drawImage(video, 0, 0)
-        return canvas.toDataURL('image/jpeg', 0.75)
+        const w = video.videoWidth || 640
+        const h = video.videoHeight || 480
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return null
+
+        // 1. Draw raw video frame
+        ctx.drawImage(video, 0, 0, w, h)
+
+        // 2. Format local date & time
+        const now = new Date()
+        const pad = (n: number) => String(n).padStart(2, '0')
+        const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+        const dayName = days[now.getDay()]
+        const dateStr = `${dayName}, ${pad(now.getDate())} ${months[now.getMonth()]} ${now.getFullYear()}`
+        const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())} WIB`
+
+        // 3. Render watermark banner overlay at bottom
+        const bannerHeight = Math.max(54, Math.round(h * 0.13))
+        const fontSize = Math.max(14, Math.round(h * 0.033))
+        const smallFontSize = Math.max(11, Math.round(h * 0.026))
+
+        // Dark gradient overlay for clear contrast
+        const grad = ctx.createLinearGradient(0, h - bannerHeight, 0, h)
+        grad.addColorStop(0, 'rgba(0, 0, 0, 0)')
+        grad.addColorStop(0.25, 'rgba(0, 0, 0, 0.75)')
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0.92)')
+        ctx.fillStyle = grad
+        ctx.fillRect(0, h - bannerHeight, w, bannerHeight)
+
+        const leftMargin = Math.max(16, Math.round(w * 0.03))
+        const bottomMargin = Math.max(12, Math.round(h * 0.022))
+
+        // Date & Time line
+        ctx.textBaseline = 'bottom'
+        ctx.font = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+        ctx.fillStyle = '#FFFFFF'
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.9)'
+        ctx.shadowBlur = 4
+        ctx.shadowOffsetX = 1
+        ctx.shadowOffsetY = 1
+
+        const hasSubtext = Boolean(meta?.crewName || meta?.type)
+        const dateY = hasSubtext ? h - bottomMargin - smallFontSize - 5 : h - bottomMargin
+        ctx.fillText(`📅 ${dateStr}   ⏰ ${timeStr}`, leftMargin, dateY)
+
+        // Crew info / Action subtext
+        if (hasSubtext) {
+            ctx.font = `500 ${smallFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+            ctx.fillStyle = '#F5D0A9' // Warm gold accent
+            const actionLabel = meta?.type || 'Presensi'
+            const shiftLabel = meta?.shift ? ` • ${meta.shift}` : ''
+            ctx.fillText(`👤 ${meta?.crewName || 'Kru'} [${actionLabel}]${shiftLabel} • Méra OS`, leftMargin, h - bottomMargin)
+        }
+
+        // Clean up shadow
+        ctx.shadowColor = 'transparent'
+        ctx.shadowBlur = 0
+
+        return canvas.toDataURL('image/jpeg', 0.85)
     }, [])
 
     return { videoRef, ready, error, start, stop, capture }
 }
 
-// ── Upload photo to Supabase Storage ─────────────────────────
+// ── Upload photo to Supabase Storage & Google Drive ──────────
+const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
+
 async function uploadPhoto(base64: string, filename: string, metadata?: any): Promise<string | null> {
+    // 1. Trigger background upload to Google Drive immediately
+    uploadToDriveBackground(base64, filename, metadata).catch(e => {
+        console.warn('[Attendance] Drive upload error:', e)
+    })
+
+    // 2. Upload to Supabase Storage
     try {
         const res = await fetch(base64)
         const blob = await res.blob()
@@ -185,9 +251,6 @@ async function uploadPhoto(base64: string, filename: string, metadata?: any): Pr
             .upload(filename, blob, { contentType: 'image/jpeg', upsert: true })
         if (error || !data?.path) return null
         const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path)
-
-        // Also upload to Google Drive via Apps Script (silent, best-effort)
-        uploadToDriveBackground(base64, filename, metadata)
 
         return urlData.publicUrl
     } catch {
@@ -223,17 +286,16 @@ async function uploadToDriveBackground(base64: string, filename: string, metadat
         if (proxyRes.ok) {
             const result = await proxyRes.json().catch(() => null)
             if (result?.ok) {
-                console.log('[Attendance] Drive upload success:', filename)
+                console.log('[Attendance] Drive upload success via proxy:', filename)
                 return
             }
         }
-    } catch {
-        // Fallback to direct Apps Script call
+    } catch (e) {
+        console.warn('[Attendance] Proxy upload failed, trying direct:', e)
     }
 
     // 2. Direct Apps Script fetch fallback
-    const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL
-    if (!scriptUrl) return
+    const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL || DEFAULT_APPS_SCRIPT_URL
 
     try {
         await fetch(scriptUrl, {
@@ -614,7 +676,11 @@ function ClockInModal({ crew, attendance, onClose, onDone }: {
     useEffect(() => () => cam.stop(), [])
 
     const handleCapture = () => {
-        const data = cam.capture()
+        const data = cam.capture({
+            crewName: crew.nama,
+            type: 'CLOCK IN',
+            shift: shift?.label || selectedShift,
+        })
         if (data) setPhotoData(data)
     }
 
@@ -796,7 +862,11 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
     const target = isWeekendDay(new Date()) ? TARGET_WEEKEND : TARGET_WEEKDAY
 
     const handleCapture = () => {
-        const data = cam.capture()
+        const data = cam.capture({
+            crewName: crew.nama,
+            type: 'CLOCK OUT',
+            shift: att.shift_type,
+        })
         if (data) setPhotoData(data)
     }
 

@@ -3,36 +3,24 @@ export default async function handler(req, res) {
         return res.status(405).send('Method not allowed')
     }
 
-    const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || ''
-    if (!APPS_SCRIPT_URL) {
-        return res.status(500).json({ ok: false, error: 'URL not configured' })
-    }
+    const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
 
-    const body = req.body
-    const payload = JSON.stringify(body)
+    try {
+        const body = req.body
+        const payload = typeof body === 'string' ? body : JSON.stringify(body)
 
-    // Apps Script returns 302 redirect; follow manually preserving POST + body
-    let response = await fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-        body: payload,
-        redirect: 'manual',
-    })
-
-    let redirects = 0
-    while ((response.status === 301 || response.status === 302 || response.status === 307 || response.status === 308) && redirects < 5) {
-        const location = response.headers.get('location')
-        if (!location) break
-        response = await fetch(location, {
+        const response = await fetch(APPS_SCRIPT_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain; charset=utf-8' },
             body: payload,
-            redirect: 'manual',
+            redirect: 'follow',
         })
-        redirects++
-    }
 
-    const text = await response.text()
-    res.setHeader('Content-Type', 'application/json')
-    res.status(200).send(text)
+        const text = await response.text()
+        res.setHeader('Content-Type', 'application/json')
+        return res.status(200).send(text)
+    } catch (e) {
+        console.error('[Upload API Error]', e)
+        return res.status(500).json({ ok: false, error: e?.message || 'Upload proxy failed' })
+    }
 }
