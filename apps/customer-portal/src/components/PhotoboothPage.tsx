@@ -85,11 +85,68 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
     ctx.closePath()
 }
 
+/** Apply guaranteed cross-browser pixel filter to canvas */
+function applyFilterToCanvas(ctx: CanvasRenderingContext2D, w: number, h: number, filterId: Filter) {
+    if (filterId === 'none') return
+    const imgData = ctx.getImageData(0, 0, w, h)
+    const d = imgData.data
+
+    for (let i = 0; i < d.length; i += 4) {
+        let r = d[i]
+        let g = d[i + 1]
+        let b = d[i + 2]
+
+        if (filterId === 'bw') {
+            // Noir B&W (Monokrom kontras tinggi & tajam)
+            const gray = 0.299 * r + 0.587 * g + 0.114 * b
+            const v = Math.min(255, Math.max(0, (gray - 128) * 1.35 + 128 + 6))
+            d[i] = v
+            d[i + 1] = v
+            d[i + 2] = v
+        } else if (filterId === 'warm') {
+            // Warm 90s (Hangat & golden 90s disposable camera)
+            r = Math.min(255, Math.max(0, (r - 128) * 1.15 + 128 + 22))
+            g = Math.min(255, Math.max(0, (g - 128) * 1.08 + 128 + 10))
+            b = Math.min(255, Math.max(0, (b - 128) * 0.92 + 128 - 14))
+            d[i] = r
+            d[i + 1] = g
+            d[i + 2] = b
+        } else if (filterId === 'soft') {
+            // Soft Glow (Pastel, cerah glowing, flattering skin tones)
+            r = Math.min(255, Math.max(0, (r - 128) * 0.92 + 128 + 24))
+            g = Math.min(255, Math.max(0, (g - 128) * 0.92 + 128 + 20))
+            b = Math.min(255, Math.max(0, (b - 128) * 0.92 + 128 + 18))
+            d[i] = r
+            d[i + 1] = g
+            d[i + 2] = b
+        } else if (filterId === 'retro') {
+            // Retro Film (Kontras analog film, bayangan lifted)
+            r = Math.min(255, Math.max(0, (r - 128) * 1.25 + 128 + 14))
+            g = Math.min(255, Math.max(0, (g - 128) * 1.14 + 128 + 4))
+            b = Math.min(255, Math.max(0, (b - 128) * 1.04 + 128 + 8))
+            d[i] = r
+            d[i + 1] = g
+            d[i + 2] = b
+        } else if (filterId === 'crimson') {
+            // Méra Red (Maroon sinematik signature Méra)
+            r = Math.min(255, Math.max(0, (r - 128) * 1.25 + 128 + 28))
+            g = Math.min(255, Math.max(0, (g - 128) * 0.92 + 128 - 10))
+            b = Math.min(255, Math.max(0, (b - 128) * 0.90 + 128 - 8))
+            d[i] = r
+            d[i + 1] = g
+            d[i + 2] = b
+        }
+    }
+
+    ctx.putImageData(imgData, 0, 0)
+}
+
 export default function PhotoboothPage() {
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const stripRef = useRef<HTMLCanvasElement>(null)
     const streamRef = useRef<MediaStream | null>(null)
+    const uploadedUrlRef = useRef<string | null>(null)
 
     const [appState, setAppState] = useState<AppState>('idle')
     const [filter, setFilter] = useState<Filter>('bw')
@@ -174,31 +231,11 @@ export default function PhotoboothPage() {
         ctx.save()
         if (mirrored) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1) }
 
-        const activeFilter = FILTERS.find(f => f.id === filter)
-        if (activeFilter && activeFilter.css !== 'none') {
-            try {
-                ctx.filter = activeFilter.css
-            } catch {
-                /* fallback if ctx.filter unsupported */
-            }
-        }
-
         ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, SLOT_W, SLOT_H)
         ctx.restore()
 
-        // Fallback for B&W if ctx.filter was ignored
-        if (filter === 'bw' && ctx.filter === 'none') {
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-            const d = imgData.data
-            for (let i = 0; i < d.length; i += 4) {
-                const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
-                d[i] = d[i + 1] = d[i + 2] = g
-            }
-            ctx.putImageData(imgData, 0, 0)
-        }
-
-        return canvas.toDataURL('image/jpeg', 0.92)
-    }, [filter, mirrored])
+        return canvas.toDataURL('image/jpeg', 0.95)
+    }, [mirrored])
 
     // ── Countdown beep ──────────────────────────────────────────
     const playBeep = useCallback((freq = 880, ms = 120) => {
@@ -259,8 +296,8 @@ export default function PhotoboothPage() {
         setAppState('preview')
     }, [captureFrame, playBeep, stopCamera])
 
-    // ── Build strip using actual frame image ────────────────────
-    const buildStrip = useCallback(async (dataUrls: string[], frame: FrameColor) => {
+    // ── Build strip using actual frame image & applied filter ──
+    const buildStrip = useCallback(async (dataUrls: string[], frame: FrameColor, activeFilter: Filter) => {
         const canvas = stripRef.current
         if (!canvas) return null
 
@@ -289,19 +326,30 @@ export default function PhotoboothPage() {
             const slotW = SLOT_W + BLEED * 2
             const slotH = SLOT_H + BLEED * 2
 
-            ctx.save()
-            roundedRect(ctx, slotX, slotY, slotW, slotH, SLOT_RADIUS + BLEED)
-            ctx.clip()
+            // Use an offscreen canvas to render slot & apply pixel filter reliably
+            const slotCanvas = document.createElement('canvas')
+            slotCanvas.width = slotW
+            slotCanvas.height = slotH
+            const sCtx = slotCanvas.getContext('2d')
+            if (sCtx) {
+                // Cover-fill the slot
+                const scale = Math.max(slotW / img.naturalWidth, slotH / img.naturalHeight)
+                const dw = img.naturalWidth * scale
+                const dh = img.naturalHeight * scale
+                const dx = (slotW - dw) / 2
+                const dy = (slotH - dh) / 2
+                sCtx.drawImage(img, dx, dy, dw, dh)
 
-            // Cover-fill the slot
-            const scale = Math.max(slotW / img.naturalWidth, slotH / img.naturalHeight)
-            const dw = img.naturalWidth * scale
-            const dh = img.naturalHeight * scale
-            const dx = slotX + (slotW - dw) / 2
-            const dy = slotY + (slotH - dh) / 2
-            ctx.drawImage(img, dx, dy, dw, dh)
+                // Apply mathematical pixel filter directly on slot pixels
+                applyFilterToCanvas(sCtx, slotW, slotH, activeFilter)
 
-            ctx.restore()
+                // Composite into strip with rounded clip
+                ctx.save()
+                roundedRect(ctx, slotX, slotY, slotW, slotH, SLOT_RADIUS + BLEED)
+                ctx.clip()
+                ctx.drawImage(slotCanvas, slotX, slotY)
+                ctx.restore()
+            }
         }
 
         return canvas.toDataURL('image/png')
@@ -328,18 +376,16 @@ export default function PhotoboothPage() {
             .catch(err => console.warn('[PhoneBooth] Upload failed:', err))
     }, [])
 
-    // Rebuild strip when frame changes & auto-upload to Google Drive
+    // Rebuild strip when frame or filter changes (DO NOT auto-upload here to prevent duplicates!)
     useEffect(() => {
         if (appState === 'preview' && photos.length === PHOTO_COUNT) {
-            buildStrip(photos, selectedFrame).then(url => {
+            buildStrip(photos, selectedFrame, filter).then(url => {
                 if (url) {
                     setStripUrl(url)
-                    // Auto-save phonebooth strip to Google Drive
-                    uploadBackground(url, promoConsent)
                 }
             })
         }
-    }, [selectedFrame, appState, photos, buildStrip, uploadBackground, promoConsent])
+    }, [selectedFrame, filter, appState, photos, buildStrip])
 
     // ── Handle download (native share → Save to Photos on mobile) ──
     const handleDownload = useCallback(async () => {
@@ -367,14 +413,18 @@ export default function PhotoboothPage() {
             a.click()
         }
 
-        // Silent background upload to studio's Drive
-        uploadBackground(stripUrl, promoConsent)
+        // Upload only once per unique strip downloaded to Google Drive
+        if (uploadedUrlRef.current !== stripUrl) {
+            uploadedUrlRef.current = stripUrl
+            uploadBackground(stripUrl, promoConsent)
+        }
     }, [stripUrl, uploadBackground, promoConsent])
 
     const retake = useCallback(() => {
         setPhotos([])
         setStripUrl(null)
         setPromoConsent(false)
+        uploadedUrlRef.current = null
         startCamera()
     }, [startCamera])
 
@@ -385,6 +435,7 @@ export default function PhotoboothPage() {
         setAppState('idle')
         setCurrentShot(0)
         setPromoConsent(false)
+        uploadedUrlRef.current = null
     }
 
     return (
@@ -466,7 +517,16 @@ export default function PhotoboothPage() {
                             {/* Show captured photo during 2s review */}
                             {appState === 'reviewing' && photos.length > 0 ? (
                                 <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                                    <img src={photos[photos.length - 1]} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    <img
+                                        src={photos[photos.length - 1]}
+                                        alt="Preview"
+                                        style={{
+                                            width: '100%',
+                                            height: '100%',
+                                            objectFit: 'cover',
+                                            filter: FILTERS.find(f => f.id === filter)?.css ?? 'none',
+                                        }}
+                                    />
                                     <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: RADIUS_FULL, padding: '6px 14px', fontSize: 13, fontWeight: 600 }}>
                                         ✓ Photo {photos.length}/{PHOTO_COUNT}
                                     </div>
@@ -550,7 +610,16 @@ export default function PhotoboothPage() {
                                         borderRadius: 8, transition: 'border-color 200ms ease',
                                     }}>
                                         {photos[i] ? (
-                                            <img src={photos[i]} alt={'Frame ' + (i + 1)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            <img
+                                                src={photos[i]}
+                                                alt={'Frame ' + (i + 1)}
+                                                style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'cover',
+                                                    filter: FILTERS.find(f => f.id === filter)?.css ?? 'none',
+                                                }}
+                                            />
                                         ) : (
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 11, color: TEXT_SUB, opacity: 0.4 }}>{i + 1}</div>
                                         )}
@@ -572,25 +641,59 @@ export default function PhotoboothPage() {
                     </div>
                 )}
 
-                {/* ── State: Preview — frame selection + download ── */}
+                {/* ── State: Preview — filter switch + frame selection + download ── */}
                 {appState === 'preview' && (
                     <div style={{ textAlign: 'center' }}>
-                        <p style={{ fontSize: 15, color: TEXT, fontWeight: 600, marginBottom: 16 }}>Pilih warna frame & download! 🎉</p>
+                        <p style={{ fontSize: 16, color: TEXT, fontWeight: 700, marginBottom: 16 }}>Sempurnakan Strip Kamu! 🎉</p>
+
+                        {/* Filter selector */}
+                        <div style={{ marginBottom: 16 }}>
+                            <p style={{ fontSize: 12, color: TEXT_SUB, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                                🎨 Pilih Filter
+                            </p>
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                {FILTERS.map(f => (
+                                    <button
+                                        key={f.id}
+                                        onClick={() => setFilter(f.id)}
+                                        style={{
+                                            padding: '6px 14px',
+                                            borderRadius: RADIUS_FULL,
+                                            border: '1.5px solid ' + (filter === f.id ? MAROON : BORDER),
+                                            background: filter === f.id ? MAROON : SURFACE,
+                                            color: filter === f.id ? '#fff' : TEXT,
+                                            fontSize: 12,
+                                            fontWeight: 700,
+                                            cursor: 'pointer',
+                                            transition: 'all 150ms ease',
+                                            boxShadow: filter === f.id ? '0 2px 8px rgba(98,33,40,0.25)' : 'none',
+                                        }}
+                                    >
+                                        {f.icon} {f.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
 
                         {/* Frame selector */}
-                        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 20 }}>
-                            {(Object.keys(FRAME_LABELS) as FrameColor[]).map(fc => (
-                                <button key={fc} onClick={() => setSelectedFrame(fc)} style={{
-                                    padding: '8px 20px', borderRadius: RADIUS_FULL,
-                                    border: '2px solid ' + (selectedFrame === fc ? MAROON : 'transparent'),
-                                    background: FRAME_LABELS[fc].bg, color: FRAME_LABELS[fc].text,
-                                    fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                                    boxShadow: selectedFrame === fc ? ('0 0 0 2px ' + MAROON) : '0 2px 8px rgba(0,0,0,0.1)',
-                                    transition: 'all 150ms ease', minWidth: 80,
-                                }}>
-                                    {FRAME_LABELS[fc].label}
-                                </button>
-                            ))}
+                        <div style={{ marginBottom: 20 }}>
+                            <p style={{ fontSize: 12, color: TEXT_SUB, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                                🖼️ Warna Frame
+                            </p>
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
+                                {(Object.keys(FRAME_LABELS) as FrameColor[]).map(fc => (
+                                    <button key={fc} onClick={() => setSelectedFrame(fc)} style={{
+                                        padding: '8px 20px', borderRadius: RADIUS_FULL,
+                                        border: '2px solid ' + (selectedFrame === fc ? MAROON : 'transparent'),
+                                        background: FRAME_LABELS[fc].bg, color: FRAME_LABELS[fc].text,
+                                        fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                                        boxShadow: selectedFrame === fc ? ('0 0 0 2px ' + MAROON) : '0 2px 8px rgba(0,0,0,0.1)',
+                                        transition: 'all 150ms ease', minWidth: 80,
+                                    }}>
+                                        {FRAME_LABELS[fc].label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
 
                         {/* Strip preview */}

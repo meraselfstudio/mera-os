@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL || ''
+const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
 const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024 // 5MB
 
 export async function POST(req: NextRequest) {
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     let body
     try {
         body = JSON.parse(rawBody)
-    } catch (err) {
+    } catch {
         return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 })
     }
 
@@ -40,28 +40,14 @@ export async function POST(req: NextRequest) {
 
     const payload = JSON.stringify({ fileName, mimeType, data, folderId: '1IAamhoERgEodQUJg1OOLGZIfwk-Z1TC6', promoConsent })
 
-    // Apps Script returns 302 redirect; default fetch converts POST→GET (losing body).
-    // Use redirect: 'manual' and follow the redirect ourselves with POST preserved.
-    let res = await fetch(APPS_SCRIPT_URL, {
+    const appsScriptUrl = APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
+
+    const res = await fetch(appsScriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain; charset=utf-8' },
         body: payload,
-        redirect: 'manual',
+        redirect: 'follow',
     })
-
-    // Follow up to 5 redirects, preserving POST method + body
-    let redirects = 0
-    while ((res.status === 301 || res.status === 302 || res.status === 307 || res.status === 308) && redirects < 5) {
-        const location = res.headers.get('location')
-        if (!location) break
-        res = await fetch(location, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-            body: payload,
-            redirect: 'manual',
-        })
-        redirects++
-    }
 
     const text = await res.text()
     return new Response(text, {
