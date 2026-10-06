@@ -264,16 +264,12 @@ async function uploadToDriveBackground(base64: string, filename: string, metadat
     const data = base64.split(',')[1]
     if (!data) return
 
-    const actionType = metadata?.type === 'OUT' ? 'Clock Out' : 'Clock In'
+    // Keep all photos directly in the single root folder (no subfolders)
     const payload = {
         fileName: filename,
         mimeType: 'image/jpeg',
         data,
         folderId: '1KfG7aIPXbZIoOG857fFl73jfYJozAYBI',
-        crewName: metadata?.crewName || 'Unknown',
-        type: metadata?.type || 'IN',
-        actionType: actionType,
-        subFolder: metadata?.crewName || 'Unknown',
     }
 
     // 1. Try server proxy (/api/upload)
@@ -696,7 +692,7 @@ function ClockInModal({ crew, attendance, onClose, onDone }: {
         // Upload photo
         let photoUrl: string | null = null
         if (photoData) {
-            const fname = `${todayISO()}_${crew.id}_in_${Date.now()}.jpg`
+            const fname = `${todayISO()}_${crew.nama.replace(/\s+/g, '_')}_IN_${Date.now()}.jpg`
             photoUrl = await uploadPhoto(photoData, fname, {
                 crewName: crew.nama,
                 type: 'IN',
@@ -876,7 +872,7 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
 
         let photoUrl: string | null = null
         if (photoData) {
-            const fname = `${todayISO()}_${crew.id}_out_${Date.now()}.jpg`
+            const fname = `${todayISO()}_${crew.nama.replace(/\s+/g, '_')}_OUT_${Date.now()}.jpg`
             const clockOutISO = new Date().toISOString()
             photoUrl = await uploadPhoto(photoData, fname, {
                 crewName: crew.nama,
