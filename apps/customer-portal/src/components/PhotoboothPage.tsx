@@ -165,9 +165,10 @@ export default function PhotoboothPage() {
 
     useEffect(() => () => stopCamera(), [stopCamera])
 
+    const isCameraActive = ['camera', 'countdown', 'capturing', 'reviewing'].includes(appState)
+
     // ── Real-time WebGL Live View Render Loop ───────────────────
     useEffect(() => {
-        const isCameraActive = ['camera', 'countdown', 'capturing', 'reviewing'].includes(appState)
         if (!isCameraActive) {
             if (animFrameRef.current) {
                 cancelAnimationFrame(animFrameRef.current)
@@ -192,7 +193,8 @@ export default function PhotoboothPage() {
         const cropCanvas = cropCanvasRef.current
         const cropCtx = cropCanvas.getContext('2d')
 
-        if (!rendererRef.current) {
+        if (!rendererRef.current || rendererRef.current.getCanvas() !== liveCanvas) {
+            rendererRef.current?.destroy()
             rendererRef.current = new WebGLEffectRenderer(liveCanvas)
         }
         const renderer = rendererRef.current
@@ -257,7 +259,7 @@ export default function PhotoboothPage() {
                 animFrameRef.current = null
             }
         }
-    }, [appState])
+    }, [isCameraActive])
 
     // ── Capture Single Frame (Both Raw & Filtered) ──────────────
     const captureFrame = useCallback((): { raw: string; filtered: string } | null => {
@@ -821,9 +823,20 @@ export default function PhotoboothPage() {
                                 style={{ display: 'none' }}
                             />
 
-                            {/* Show captured photo during 2s review */}
-                            {appState === 'reviewing' && photos.length > 0 ? (
-                                <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                            {/* Persistent live canvas — stays mounted at all times during camera session */}
+                            <canvas
+                                ref={liveCanvasRef}
+                                style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    display: 'block',
+                                    objectFit: 'cover',
+                                }}
+                            />
+
+                            {/* Show captured photo during 2s review as an overlay */}
+                            {appState === 'reviewing' && photos.length > 0 && (
+                                <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: '#000' }}>
                                     <img
                                         src={photos[photos.length - 1]}
                                         alt="Preview"
@@ -840,21 +853,11 @@ export default function PhotoboothPage() {
                                         Say Cheese! 📸
                                     </div>
                                 </div>
-                            ) : (
-                                <canvas
-                                    ref={liveCanvasRef}
-                                    style={{
-                                        width: '100%',
-                                        height: '100%',
-                                        display: 'block',
-                                        objectFit: 'cover',
-                                    }}
-                                />
                             )}
 
                             {/* Countdown overlay */}
                             {appState === 'countdown' && countdown > 0 && (
-                                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}>
+                                <div style={{ position: 'absolute', inset: 0, zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }}>
                                     <div style={{ fontSize: 72, fontWeight: 900, color: '#fff', lineHeight: 1, animation: 'pb-pop 0.5s both' }}>{countdown}</div>
                                     <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, marginTop: 8 }}>Foto {currentShot} dari {PHOTO_COUNT}</p>
                                 </div>
@@ -862,7 +865,7 @@ export default function PhotoboothPage() {
 
                             {/* Flash (in-frame, for visual feedback) */}
                             {appState === 'capturing' && (
-                                <div style={{ position: 'absolute', inset: 0, background: '#fff', opacity: 0.8, animation: 'pb-flash 0.4s both' }} />
+                                <div style={{ position: 'absolute', inset: 0, zIndex: 30, background: '#fff', opacity: 0.8, animation: 'pb-flash 0.4s both' }} />
                             )}
                         </div>
 

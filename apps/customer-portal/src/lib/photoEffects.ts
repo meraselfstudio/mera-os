@@ -302,6 +302,10 @@ export class WebGLEffectRenderer {
         return !!(this.gl && this.program && this.texture)
     }
 
+    public getCanvas(): HTMLCanvasElement {
+        return this.canvas
+    }
+
     public render(
         source: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
         options: {
