@@ -23,9 +23,13 @@ rm -rf .deploy-portal
 # This bypasses Vercel's limitation with pnpm monorepo symlinks
 pnpm --filter customer-portal deploy .deploy-portal --force
 
-# Copy environment variables so Next.js can prerender pages
-cp apps/customer-portal/.env.local .deploy-portal/.env.local
 (cd .deploy-portal && npx vercel link --yes --project .deploy-portal)
+
+# Copy environment variables AFTER vercel link so Next.js has all keys during prerender
+cp apps/customer-portal/.env.local .deploy-portal/.env.local
+cp apps/customer-portal/.env.local .deploy-portal/.env.production.local
+mkdir -p .deploy-portal/.vercel
+cp apps/customer-portal/.env.local .deploy-portal/.vercel/.env.production.local
 
 # Build and deploy from the isolated directory
 cd .deploy-portal
