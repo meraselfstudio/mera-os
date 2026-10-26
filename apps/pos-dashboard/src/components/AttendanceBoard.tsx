@@ -234,27 +234,48 @@ function useCamera() {
 }
 
 // ── Upload photo to Supabase Storage & Google Drive ──────────
-const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
+const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxpcgJGMxndIIoaqJ9knxJroTyhgYVxKoJlCTPVQ4QMtpnqNNFjKyuoE8PCvo_Zqr4/exec'
 
-async function uploadPhoto(base64: string, filename: string, metadata?: any): Promise<string | null> {
+interface UploadPhotoResult {
+    url: string | null
+    error: string | null
+}
+
+async function uploadPhoto(base64: string, filename: string, metadata?: any): Promise<UploadPhotoResult> {
     // 1. Trigger background upload to Google Drive immediately
     uploadToDriveBackground(base64, filename, metadata).catch(e => {
-        console.warn('[Attendance] Drive upload error:', e)
+        console.error('[Attendance] Drive upload error:', e)
     })
 
     // 2. Upload to Supabase Storage
     try {
         const res = await fetch(base64)
+        if (!res.ok) {
+            const msg = `Gagal memproses base64 foto (HTTP ${res.status})`
+            console.error('[Attendance] ' + msg)
+            return { url: null, error: msg }
+        }
         const blob = await res.blob()
         const { data, error } = await supabase.storage
             .from('attendance-photos')
             .upload(filename, blob, { contentType: 'image/jpeg', upsert: true })
-        if (error || !data?.path) return null
-        const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path)
 
-        return urlData.publicUrl
-    } catch {
-        return null
+        if (error) {
+            console.error('[Attendance] Gagal upload foto ke Supabase Storage (attendance-photos):', error)
+            return { url: null, error: error.message || 'Supabase Storage error (RLS 403 / Bucket issue)' }
+        }
+
+        if (!data?.path) {
+            console.error('[Attendance] Upload berhasil tetapi data.path kosong')
+            return { url: null, error: 'Storage path kosong' }
+        }
+
+        const { data: urlData } = supabase.storage.from('attendance-photos').getPublicUrl(data.path)
+        console.log('[Attendance] Berhasil upload foto ke Supabase Storage:', urlData.publicUrl)
+        return { url: urlData.publicUrl, error: null }
+    } catch (err: any) {
+        console.error('[Attendance] Exception upload ke Supabase Storage:', err)
+        return { url: null, error: err?.message || 'Gagal koneksi storage' }
     }
 }
 
@@ -262,7 +283,10 @@ async function uploadPhoto(base64: string, filename: string, metadata?: any): Pr
 
 async function uploadToDriveBackground(base64: string, filename: string, metadata?: any) {
     const data = base64.split(',')[1]
-    if (!data) return
+    if (!data) {
+        console.warn('[Attendance] Drive upload dibatalkan: data base64 kosong')
+        return
+    }
 
     // Keep all photos directly in the single root folder (no subfolders)
     const payload = {
@@ -284,7 +308,11 @@ async function uploadToDriveBackground(base64: string, filename: string, metadat
             if (result?.ok) {
                 console.log('[Attendance] Drive upload success via proxy:', filename)
                 return
+            } else {
+                console.warn('[Attendance] Proxy upload mengembalikan error:', result)
             }
+        } else {
+            console.warn(`[Attendance] Proxy upload HTTP ${proxyRes.status}`)
         }
     } catch (e) {
         console.warn('[Attendance] Proxy upload failed, trying direct:', e)
@@ -294,15 +322,18 @@ async function uploadToDriveBackground(base64: string, filename: string, metadat
     const scriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL || DEFAULT_APPS_SCRIPT_URL
 
     try {
-        await fetch(scriptUrl, {
+        const directRes = await fetch(scriptUrl, {
             method: 'POST',
-            mode: 'no-cors',
             headers: { 'Content-Type': 'text/plain; charset=utf-8' },
             body: JSON.stringify(payload),
         })
-        console.log('[Attendance] Direct Drive upload dispatched:', filename)
+        if (directRes.ok) {
+            console.log('[Attendance] Direct Drive upload dispatched & OK:', filename)
+        } else {
+            console.error(`[Attendance] Direct Drive upload gagal HTTP ${directRes.status}:`, scriptUrl)
+        }
     } catch (e) {
-        console.warn('[Attendance] Background Drive upload failed:', e)
+        console.error('[Attendance] Background Drive upload failed:', e)
     }
 }
 
@@ -693,13 +724,25 @@ function ClockInModal({ crew, attendance, onClose, onDone }: {
         let photoUrl: string | null = null
         if (photoData) {
             const fname = `${todayISO()}_${crew.nama.replace(/\s+/g, '_')}_IN_${Date.now()}.jpg`
-            photoUrl = await uploadPhoto(photoData, fname, {
+            const uploadRes = await uploadPhoto(photoData, fname, {
                 crewName: crew.nama,
                 type: 'IN',
                 shift: shift.key,
                 time: clockInISO,
                 isIntern
             })
+            photoUrl = uploadRes.url
+            if (uploadRes.error) {
+                console.error('[Attendance Clock-In] Foto gagal diunggah:', uploadRes.error)
+                const proceed = window.confirm(
+                    `⚠️ PERINGATAN UPLOAD FOTO:\nFoto absensi gagal disimpan ke Storage:\n"${uploadRes.error}"\n\nTetap simpan absensi Clock-In tanpa foto?`
+                )
+                if (!proceed) {
+                    setSaving(false)
+                    setSaveError(`Upload foto gagal: ${uploadRes.error}. Pastikan policy storage aktif atau hubungi admin.`)
+                    return
+                }
+            }
         }
 
         const { error } = await (supabase.from('attendance') as any).insert({
@@ -874,13 +917,25 @@ function ClockOutModal({ crew, att, attendance, crew_list, onClose, onDone }: {
         if (photoData) {
             const fname = `${todayISO()}_${crew.nama.replace(/\s+/g, '_')}_OUT_${Date.now()}.jpg`
             const clockOutISO = new Date().toISOString()
-            photoUrl = await uploadPhoto(photoData, fname, {
+            const uploadRes = await uploadPhoto(photoData, fname, {
                 crewName: crew.nama,
                 type: 'OUT',
                 shift: att.shift_type,
                 time: clockOutISO,
                 isIntern
             })
+            photoUrl = uploadRes.url
+            if (uploadRes.error) {
+                console.error('[Attendance Clock-Out] Foto gagal diunggah:', uploadRes.error)
+                const proceed = window.confirm(
+                    `⚠️ PERINGATAN UPLOAD FOTO:\nFoto absensi clock-out gagal disimpan ke Storage:\n"${uploadRes.error}"\n\nTetap simpan Clock-Out tanpa foto?`
+                )
+                if (!proceed) {
+                    setSaving(false)
+                    setSaveError(`Upload foto gagal: ${uploadRes.error}. Pastikan policy storage aktif atau hubungi admin.`)
+                    return
+                }
+            }
         }
 
         const updatePayload: any = {

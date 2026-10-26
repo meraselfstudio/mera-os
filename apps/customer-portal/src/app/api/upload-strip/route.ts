@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
-const MAX_PAYLOAD_SIZE = 5 * 1024 * 1024 // 5MB
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+const APPS_SCRIPT_URL = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbxpcgJGMxndIIoaqJ9knxJroTyhgYVxKoJlCTPVQ4QMtpnqNNFjKyuoE8PCvo_Zqr4/exec'
+const MAX_PAYLOAD_SIZE = 10 * 1024 * 1024 // 10MB
 
 export async function POST(req: NextRequest) {
     if (!APPS_SCRIPT_URL) {
@@ -40,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     const payload = JSON.stringify({ fileName, mimeType, data, folderId: '1IAamhoERgEodQUJg1OOLGZIfwk-Z1TC6', promoConsent })
 
-    const appsScriptUrl = APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
+    const appsScriptUrl = APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbxpcgJGMxndIIoaqJ9knxJroTyhgYVxKoJlCTPVQ4QMtpnqNNFjKyuoE8PCvo_Zqr4/exec'
 
     const res = await fetch(appsScriptUrl, {
         method: 'POST',

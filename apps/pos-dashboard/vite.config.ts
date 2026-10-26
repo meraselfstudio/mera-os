@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => {
                         let bodyStr = ''
                         req.on('data', chunk => { bodyStr += chunk })
                         req.on('end', async () => {
-                            const targetUrl = appsScriptUrl || 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
+                            const targetUrl = appsScriptUrl || 'https://script.google.com/macros/s/AKfycbxpcgJGMxndIIoaqJ9knxJroTyhgYVxKoJlCTPVQ4QMtpnqNNFjKyuoE8PCvo_Zqr4/exec'
 
                             try {
                                 const response = await fetch(targetUrl, {

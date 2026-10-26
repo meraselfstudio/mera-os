@@ -28,8 +28,12 @@ supabase/.temp
 npm-debug.log*
 yarn-debug.log*
 
-# Editor
+# Editor & Worktrees
 .vscode
 .idea
 *.swp
 .vercel
+.claude/
+.claude
+*.app
+kiosk_dist

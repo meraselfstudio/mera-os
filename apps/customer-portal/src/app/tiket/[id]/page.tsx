@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { use } from 'react'
 import Link from 'next/link'
 import QRCode from 'react-qr-code'
@@ -34,6 +34,37 @@ const fmtRp = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
 
 const fmtDate = (d: string) =>
   new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+
+const WEEKDAY_SLOTS = [
+  '10:00', '10:30', '11:00', '11:30', '12:00', '12:30',
+  '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
+  '16:00', '16:30', '17:00', '17:30', '18:00', '18:30',
+  '19:00', '19:30', '20:00', '20:30'
+]
+
+const WEEKEND_SLOTS = [
+  '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+  '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
+  '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
+  '18:00', '18:30', '19:00', '19:30', '20:00', '20:30'
+]
+const CLOSED_DATES = ['2026-08-29']
+
+const todayWIB = () => {
+  const now = new Date()
+  const wib = new Date(now.getTime() + 7 * 3600 * 1000)
+  return wib.toISOString().split('T')[0]
+}
+
+const getWIBTimeStr = () => {
+  const now = new Date()
+  const wib = new Date(now.getTime() + 7 * 3600 * 1000)
+  return `${String(wib.getUTCHours()).padStart(2, '0')}:${String(wib.getUTCMinutes()).padStart(2, '0')}`
+}
+
+function isUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+}
 
 function crc16(str: string) {
   let crc = 0xffff
@@ -84,18 +115,123 @@ export default function TiketPage({ params }: { params: Promise<{ id: string }> 
   const [loading, setLoading] = useState(true)
   const [copied, setCopied]   = useState(false)
 
+  // Reschedule state
+  const [showReschedule, setShowReschedule]     = useState(false)
+  const [rescDate, setRescDate]                 = useState('')
+  const [rescTime, setRescTime]                 = useState('')
+  const [rescLoading, setRescLoading]           = useState(false)
+  const [rescBookedSlots, setRescBookedSlots]   = useState<string[]>([])
+  const [rescSlotsLoading, setRescSlotsLoading] = useState(false)
+
   useEffect(() => {
     if (!id) return
+    const cleanId = decodeURIComponent(id).trim()
+    const isIdUuid = isUUID(cleanId)
+
+    const fetchTicket = async () => {
+      setLoading(true)
+      const selectFields = 'id, customer_name, instagram_handle, booking_type, status, session_id, preferred_date, preferred_time, expires_at, checked_in_at, addons'
+
+      let res = isIdUuid
+        ? await supabase.from('registrations').select(selectFields).eq('id', cleanId).maybeSingle()
+        : await supabase.from('registrations').select(selectFields).eq('session_id', cleanId).maybeSingle()
+
+      if (!res?.data && isIdUuid) {
+        // Fallback: check session_id even if string looked like UUID
+        const fallbackRes = await supabase.from('registrations').select(selectFields).eq('session_id', cleanId).maybeSingle()
+        if (fallbackRes?.data) {
+          res = fallbackRes
+        }
+      }
+
+      setReg(res?.data ? (res.data as unknown as Registration) : null)
+      setLoading(false)
+    }
+
+    fetchTicket()
+  }, [id])
+
+  // Query booked slots for selected reschedule date
+  useEffect(() => {
+    if (!rescDate || !reg) {
+      setRescBookedSlots([])
+      return
+    }
+    setRescSlotsLoading(true)
+    const room = reg.addons?.room ?? ''
+    const blockRooms = (room === 'Close Up Room' || room === 'Pas Photo')
+      ? ['Close Up Room', 'Pas Photo']
+      : [room]
+
     supabase
       .from('registrations')
-      .select('id, customer_name, instagram_handle, booking_type, status, session_id, preferred_date, preferred_time, expires_at, checked_in_at, addons')
-      .eq('id', id)
-      .maybeSingle()
+      .select('id, session_id, preferred_time, addons')
+      .eq('preferred_date', rescDate)
+      .in('status', ['PENDING', 'VERIFIED', 'PROCESSED'])
       .then(({ data }) => {
-        setReg(data as Registration | null)
-        setLoading(false)
+        setRescSlotsLoading(false)
+        if (!data) { setRescBookedSlots([]); return }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const blocked = (data as any[])
+          .filter(row => {
+            if (row.id === reg.id || (reg.session_id && row.session_id === reg.session_id)) return false
+            const r = row.addons?.room
+            return blockRooms.includes(r)
+          })
+          .map((row: { preferred_time: string }) => row.preferred_time)
+        setRescBookedSlots(blocked)
       })
-  }, [id])
+  }, [rescDate, reg])
+
+  // Available slots for reschedule
+  const rescAvailableSlots = useMemo(() => {
+    if (!rescDate) return []
+    if (CLOSED_DATES.includes(rescDate)) return []
+    const d = new Date(rescDate)
+    const day = d.getDay()
+    const baseSlots = (day === 0 || day === 5 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS
+    const todayStr = todayWIB()
+    let slots = baseSlots
+    if (rescDate === todayStr) {
+      const cur = getWIBTimeStr()
+      slots = baseSlots.filter(s => s > cur)
+    }
+    return slots.filter(slot => !rescBookedSlots.includes(slot))
+  }, [rescDate, rescBookedSlots])
+
+  const handleReschedule = async () => {
+    if (!reg || !rescDate || !rescTime) return
+    if (rescBookedSlots.includes(rescTime)) {
+      alert('Slot jam ini baru saja dibooking oleh pelanggan lain. Silakan pilih jam lain.')
+      return
+    }
+    setRescLoading(true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('registrations') as any)
+      .update({ preferred_date: rescDate, preferred_time: rescTime })
+      .eq('id', reg.id)
+    setRescLoading(false)
+    if (!error) {
+      setReg(prev => prev ? { ...prev, preferred_date: rescDate, preferred_time: rescTime } : null)
+      try {
+        const saved = localStorage.getItem('mera_ticket_state_v2')
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          if (parsed && (parsed.registrationId === reg.id || parsed.sessionId === reg.session_id)) {
+            parsed.preferredDate = rescDate
+            parsed.preferredTime = rescTime
+            localStorage.setItem('mera_ticket_state_v2', JSON.stringify(parsed))
+          }
+        }
+      } catch {
+        // ignore
+      }
+      setShowReschedule(false)
+      alert(`Jadwal berhasil diubah ke ${fmtDate(rescDate)} jam ${rescTime}`)
+    } else {
+      alert('Gagal reschedule: ' + error.message)
+    }
+  }
 
   const copyLink = useCallback(() => {
     navigator.clipboard.writeText(window.location.href).then(() => {
@@ -260,6 +396,26 @@ export default function TiketPage({ params }: { params: Promise<{ id: string }> 
             {copied ? '✓ Link Tersalin!' : '🔗 Salin Link Tiket'}
           </button>
 
+          {/* Reschedule button — available when active and not checked in */}
+          {isActive && !reg.checked_in_at && (
+            <button
+              onClick={() => {
+                setRescDate(reg.preferred_date ?? '')
+                setRescTime(reg.preferred_time ?? '')
+                setShowReschedule(true)
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '14px', borderRadius: 14,
+                background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)',
+                color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                letterSpacing: '0.02em',
+              }}
+            >
+              🗓 Reschedule Jadwal
+            </button>
+          )}
+
           {/* Instagram DM */}
           {isActive && (
             <a
@@ -304,6 +460,78 @@ export default function TiketPage({ params }: { params: Promise<{ id: string }> 
             Buat Booking Baru
           </Link>
         </div>
+
+        {/* Reschedule Modal */}
+        {showReschedule && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div style={{ background: '#1c1c1e', borderRadius: 24, padding: 24, maxWidth: 440, width: '100%', textAlign: 'left', border: '1px solid rgba(255,255,255,0.12)', color: '#fff' }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700, color: '#fff' }}>Reschedule Jadwal Sesi</h3>
+              <p style={{ margin: '0 0 16px', fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>Pilih tanggal & slot waktu baru untuk sesi fotomu.</p>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.7)', marginBottom: 6 }}>TANGGAL BARU</label>
+                <input
+                  type="date"
+                  min={todayWIB()}
+                  value={rescDate}
+                  onChange={e => { setRescDate(e.target.value); setRescTime('') }}
+                  style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid rgba(255,255,255,0.2)', background: '#2c2c2e', color: '#fff', fontSize: 13, boxSizing: 'border-box' }}
+                />
+              </div>
+
+              {rescDate && (
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.7)', marginBottom: 6 }}>
+                    JAM BARU {rescSlotsLoading && <span style={{ fontWeight: 400, opacity: 0.7 }}>(Memeriksa slot...)</span>}
+                  </label>
+                  {rescAvailableSlots.length === 0 && !rescSlotsLoading ? (
+                    <p style={{ fontSize: 12, color: '#ff6b6b', margin: '6px 0', fontWeight: 600 }}>
+                      Tidak ada slot tersedia pada tanggal ini. Silakan pilih tanggal lain.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                      {rescAvailableSlots.map(t => (
+                        <button
+                          key={t}
+                          onClick={() => setRescTime(t)}
+                          style={{
+                            background: rescTime === t ? '#622128' : '#2c2c2e',
+                            color: rescTime === t ? '#fff' : 'rgba(255,255,255,0.9)',
+                            border: rescTime === t ? '2px solid #8b1a1a' : '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: 8, padding: '8px 2px', fontSize: 12, fontWeight: 700, cursor: 'pointer'
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => setShowReschedule(false)}
+                  style={{ flex: 1, padding: 12, borderRadius: 999, border: '1px solid rgba(255,255,255,0.2)', background: 'transparent', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleReschedule}
+                  disabled={!rescDate || !rescTime || rescLoading || rescAvailableSlots.length === 0}
+                  style={{
+                    flex: 1, padding: 12, borderRadius: 999, border: 'none',
+                    background: '#622128', color: '#fff', fontWeight: 800, fontSize: 13,
+                    cursor: 'pointer',
+                    opacity: rescDate && rescTime && !rescLoading && rescAvailableSlots.length > 0 ? 1 : 0.5
+                  }}
+                >
+                  {rescLoading ? 'Menyimpan...' : 'Simpan Perubahan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer note */}
         <p style={{ textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.2)', marginTop: 24, lineHeight: 1.6, letterSpacing: '0.03em' }}>

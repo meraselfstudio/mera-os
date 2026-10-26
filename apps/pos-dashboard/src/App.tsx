@@ -7,6 +7,7 @@ import type { Attendance, Crew, Expense, Product, Registration, RegistrationStat
 import { hitungHargaBertingkat, calcBookingLineItems } from '@mera/supabase'
 import AttendanceBoard, { isCafeCrew } from './components/AttendanceBoard'
 import { CafePosView } from './components/cafe/CafePosView'
+import CrewAttendanceDetailModal from './components/CrewAttendanceDetailModal'
 
 type ViewKey = 'schedule' | 'booking' | 'finance' | 'attendance' | 'monthly' | 'cafe_pos'
 type RoleKey = 'crew' | 'owner'
@@ -18,6 +19,7 @@ const ownerNavItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode 
   { key: 'cafe_pos', label: 'Méra Hause', icon: <Coffee size={18} /> },
   { key: 'finance', label: 'Today Recap', icon: <Banknote size={18} /> },
   { key: 'monthly', label: 'Monthly Recap', icon: <BarChart3 size={18} /> },
+  { key: 'attendance', label: 'Attendance', icon: <Clock3 size={18} /> },
 ]
 
 const crewNavItems: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
@@ -290,6 +292,7 @@ export default function App() {
   const [monthExp, setMonthExp] = useState<Expense[]>([])
   const [monthAtt, setMonthAtt] = useState<Attendance[]>([])
   const [crewList, setCrewList] = useState<Crew[]>([])
+  const [selectedCrewDetail, setSelectedCrewDetail] = useState<Crew | null>(null)
   const [monthLoading, setMonthLoading] = useState(false)
   const [monthLoaded, setMonthLoaded] = useState(false)
   const [monthExpItem, setMonthExpItem] = useState('')
@@ -2565,6 +2568,34 @@ export default function App() {
                         <span style={{ fontSize: 13, fontWeight: 700, color: '#9BB8D0' }}>Total: {fmtRp(totalPayroll)}</span>
                       </div>
 
+                      {/* Quick Crew Attendance Detail Picker */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 14, padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>Cek Detail Kru:</span>
+                        {crewList.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => setSelectedCrewDetail(c)}
+                            style={{
+                              background: 'rgba(255,255,255,0.06)',
+                              border: '1px solid rgba(255,255,255,0.12)',
+                              borderRadius: 16,
+                              padding: '3px 10px',
+                              fontSize: 11,
+                              color: '#fff',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              transition: 'all 0.15s'
+                            }}
+                            title={`Lihat data detail attendance & foto ${c.nama}`}
+                          >
+                            <span>👤 {c.nama}</span>
+                            <span style={{ opacity: 0.45, fontSize: 10 }}>↗</span>
+                          </button>
+                        ))}
+                      </div>
+
                       {/* Table header */}
                       <div className="gc-payroll-table-header" style={{ display: 'grid', gridTemplateColumns: '2fr 0.8fr 1fr 1fr 1fr 1fr 1.2fr 0.4fr', gap: 8, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                         {['Crew', 'Shifts', 'Base', 'Late', 'Penalty', 'Bonus', 'Net Pay', ''].map(h => (
@@ -2631,10 +2662,19 @@ export default function App() {
                           <div key={r.crew.id}>
                             {/* Desktop: table row */}
                             <div className="gc-payroll-row-desktop" style={{ display: 'grid', gridTemplateColumns: '2fr 0.8fr 1fr 1fr 1fr 1fr 1.2fr 0.4fr', gap: 8, padding: '10px 0', borderBottom: '0.5px solid rgba(255,255,255,0.04)', alignItems: 'center' }}>
-                              <div>
-                                <span style={{ fontSize: 13, fontWeight: 600 }}>{r.crew.nama}</span>
+                              <div 
+                                onClick={() => setSelectedCrewDetail(r.crew)}
+                                style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                title={`Klik untuk lihat detail absensi ${r.crew.nama}`}
+                              >
+                                <span style={{ fontSize: 13, fontWeight: 600, color: '#fff', textDecoration: 'underline', textDecorationColor: 'rgba(255,255,255,0.35)', textUnderlineOffset: 3 }}>
+                                  {r.crew.nama}
+                                </span>
+                                <span style={{ fontSize: 10, color: '#9BB8D0', background: 'rgba(155,184,208,0.15)', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+                                  Detail ↗
+                                </span>
                                 {r.crew.status_gaji === 'INTERN' && (
-                                  <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 10, background: 'rgba(155,184,208,0.15)', color: '#9BB8D0' }}>INTERN</span>
+                                  <span style={{ marginLeft: 2, fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 10, background: 'rgba(155,184,208,0.15)', color: '#9BB8D0' }}>INTERN</span>
                                 )}
                               </div>
                               <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)' }}>{r.shifts}</span>
@@ -2651,10 +2691,19 @@ export default function App() {
                             {/* Mobile: card layout */}
                             <div className="gc-payroll-card-mobile" style={{ padding: '12px 0', borderBottom: '0.5px solid rgba(255,255,255,0.06)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                                <div>
-                                  <span style={{ fontSize: 14, fontWeight: 700 }}>{r.crew.nama}</span>
+                                <div 
+                                  onClick={() => setSelectedCrewDetail(r.crew)}
+                                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                                  title={`Klik untuk lihat detail absensi ${r.crew.nama}`}
+                                >
+                                  <span style={{ fontSize: 14, fontWeight: 700, color: '#fff', textDecoration: 'underline', textDecorationColor: 'rgba(255,255,255,0.35)', textUnderlineOffset: 3 }}>
+                                    {r.crew.nama}
+                                  </span>
+                                  <span style={{ fontSize: 10, color: '#9BB8D0', background: 'rgba(155,184,208,0.15)', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                                    Detail ↗
+                                  </span>
                                   {r.crew.status_gaji === 'INTERN' && (
-                                    <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 10, background: 'rgba(155,184,208,0.15)', color: '#9BB8D0' }}>INTERN</span>
+                                    <span style={{ marginLeft: 2, fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 10, background: 'rgba(155,184,208,0.15)', color: '#9BB8D0' }}>INTERN</span>
                                   )}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -3926,6 +3975,24 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Owner Crew Attendance Detail Modal ── */}
+      {selectedCrewDetail && (
+        <CrewAttendanceDetailModal
+          crew={selectedCrewDetail}
+          allCrews={crewList}
+          onSelectCrew={c => setSelectedCrewDetail(c)}
+          currentPeriodAtt={monthAtt}
+          periodLabel={
+            recapMode === 'monthly'
+              ? new Date(monthKey + '-01').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+              : recapMode === 'weekly'
+              ? getWeekRange(weekOffset).label
+              : `${customStart} s/d ${customEnd}`
+          }
+          onClose={() => setSelectedCrewDetail(null)}
+        />
       )}
 
     </div>

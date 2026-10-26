@@ -3,7 +3,7 @@ export default async function handler(req, res) {
         return res.status(405).send('Method not allowed')
     }
 
-    const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbyx4N3y36gLlo5gwRxBXbc1ipgga_bBM3lH1mR5sspSg7ETDNxV5iWWP7YDtutDnUu8/exec'
+    const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbxpcgJGMxndIIoaqJ9knxJroTyhgYVxKoJlCTPVQ4QMtpnqNNFjKyuoE8PCvo_Zqr4/exec'
 
     try {
         const body = req.body

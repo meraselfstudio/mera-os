@@ -188,7 +188,18 @@ function generateSessionId(name: string, room: string | null, variant: string | 
     return `${dd}-${clean}-${code}`
 }
 
-const todayISO = () => new Date().toISOString().split('T')[0]
+const todayISO = () => {
+    const now = new Date()
+    const wib = new Date(now.getTime() + 7 * 3600 * 1000)
+    return wib.toISOString().split('T')[0]
+}
+
+const getWIBTimeStr = () => {
+    const now = new Date()
+    const wib = new Date(now.getTime() + 7 * 3600 * 1000)
+    return `${String(wib.getUTCHours()).padStart(2, '0')}:${String(wib.getUTCMinutes()).padStart(2, '0')}`
+}
+
 const formatIDR = (n: number) => `Rp ${n.toLocaleString('id-ID')}`
 
 function isSessionIdConflict(error: unknown): boolean {
@@ -243,14 +254,10 @@ export default function BookingFlow() {
     const [addonProducts, setAddonProducts] = useState<Product[]>([])
     const [studios, setStudios] = useState<Studio[]>(DEFAULT_STUDIOS)
     const [loading, setLoading] = useState(false)
-    const [calendarDate, setCalendarDate] = useState<Date>(() => new Date())
-
-    // Reschedule Modal State
     const [ticketLinkCopied, setTicketLinkCopied] = useState(false)
     const [showReschedule, setShowReschedule] = useState(false)
     const [rescDate, setRescDate] = useState('')
     const [rescTime, setRescTime] = useState('')
-    const [rescCalDate, setRescCalDate] = useState<Date>(() => new Date())
     const [rescLoading, setRescLoading] = useState(false)
 
     // Fetch Products & Studios
@@ -359,12 +366,50 @@ export default function BookingFlow() {
         const todayStr = todayISO()
         let slots = baseSlots
         if (state.preferredDate === todayStr) {
-            const now = new Date()
-            const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+            const currentTimeStr = getWIBTimeStr()
             slots = baseSlots.filter(slot => slot > currentTimeStr)
         }
         return slots.filter(slot => !bookedSlots.includes(slot))
     }, [state.preferredDate, bookedSlots])
+
+    // Reschedule Booked Slots Query
+    const [rescBookedSlots, setRescBookedSlots] = useState<string[]>([])
+    const [rescSlotsLoading, setRescSlotsLoading] = useState(false)
+
+    useEffect(() => {
+        if (!rescDate) {
+            setRescBookedSlots([])
+            return
+        }
+        setRescSlotsLoading(true)
+        supabase.from('registrations')
+            .select('id, session_id, preferred_time, addons')
+            .eq('preferred_date', rescDate)
+            .in('status', ['PENDING', 'VERIFIED', 'PROCESSED'])
+            .then(({ data }) => {
+                setRescSlotsLoading(false)
+                if (!data) { setRescBookedSlots([]); return }
+                const selected = state.selectedRoom
+                const activeStudio = studios.find(s => s.id === selected)
+                let blockRooms: string[] = [selected || '']
+                if (activeStudio && activeStudio.shared_slots_group) {
+                    blockRooms = studios
+                        .filter(s => s.shared_slots_group === activeStudio.shared_slots_group)
+                        .map(s => s.id)
+                } else if (!activeStudio) {
+                    if (selected === 'Close Up Room' || selected === 'Pas Photo') blockRooms = ['Close Up Room', 'Pas Photo']
+                }
+
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const blocked = (data as any[]).filter(row => {
+                    if (state.registrationId && row.id === state.registrationId) return false
+                    if (state.sessionId && row.session_id === state.sessionId) return false
+                    const room = row.addons?.room
+                    return blockRooms.includes(room)
+                }).map((row: { preferred_time: string }) => row.preferred_time)
+                setRescBookedSlots(blocked)
+            })
+    }, [rescDate, state.selectedRoom, state.registrationId, state.sessionId, studios])
 
     // Reschedule Available Slots
     const rescAvailableSlots = useMemo(() => {
@@ -374,25 +419,41 @@ export default function BookingFlow() {
         const day = d.getDay()
         const baseSlots = (day === 0 || day === 5 || day === 6) ? WEEKEND_SLOTS : WEEKDAY_SLOTS
         const todayStr = todayISO()
+        let slots = baseSlots
         if (rescDate === todayStr) {
-            const now = new Date()
-            const cur = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-            return baseSlots.filter(s => s > cur)
+            const cur = getWIBTimeStr()
+            slots = baseSlots.filter(s => s > cur)
         }
-        return baseSlots
-    }, [rescDate])
+        return slots.filter(slot => !rescBookedSlots.includes(slot))
+    }, [rescDate, rescBookedSlots])
 
     const handleReschedule = async () => {
-        if (!state.registrationId || !rescDate || !rescTime) return
+        const regId = state.registrationId
+        const sid = state.sessionId
+        if ((!regId && !sid) || !rescDate || !rescTime) return
+        if (rescBookedSlots.includes(rescTime)) {
+            alert('Slot jam ini baru saja dibooking oleh pelanggan lain. Silakan pilih jam lain.')
+            return
+        }
         setRescLoading(true)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error } = await (supabase.from('registrations') as any)
+        let query = (supabase.from('registrations') as any)
             .update({ preferred_date: rescDate, preferred_time: rescTime })
-            .eq('id', state.registrationId)
+        if (regId) {
+            query = query.eq('id', regId)
+        } else {
+            query = query.eq('session_id', sid)
+        }
+        const { error } = await query
         setRescLoading(false)
         if (!error) {
-            setState(p => ({ ...p, preferredDate: rescDate, preferredTime: rescTime }))
+            setState(p => {
+                const next = { ...p, preferredDate: rescDate, preferredTime: rescTime }
+                localStorage.setItem('mera_ticket_state_v2', JSON.stringify(next))
+                return next
+            })
             setShowReschedule(false)
+            alert(`Jadwal berhasil diubah ke ${rescDate} jam ${rescTime}`)
         } else {
             alert('Gagal reschedule: ' + error.message)
         }
@@ -713,7 +774,6 @@ export default function BookingFlow() {
                         <div style={{ display: 'grid', gap: 14, marginBottom: 28 }}>
                             {filteredPackages.map(pkg => {
                                 const isSelected = state.selectedPackage?.id === pkg.id
-                                const isHighlight = pkg.nama === 'Self Photo Session'
                                 return (
                                     <div key={pkg.id}
                                         onClick={() => setState(p => ({
@@ -1176,7 +1236,8 @@ export default function BookingFlow() {
                         {/* Action Buttons */}
                         <div style={{ display: 'grid', gap: 10 }}>
                             <button onClick={() => {
-                                const url = window.location.origin + '/tiket/' + state.sessionId
+                                const ticketId = state.sessionId || state.registrationId
+                                const url = window.location.origin + '/tiket/' + ticketId
                                 navigator.clipboard.writeText(url)
                                 setTicketLinkCopied(true)
                                 setTimeout(() => setTicketLinkCopied(false), 3000)
@@ -1230,19 +1291,27 @@ export default function BookingFlow() {
 
                                     {rescDate && (
                                         <div style={{ marginBottom: 20 }}>
-                                            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: TEXT_SEC, marginBottom: 6 }}>JAM BARU</label>
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-                                                {rescAvailableSlots.map(t => (
-                                                    <button key={t} onClick={() => setRescTime(t)} style={{
-                                                        background: rescTime === t ? MAROON : '#fff',
-                                                        color: rescTime === t ? '#fff' : TEXT,
-                                                        border: rescTime === t ? `2px solid ${MAROON}` : '1px solid rgba(98,33,40,0.15)',
-                                                        borderRadius: 8, padding: '8px 2px', fontSize: 12, fontWeight: 700, cursor: 'pointer'
-                                                    }}>
-                                                        {t}
-                                                    </button>
-                                                ))}
-                                            </div>
+                                            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: TEXT_SEC, marginBottom: 6 }}>
+                                                JAM BARU {rescSlotsLoading && <span style={{ fontWeight: 400, opacity: 0.7 }}>(Memeriksa slot...)</span>}
+                                            </label>
+                                            {rescAvailableSlots.length === 0 && !rescSlotsLoading ? (
+                                                <p style={{ fontSize: 12, color: '#c62828', margin: '6px 0', fontWeight: 600 }}>
+                                                    Tidak ada slot tersedia pada tanggal ini. Silakan pilih tanggal lain.
+                                                </p>
+                                            ) : (
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                                                    {rescAvailableSlots.map(t => (
+                                                        <button key={t} onClick={() => setRescTime(t)} style={{
+                                                            background: rescTime === t ? MAROON : '#fff',
+                                                            color: rescTime === t ? '#fff' : TEXT,
+                                                            border: rescTime === t ? `2px solid ${MAROON}` : '1px solid rgba(98,33,40,0.15)',
+                                                            borderRadius: 8, padding: '8px 2px', fontSize: 12, fontWeight: 700, cursor: 'pointer'
+                                                        }}>
+                                                            {t}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
@@ -1250,7 +1319,7 @@ export default function BookingFlow() {
                                         <button onClick={() => setShowReschedule(false)} style={{ flex: 1, padding: 12, borderRadius: 999, border: '1px solid rgba(0,0,0,0.15)', background: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                                             Batal
                                         </button>
-                                        <button onClick={handleReschedule} disabled={!rescDate || !rescTime || rescLoading} style={{ flex: 1, padding: 12, borderRadius: 999, border: 'none', background: MAROON, color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: rescDate && rescTime && !rescLoading ? 1 : 0.5 }}>
+                                        <button onClick={handleReschedule} disabled={!rescDate || !rescTime || rescLoading || rescAvailableSlots.length === 0} style={{ flex: 1, padding: 12, borderRadius: 999, border: 'none', background: MAROON, color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: rescDate && rescTime && !rescLoading && rescAvailableSlots.length > 0 ? 1 : 0.5 }}>
                                             {rescLoading ? 'Menyimpan...' : 'Simpan Perubahan'}
                                         </button>
                                     </div>

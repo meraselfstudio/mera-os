@@ -2,33 +2,27 @@
 
 /**
  * Méra PhoneBooth
- * - Camera capture with B&W / Normal filter
- * - Uses actual frame images (black/white/maroon) with MÉRA logo
- * - Photos placed in frame slots with matching corner radius
- * - Direct download to device
- * - Silent background upload to Google Drive via API route
+ * - Camera capture with WebGL GPU filters & Mac Photo Booth distortion effects
+ * - 2 Categories: Filter Warna (Natural, Noir B&W, Warm 90s, Soft Glow, Retro Film, Méra Red)
+ *                 Efek Mac (Normal, Bulge, Dent, Twirl, Squeeze, Stretch, Mirror)
+ * - Real-time live view, preserved upon capture, preserved in final strip assembly
+ * - Filter & Effect selectors also available in Preview Screen when choosing frame colors
+ * - Uses actual frame images (white/black/maroon) with MÉRA logo
+ * - Direct download to device & silent background upload to Google Drive
  */
 
 import React, { useRef, useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-
-export type Filter = 'none' | 'bw' | 'warm' | 'soft' | 'retro' | 'crimson'
-
-export const FILTERS: Array<{
-    id: Filter
-    label: string
-    icon: string
-    css: string
-    desc: string
-}> = [
-    { id: 'none', label: 'Natural', icon: '✨', css: 'none', desc: 'Jernih & Asli' },
-    { id: 'bw', label: 'Noir B&W', icon: '⬛', css: 'grayscale(100%) contrast(130%) brightness(102%)', desc: 'Monokrom Kontras' },
-    { id: 'warm', label: 'Warm 90s', icon: '🎞️', css: 'sepia(65%) saturate(180%) contrast(118%) brightness(106%) hue-rotate(-12deg)', desc: 'Hangat & Golden 90s' },
-    { id: 'soft', label: 'Soft Glow', icon: '🌸', css: 'brightness(120%) contrast(85%) saturate(140%) sepia(18%)', desc: 'Dreamy & Glowing Pastel' },
-    { id: 'retro', label: 'Retro Film', icon: '📼', css: 'contrast(145%) brightness(92%) saturate(140%) sepia(35%) hue-rotate(15deg)', desc: 'Kontras Analog Film' },
-    { id: 'crimson', label: 'Méra Red', icon: '🍒', css: 'sepia(75%) saturate(340%) hue-rotate(325deg) contrast(115%) brightness(96%)', desc: 'Dominan Merah Sinematik' },
-]
+import {
+    type ColorTone,
+    type WarpEffect,
+    type PhotoboothEffect,
+    PHOTOBOOTH_EFFECTS,
+    COLOR_TONES,
+    WebGLEffectRenderer,
+    applyEffectsToPhoto,
+} from '@/lib/photoEffects'
 
 type AppState = 'idle' | 'camera' | 'countdown' | 'capturing' | 'reviewing' | 'preview'
 type FrameColor = 'white' | 'black' | 'maroon'
@@ -60,7 +54,7 @@ const FRAME_LABELS: Record<FrameColor, { label: string; bg: string; text: string
 
 /* ── Customer-portal palette ─────────────────────────────────── */
 const BG = 'hsl(33, 24%, 93%)'
-const SURFACE = 'rgba(255,255,255,0.6)'
+const SURFACE = 'rgba(255,255,255,0.7)'
 const MAROON = '#622128'
 const TEXT = '#2e1b1f'
 const TEXT_SUB = '#4a3438'
@@ -85,95 +79,46 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
     ctx.closePath()
 }
 
-/** Apply guaranteed cross-browser pixel filter to canvas */
-function applyFilterToCanvas(ctx: CanvasRenderingContext2D, w: number, h: number, filterId: Filter) {
-    if (filterId === 'none') return
-    const imgData = ctx.getImageData(0, 0, w, h)
-    const d = imgData.data
-
-    for (let i = 0; i < d.length; i += 4) {
-        let r = d[i]
-        let g = d[i + 1]
-        let b = d[i + 2]
-
-        if (filterId === 'bw') {
-            // Noir B&W (Monokrom kontras tinggi & tajam)
-            const gray = 0.299 * r + 0.587 * g + 0.114 * b
-            const v = Math.min(255, Math.max(0, (gray - 128) * 1.35 + 128 + 6))
-            d[i] = v
-            d[i + 1] = v
-            d[i + 2] = v
-        } else if (filterId === 'warm') {
-            // Warm 90s (Hangat & golden 90s disposable camera)
-            r = Math.min(255, Math.max(0, (r - 128) * 1.15 + 128 + 22))
-            g = Math.min(255, Math.max(0, (g - 128) * 1.08 + 128 + 10))
-            b = Math.min(255, Math.max(0, (b - 128) * 0.92 + 128 - 14))
-            d[i] = r
-            d[i + 1] = g
-            d[i + 2] = b
-        } else if (filterId === 'soft') {
-            // Soft Glow (Pastel, cerah glowing, flattering skin tones)
-            r = Math.min(255, Math.max(0, (r - 128) * 0.92 + 128 + 24))
-            g = Math.min(255, Math.max(0, (g - 128) * 0.92 + 128 + 20))
-            b = Math.min(255, Math.max(0, (b - 128) * 0.92 + 128 + 18))
-            d[i] = r
-            d[i + 1] = g
-            d[i + 2] = b
-        } else if (filterId === 'retro') {
-            // Retro Film (Kontras analog film, bayangan lifted)
-            r = Math.min(255, Math.max(0, (r - 128) * 1.25 + 128 + 14))
-            g = Math.min(255, Math.max(0, (g - 128) * 1.14 + 128 + 4))
-            b = Math.min(255, Math.max(0, (b - 128) * 1.04 + 128 + 8))
-            d[i] = r
-            d[i + 1] = g
-            d[i + 2] = b
-        } else if (filterId === 'crimson') {
-            // Méra Red (Maroon sinematik signature Méra)
-            r = Math.min(255, Math.max(0, (r - 128) * 1.25 + 128 + 28))
-            g = Math.min(255, Math.max(0, (g - 128) * 0.92 + 128 - 10))
-            b = Math.min(255, Math.max(0, (b - 128) * 0.90 + 128 - 8))
-            d[i] = r
-            d[i + 1] = g
-            d[i + 2] = b
-        }
-    }
-
-    ctx.putImageData(imgData, 0, 0)
-}
-
 export default function PhotoboothPage() {
     const videoRef = useRef<HTMLVideoElement>(null)
-    const canvasRef = useRef<HTMLCanvasElement>(null)
+    const liveCanvasRef = useRef<HTMLCanvasElement>(null)
+    const cropCanvasRef = useRef<HTMLCanvasElement | null>(null)
+    const rendererRef = useRef<WebGLEffectRenderer | null>(null)
     const stripRef = useRef<HTMLCanvasElement>(null)
     const streamRef = useRef<MediaStream | null>(null)
+    const animFrameRef = useRef<number | null>(null)
     const uploadedUrlRef = useRef<string | null>(null)
 
     const [appState, setAppState] = useState<AppState>('idle')
-    const [filter, setFilter] = useState<Filter>('bw')
+    const [selectedTone, setSelectedTone] = useState<ColorTone>('none')
+    const [selectedWarp, setSelectedWarp] = useState<WarpEffect>('normal')
+    const [selectedEffectId, setSelectedEffectId] = useState<string>('normal')
+    const [effectSlide, setEffectSlide] = useState(0)
     const [mirrored, setMirrored] = useState(true)
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
+
+    // Photos: raw (unfiltered for re-rendering) and filtered (with active tone & warp)
+    const [rawPhotos, setRawPhotos] = useState<string[]>([])
     const [photos, setPhotos] = useState<string[]>([])
+
     const [countdown, setCountdown] = useState(0)
     const [currentShot, setCurrentShot] = useState(0)
     const [showFlash, setShowFlash] = useState(false)
     const [stripUrl, setStripUrl] = useState<string | null>(null)
+    const [isReapplying, setIsReapplying] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     // Frame selection
     const [selectedFrame, setSelectedFrame] = useState<FrameColor>('white')
     const [promoConsent, setPromoConsent] = useState(false)
 
-    // ── Assign camera stream after video element renders ────────
+    // ── Keep latest filter and mirror values in refs for animation loop ──
+    const filterStateRef = useRef({ tone: selectedTone, warp: selectedWarp, mirrored })
     useEffect(() => {
-        const video = videoRef.current
-        const stream = streamRef.current
-        if (video && stream && ['camera', 'countdown', 'capturing'].includes(appState) && !video.srcObject) {
-            video.srcObject = stream
-            video.play().catch(() => { })
-        }
-    }, [appState])
+        filterStateRef.current = { tone: selectedTone, warp: selectedWarp, mirrored }
+    }, [selectedTone, selectedWarp, mirrored])
 
-    // ── Start camera ────────────────────────────────────────────
+    // ── Start Camera ────────────────────────────────────────────
     const startCamera = useCallback(async (facing?: 'user' | 'environment') => {
         setError(null)
         const mode = facing ?? facingMode
@@ -182,18 +127,21 @@ export default function PhotoboothPage() {
                 video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
                 audio: false,
             })
-            // Stop any existing stream first
             streamRef.current?.getTracks().forEach(t => t.stop())
             streamRef.current = stream
+
             const video = videoRef.current
-            if (video) { video.srcObject = stream; video.play().catch(() => { }) }
+            if (video) {
+                video.srcObject = stream
+                await video.play().catch(() => { })
+            }
             setAppState('camera')
         } catch {
             setError('Tidak dapat mengakses kamera. Pastikan izin kamera sudah diberikan.')
         }
     }, [facingMode])
 
-    // ── Switch camera ───────────────────────────────────────────
+    // ── Switch Camera ───────────────────────────────────────────
     const switchCamera = useCallback(() => {
         const newMode = facingMode === 'user' ? 'environment' : 'user'
         setFacingMode(newMode)
@@ -201,40 +149,142 @@ export default function PhotoboothPage() {
         if (appState === 'camera') startCamera(newMode)
     }, [facingMode, appState, startCamera])
 
-    // ── Stop camera ─────────────────────────────────────────────
+    // ── Stop Camera ─────────────────────────────────────────────
     const stopCamera = useCallback(() => {
+        if (animFrameRef.current) {
+            cancelAnimationFrame(animFrameRef.current)
+            animFrameRef.current = null
+        }
         streamRef.current?.getTracks().forEach(t => t.stop())
         streamRef.current = null
+        if (rendererRef.current) {
+            rendererRef.current.destroy()
+            rendererRef.current = null
+        }
     }, [])
 
     useEffect(() => () => stopCamera(), [stopCamera])
 
-    // ── Capture single frame (cropped to strip slot aspect) ─────
-    const captureFrame = useCallback((): string | null => {
+    // ── Real-time WebGL Live View Render Loop ───────────────────
+    useEffect(() => {
+        const isCameraActive = ['camera', 'countdown', 'capturing', 'reviewing'].includes(appState)
+        if (!isCameraActive) {
+            if (animFrameRef.current) {
+                cancelAnimationFrame(animFrameRef.current)
+                animFrameRef.current = null
+            }
+            return
+        }
+
+        const liveCanvas = liveCanvasRef.current
         const video = videoRef.current
-        const canvas = canvasRef.current
-        if (!video || !canvas) return null
+        if (!liveCanvas || !video) return
 
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return null
+        liveCanvas.width = SLOT_W
+        liveCanvas.height = SLOT_H
 
-        const vw = video.videoWidth || 640
-        const vh = video.videoHeight || 480
+        if (!cropCanvasRef.current) {
+            const cc = document.createElement('canvas')
+            cc.width = SLOT_W
+            cc.height = SLOT_H
+            cropCanvasRef.current = cc
+        }
+        const cropCanvas = cropCanvasRef.current
+        const cropCtx = cropCanvas.getContext('2d')
 
-        // Crop centre to match strip slot aspect ratio
-        let srcW = vw, srcH = vw / ASPECT, srcX = 0, srcY = (vh - vw / ASPECT) / 2
-        if (srcH > vh) { srcH = vh; srcW = vh * ASPECT; srcX = (vw - srcW) / 2; srcY = 0 }
+        if (!rendererRef.current) {
+            rendererRef.current = new WebGLEffectRenderer(liveCanvas)
+        }
+        const renderer = rendererRef.current
 
-        canvas.width = SLOT_W
-        canvas.height = SLOT_H
+        let active = true
 
-        ctx.save()
-        if (mirrored) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1) }
+        const renderFrame = () => {
+            if (!active) return
 
-        ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, SLOT_W, SLOT_H)
-        ctx.restore()
+            if (video.readyState >= 2 && cropCtx) {
+                const vw = video.videoWidth || 640
+                const vh = video.videoHeight || 480
 
-        return canvas.toDataURL('image/jpeg', 0.95)
+                // Center crop to match photostrip slot aspect ratio
+                let srcW = vw
+                let srcH = vw / ASPECT
+                let srcX = 0
+                let srcY = (vh - vw / ASPECT) / 2
+                if (srcH > vh) {
+                    srcH = vh
+                    srcW = vh * ASPECT
+                    srcX = (vw - srcW) / 2
+                    srcY = 0
+                }
+
+                cropCtx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, SLOT_W, SLOT_H)
+
+                const { tone, warp, mirrored: isMirror } = filterStateRef.current
+
+                if (renderer && renderer.isReady()) {
+                    renderer.render(cropCanvas, {
+                        tone,
+                        warp,
+                        mirrorX: isMirror,
+                    })
+                } else {
+                    // 2D fallback
+                    const lCtx = liveCanvas.getContext('2d')
+                    if (lCtx) {
+                        lCtx.save()
+                        if (isMirror) {
+                            lCtx.translate(SLOT_W, 0)
+                            lCtx.scale(-1, 1)
+                        }
+                        const toneCss = COLOR_TONES.find(t => t.id === tone)?.css ?? 'none'
+                        lCtx.filter = toneCss
+                        lCtx.drawImage(cropCanvas, 0, 0, SLOT_W, SLOT_H)
+                        lCtx.restore()
+                    }
+                }
+            }
+
+            animFrameRef.current = requestAnimationFrame(renderFrame)
+        }
+
+        animFrameRef.current = requestAnimationFrame(renderFrame)
+
+        return () => {
+            active = false
+            if (animFrameRef.current) {
+                cancelAnimationFrame(animFrameRef.current)
+                animFrameRef.current = null
+            }
+        }
+    }, [appState])
+
+    // ── Capture Single Frame (Both Raw & Filtered) ──────────────
+    const captureFrame = useCallback((): { raw: string; filtered: string } | null => {
+        const liveCanvas = liveCanvasRef.current
+        const cropCanvas = cropCanvasRef.current
+        if (!liveCanvas || !cropCanvas) return null
+
+        // 1. Filtered data URL straight from live view canvas with active effects
+        const filtered = liveCanvas.toDataURL('image/jpeg', 0.95)
+
+        // 2. Raw unwarped frame (mirrored if camera was mirrored)
+        const rawCanvas = document.createElement('canvas')
+        rawCanvas.width = SLOT_W
+        rawCanvas.height = SLOT_H
+        const rCtx = rawCanvas.getContext('2d')
+        if (rCtx) {
+            rCtx.save()
+            if (mirrored) {
+                rCtx.translate(SLOT_W, 0)
+                rCtx.scale(-1, 1)
+            }
+            rCtx.drawImage(cropCanvas, 0, 0, SLOT_W, SLOT_H)
+            rCtx.restore()
+        }
+        const raw = rawCanvas.toDataURL('image/jpeg', 0.95)
+
+        return { raw, filtered }
     }, [mirrored])
 
     // ── Countdown beep ──────────────────────────────────────────
@@ -243,15 +293,20 @@ export default function PhotoboothPage() {
             const ac = new AudioContext()
             const osc = ac.createOscillator()
             const gain = ac.createGain()
-            osc.frequency.value = freq; osc.type = 'sine'; gain.gain.value = 0.15
+            osc.frequency.value = freq
+            osc.type = 'sine'
+            gain.gain.value = 0.15
             osc.connect(gain).connect(ac.destination)
-            osc.start(); osc.stop(ac.currentTime + ms / 1000)
+            osc.start()
+            osc.stop(ac.currentTime + ms / 1000)
         } catch { /* silent */ }
     }, [])
 
     // ── Auto-capture with 2s review between shots ───────────────
     const startCapture = useCallback(async () => {
-        const captured: string[] = []
+        const capturedRaw: string[] = []
+        const capturedFiltered: string[] = []
+        setRawPhotos([])
         setPhotos([])
         setCurrentShot(0)
         setAppState('countdown')
@@ -267,20 +322,21 @@ export default function PhotoboothPage() {
             }
             setCountdown(0)
 
-            // Full-screen white flash — acts as light for better photo
+            // Full-screen white flash
             setShowFlash(true)
-            await sleep(300) // let screen go fully white before capture
+            await sleep(250)
 
             setAppState('capturing')
             playBeep(1600, 80)
 
-            const dataUrl = captureFrame()
-            if (dataUrl) {
-                captured.push(dataUrl)
-                setPhotos([...captured])
+            const frame = captureFrame()
+            if (frame) {
+                capturedRaw.push(frame.raw)
+                capturedFiltered.push(frame.filtered)
+                setRawPhotos([...capturedRaw])
+                setPhotos([...capturedFiltered])
             }
 
-            // Hold flash briefly then fade out
             await sleep(200)
             setShowFlash(false)
 
@@ -296,8 +352,8 @@ export default function PhotoboothPage() {
         setAppState('preview')
     }, [captureFrame, playBeep, stopCamera])
 
-    // ── Build strip using actual frame image & applied filter ──
-    const buildStrip = useCallback(async (dataUrls: string[], frame: FrameColor, activeFilter: Filter) => {
+    // ── Build strip using actual frame image and filtered photos ──
+    const buildStrip = useCallback(async (dataUrls: string[], frame: FrameColor) => {
         const canvas = stripRef.current
         if (!canvas) return null
 
@@ -314,11 +370,11 @@ export default function PhotoboothPage() {
             img.src = src
         })
 
-        // 1. Draw frame image first (background + borders + logo)
+        // 1. Draw frame image (background + borders + logo)
         const frameImg = await loadImg(FRAME_IMAGES[frame])
         ctx.drawImage(frameImg, 0, 0, FRAME_W, FRAME_H)
 
-        // 2. Draw photos ON TOP, clipped to rounded-rect slots (covers the grey placeholders)
+        // 2. Draw filtered photos inside slots with corner radius
         for (let i = 0; i < dataUrls.length; i++) {
             const img = await loadImg(dataUrls[i])
             const slotX = SLOT_X - BLEED
@@ -326,13 +382,11 @@ export default function PhotoboothPage() {
             const slotW = SLOT_W + BLEED * 2
             const slotH = SLOT_H + BLEED * 2
 
-            // Use an offscreen canvas to render slot & apply pixel filter reliably
             const slotCanvas = document.createElement('canvas')
             slotCanvas.width = slotW
             slotCanvas.height = slotH
             const sCtx = slotCanvas.getContext('2d')
             if (sCtx) {
-                // Cover-fill the slot
                 const scale = Math.max(slotW / img.naturalWidth, slotH / img.naturalHeight)
                 const dw = img.naturalWidth * scale
                 const dh = img.naturalHeight * scale
@@ -340,10 +394,6 @@ export default function PhotoboothPage() {
                 const dy = (slotH - dh) / 2
                 sCtx.drawImage(img, dx, dy, dw, dh)
 
-                // Apply mathematical pixel filter directly on slot pixels
-                applyFilterToCanvas(sCtx, slotW, slotH, activeFilter)
-
-                // Composite into strip with rounded clip
                 ctx.save()
                 roundedRect(ctx, slotX, slotY, slotW, slotH, SLOT_RADIUS + BLEED)
                 ctx.clip()
@@ -355,72 +405,105 @@ export default function PhotoboothPage() {
         return canvas.toDataURL('image/png')
     }, [])
 
-    // ── Silent background upload via server-side proxy → Google Drive ──
+    // ── Re-apply Tone & Warp to Raw Photos when changed in Preview ──
+    const handleFilterChangeInPreview = useCallback(async (newTone: ColorTone, newWarp: WarpEffect) => {
+        if (rawPhotos.length === 0) return
+        setIsReapplying(true)
+        try {
+            const reprocessed = await Promise.all(
+                rawPhotos.map(raw => applyEffectsToPhoto(raw, {
+                    tone: newTone,
+                    warp: newWarp,
+                    mirrorX: false,
+                    width: SLOT_W,
+                    height: SLOT_H,
+                }))
+            )
+            setPhotos(reprocessed)
+            const strip = await buildStrip(reprocessed, selectedFrame)
+            if (strip) setStripUrl(strip)
+        } catch (err) {
+            console.error('Failed to reapply filter:', err)
+        } finally {
+            setIsReapplying(false)
+        }
+    }, [rawPhotos, selectedFrame, buildStrip])
+
+    // Update strip whenever frame color changes
+    useEffect(() => {
+        if (appState === 'preview' && photos.length === PHOTO_COUNT) {
+            buildStrip(photos, selectedFrame).then(url => {
+                if (url) setStripUrl(url)
+            })
+        }
+    }, [selectedFrame, appState, photos, buildStrip])
+
+    // ── Silent Background Upload via API Route with Direct Fallback ──
     const uploadBackground = useCallback((dataUrl: string, consent: boolean) => {
         const base64 = dataUrl.split(',')[1]
         if (!base64) return
 
+        const payload = {
+            fileName: `mera-phonebooth-${Date.now()}.png`,
+            mimeType: 'image/png',
+            data: base64,
+            folder: 'phonebooth',
+            promoConsent: consent,
+        }
+
         fetch('/api/upload-strip', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                fileName: `mera-phonebooth-${Date.now()}.png`,
-                mimeType: 'image/png',
-                data: base64,
-                folder: 'phonebooth',
-                promoConsent: consent,
-            }),
+            body: JSON.stringify(payload),
         })
             .then(r => r.json())
-            .then(d => console.log('[PhoneBooth] Upload result:', d))
-            .catch(err => console.warn('[PhoneBooth] Upload failed:', err))
-    }, [])
-
-    // Rebuild strip when frame or filter changes (DO NOT auto-upload here to prevent duplicates!)
-    useEffect(() => {
-        if (appState === 'preview' && photos.length === PHOTO_COUNT) {
-            buildStrip(photos, selectedFrame, filter).then(url => {
-                if (url) {
-                    setStripUrl(url)
+            .then(d => console.log('[PhoneBooth] Upload to Google Drive successful:', d))
+            .catch(async err => {
+                console.warn('[PhoneBooth] API proxy upload error, fallback to direct Apps Script:', err)
+                try {
+                    const fallbackUrl = process.env.NEXT_PUBLIC_APPS_SCRIPT_URL || 'https://script.google.com/macros/s/AKfycbxpcgJGMxndIIoaqJ9knxJroTyhgYVxKoJlCTPVQ4QMtpnqNNFjKyuoE8PCvo_Zqr4/exec'
+                    await fetch(fallbackUrl, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+                        body: JSON.stringify({
+                            ...payload,
+                            folderId: '1IAamhoERgEodQUJg1OOLGZIfwk-Z1TC6',
+                        }),
+                    })
+                    console.log('[PhoneBooth] Direct Apps Script fallback sent')
+                } catch (fallbackErr) {
+                    console.warn('[PhoneBooth] Fallback upload failed:', fallbackErr)
                 }
             })
-        }
-    }, [selectedFrame, filter, appState, photos, buildStrip])
+    }, [])
 
-    // ── Handle download (native share → Save to Photos on mobile) ──
+    // ── Handle Download / Share ─────────────────────────────────
     const handleDownload = useCallback(async () => {
         if (!stripUrl) return
-
         const filename = `mera-phonebooth-${Date.now()}.png`
 
-        // Convert data URL to File for share API
+        // Selalu upload ke Google Drive setiap kali foto di-download
+        uploadBackground(stripUrl, promoConsent)
+
         const res = await fetch(stripUrl)
         const blob = await res.blob()
         const file = new File([blob], filename, { type: 'image/png' })
 
-        // Use Web Share API if available (mobile → "Save to Photos")
         if (navigator.share && navigator.canShare?.({ files: [file] })) {
             try {
                 await navigator.share({ files: [file] })
-            } catch {
-                // User cancelled share — ignore
-            }
+            } catch { /* User cancelled */ }
         } else {
-            // Fallback for desktop: normal download
             const a = document.createElement('a')
             a.href = stripUrl
             a.download = filename
             a.click()
         }
-
-        // Upload only once per unique strip downloaded to Google Drive
-        if (uploadedUrlRef.current !== stripUrl) {
-            uploadedUrlRef.current = stripUrl
-            uploadBackground(stripUrl, promoConsent)
-        }
     }, [stripUrl, uploadBackground, promoConsent])
 
     const retake = useCallback(() => {
+        setRawPhotos([])
         setPhotos([])
         setStripUrl(null)
         setPromoConsent(false)
@@ -430,12 +513,227 @@ export default function PhotoboothPage() {
 
     const reset = () => {
         stopCamera()
+        setRawPhotos([])
         setPhotos([])
         setStripUrl(null)
         setAppState('idle')
         setCurrentShot(0)
+        setSelectedEffectId('normal')
+        setSelectedTone('none')
+        setSelectedWarp('normal')
+        setEffectSlide(0)
         setPromoConsent(false)
         uploadedUrlRef.current = null
+    }
+
+    // ── Mac Photo Booth Style Effect Slider (No Icons, No Descriptions, Pure Slides) ──
+    const touchStartXRef = useRef<number | null>(null)
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        touchStartXRef.current = e.touches[0].clientX
+    }
+
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        if (touchStartXRef.current === null) return
+        const diffX = e.changedTouches[0].clientX - touchStartXRef.current
+        touchStartXRef.current = null
+        if (diffX > 40) {
+            setEffectSlide(prev => Math.max(0, prev - 1))
+        } else if (diffX < -40) {
+            setEffectSlide(prev => Math.min(1, prev + 1))
+        }
+    }
+
+    const onSelectEffect = (eff: PhotoboothEffect, isLiveView: boolean) => {
+        setSelectedEffectId(eff.id)
+        setSelectedTone(eff.tone)
+        setSelectedWarp(eff.warp)
+        if (!isLiveView) {
+            handleFilterChangeInPreview(eff.tone, eff.warp)
+        }
+    }
+
+    const renderEffectSlides = (isLiveView: boolean) => {
+        const slide1 = PHOTOBOOTH_EFFECTS.slice(0, 6)
+        const slide2 = PHOTOBOOTH_EFFECTS.slice(6, 12)
+
+        return (
+            <div
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+                style={{
+                    background: 'rgba(255, 255, 255, 0.85)',
+                    border: '1px solid ' + BORDER,
+                    borderRadius: RADIUS,
+                    padding: '12px 14px',
+                    marginBottom: 16,
+                    backdropFilter: 'blur(10px)',
+                    boxShadow: '0 4px 14px rgba(98,33,40,0.06)',
+                    userSelect: 'none',
+                }}
+            >
+                {/* Sliding Viewport */}
+                <div style={{ overflow: 'hidden', width: '100%' }}>
+                    <div style={{
+                        display: 'flex',
+                        width: '200%',
+                        transform: `translateX(-${effectSlide * 50}%)`,
+                        transition: 'transform 320ms cubic-bezier(0.25, 1, 0.5, 1)',
+                    }}>
+                        {/* Slide 1 */}
+                        <div style={{
+                            width: '50%',
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: 8,
+                            padding: '2px',
+                            boxSizing: 'border-box',
+                        }}>
+                            {slide1.map(eff => {
+                                const isSelected = selectedEffectId === eff.id
+                                return (
+                                    <button
+                                        key={eff.id}
+                                        type="button"
+                                        onClick={() => onSelectEffect(eff, isLiveView)}
+                                        style={{
+                                            padding: '12px 6px',
+                                            borderRadius: 10,
+                                            border: '1.5px solid ' + (isSelected ? MAROON : BORDER),
+                                            background: isSelected ? MAROON : '#fff',
+                                            color: isSelected ? '#fff' : TEXT,
+                                            cursor: 'pointer',
+                                            textAlign: 'center',
+                                            boxShadow: isSelected ? '0 2px 8px rgba(98,33,40,0.25)' : 'none',
+                                            transition: 'all 120ms ease',
+                                        }}
+                                    >
+                                        <span style={{ fontSize: 13, fontWeight: isSelected ? 700 : 600 }}>
+                                            {eff.label}
+                                        </span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+
+                        {/* Slide 2 */}
+                        <div style={{
+                            width: '50%',
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            gap: 8,
+                            padding: '2px',
+                            boxSizing: 'border-box',
+                        }}>
+                            {slide2.map(eff => {
+                                const isSelected = selectedEffectId === eff.id
+                                return (
+                                    <button
+                                        key={eff.id}
+                                        type="button"
+                                        onClick={() => onSelectEffect(eff, isLiveView)}
+                                        style={{
+                                            padding: '12px 6px',
+                                            borderRadius: 10,
+                                            border: '1.5px solid ' + (isSelected ? MAROON : BORDER),
+                                            background: isSelected ? MAROON : '#fff',
+                                            color: isSelected ? '#fff' : TEXT,
+                                            cursor: 'pointer',
+                                            textAlign: 'center',
+                                            boxShadow: isSelected ? '0 2px 8px rgba(98,33,40,0.25)' : 'none',
+                                            transition: 'all 120ms ease',
+                                        }}
+                                    >
+                                        <span style={{ fontSize: 13, fontWeight: isSelected ? 700 : 600 }}>
+                                            {eff.label}
+                                        </span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Mac Photo Booth Pagination Controls */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 16,
+                    marginTop: 12,
+                }}>
+                    <button
+                        type="button"
+                        onClick={() => setEffectSlide(prev => Math.max(0, prev - 1))}
+                        disabled={effectSlide === 0}
+                        aria-label="Previous Slide"
+                        style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: RADIUS_FULL,
+                            border: '1px solid ' + BORDER,
+                            background: effectSlide === 0 ? 'rgba(0,0,0,0.03)' : '#fff',
+                            color: effectSlide === 0 ? 'rgba(0,0,0,0.2)' : MAROON,
+                            cursor: effectSlide === 0 ? 'default' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 16,
+                            fontWeight: 700,
+                            transition: 'all 150ms ease',
+                        }}
+                    >
+                        ‹
+                    </button>
+
+                    {/* Page Dots */}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        {[0, 1].map(idx => (
+                            <button
+                                key={idx}
+                                type="button"
+                                onClick={() => setEffectSlide(idx)}
+                                aria-label={`Slide ${idx + 1}`}
+                                style={{
+                                    width: effectSlide === idx ? 16 : 6,
+                                    height: 6,
+                                    borderRadius: RADIUS_FULL,
+                                    background: effectSlide === idx ? MAROON : 'rgba(98,33,40,0.25)',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    transition: 'all 200ms ease',
+                                }}
+                            />
+                        ))}
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setEffectSlide(prev => Math.min(1, prev + 1))}
+                        disabled={effectSlide === 1}
+                        aria-label="Next Slide"
+                        style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: RADIUS_FULL,
+                            border: '1px solid ' + BORDER,
+                            background: effectSlide === 1 ? 'rgba(0,0,0,0.03)' : '#fff',
+                            color: effectSlide === 1 ? 'rgba(0,0,0,0.2)' : MAROON,
+                            cursor: effectSlide === 1 ? 'default' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 16,
+                            fontWeight: 700,
+                            transition: 'all 150ms ease',
+                        }}
+                    >
+                        ›
+                    </button>
+                </div>
+            </div>
+        )
     }
 
     return (
@@ -460,7 +758,7 @@ export default function PhotoboothPage() {
                         <span>PhoneBooth</span>
                     </h1>
                     <p style={{ fontSize: 14, color: TEXT_SUB, opacity: 0.8, fontStyle: 'italic', fontFamily: "'Times New Roman', Times, serif", margin: 0 }}>
-                        Turn your selfies into photostrip!
+                        Turn your selfies into photostrip with Mac Booth effects!
                     </p>
                 </div>
 
@@ -482,7 +780,7 @@ export default function PhotoboothPage() {
                             Start Snap!
                         </button>
                         <p style={{ fontSize: 12, color: TEXT_SUB, opacity: 0.5, marginTop: 12 }}>
-                            Experience the Fun!
+                            Filter Warna & Efek Mac Photo Booth Siap Digunakan! ✨
                         </p>
                     </div>
                 )}
@@ -514,6 +812,15 @@ export default function PhotoboothPage() {
 
                         {/* Viewfinder — matches strip slot aspect */}
                         <div style={{ position: 'relative', borderRadius: RADIUS, overflow: 'hidden', background: '#000', marginBottom: 12, boxShadow: SHADOW, aspectRatio: String(ASPECT) }}>
+                            {/* Hidden video source feed */}
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                style={{ display: 'none' }}
+                            />
+
                             {/* Show captured photo during 2s review */}
                             {appState === 'reviewing' && photos.length > 0 ? (
                                 <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -524,7 +831,6 @@ export default function PhotoboothPage() {
                                             width: '100%',
                                             height: '100%',
                                             objectFit: 'cover',
-                                            filter: FILTERS.find(f => f.id === filter)?.css ?? 'none',
                                         }}
                                     />
                                     <div style={{ position: 'absolute', top: 12, right: 12, background: 'rgba(0,0,0,0.6)', color: '#fff', borderRadius: RADIUS_FULL, padding: '6px 14px', fontSize: 13, fontWeight: 600 }}>
@@ -535,11 +841,15 @@ export default function PhotoboothPage() {
                                     </div>
                                 </div>
                             ) : (
-                                <video ref={videoRef} autoPlay playsInline muted style={{
-                                    width: '100%', height: '100%', objectFit: 'cover',
-                                    transform: mirrored ? 'scaleX(-1)' : 'none',
-                                    filter: FILTERS.find(f => f.id === filter)?.css ?? 'none',
-                                }} />
+                                <canvas
+                                    ref={liveCanvasRef}
+                                    style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        display: 'block',
+                                        objectFit: 'cover',
+                                    }}
+                                />
                             )}
 
                             {/* Countdown overlay */}
@@ -556,48 +866,8 @@ export default function PhotoboothPage() {
                             )}
                         </div>
 
-                        {/* Filter Selection Dropdown (Below Preview) */}
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 10,
-                            background: 'rgba(255, 255, 255, 0.75)',
-                            border: '1px solid ' + BORDER,
-                            borderRadius: RADIUS,
-                            padding: '10px 14px',
-                            marginBottom: 14,
-                            backdropFilter: 'blur(8px)',
-                        }}>
-                            <label htmlFor="filter-select" style={{ fontSize: 13, fontWeight: 700, color: TEXT, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                                <span>🎨</span>
-                                <span>Pilih Filter:</span>
-                            </label>
-                            <select
-                                id="filter-select"
-                                value={filter}
-                                onChange={(e) => setFilter(e.target.value as Filter)}
-                                style={{
-                                    flex: 1,
-                                    maxWidth: 240,
-                                    padding: '8px 12px',
-                                    borderRadius: 10,
-                                    border: '1.5px solid ' + MAROON,
-                                    background: '#fff',
-                                    color: MAROON,
-                                    fontSize: 13,
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    outline: 'none',
-                                }}
-                            >
-                                {FILTERS.map(f => (
-                                    <option key={f.id} value={f.id}>
-                                        {f.icon} {f.label} — {f.desc}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                        {/* Mac Photo Booth Style Effect Slides */}
+                        {renderEffectSlides(true)}
 
                         {/* Photo thumbnails */}
                         {photos.length > 0 && (
@@ -617,7 +887,6 @@ export default function PhotoboothPage() {
                                                     width: '100%',
                                                     height: '100%',
                                                     objectFit: 'cover',
-                                                    filter: FILTERS.find(f => f.id === filter)?.css ?? 'none',
                                                 }}
                                             />
                                         ) : (
@@ -646,33 +915,14 @@ export default function PhotoboothPage() {
                     <div style={{ textAlign: 'center' }}>
                         <p style={{ fontSize: 16, color: TEXT, fontWeight: 700, marginBottom: 16 }}>Sempurnakan Strip Kamu! 🎉</p>
 
-                        {/* Filter selector */}
-                        <div style={{ marginBottom: 16 }}>
-                            <p style={{ fontSize: 12, color: TEXT_SUB, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-                                🎨 Pilih Filter
-                            </p>
-                            <div style={{ display: 'flex', justifyContent: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                {FILTERS.map(f => (
-                                    <button
-                                        key={f.id}
-                                        onClick={() => setFilter(f.id)}
-                                        style={{
-                                            padding: '6px 14px',
-                                            borderRadius: RADIUS_FULL,
-                                            border: '1.5px solid ' + (filter === f.id ? MAROON : BORDER),
-                                            background: filter === f.id ? MAROON : SURFACE,
-                                            color: filter === f.id ? '#fff' : TEXT,
-                                            fontSize: 12,
-                                            fontWeight: 700,
-                                            cursor: 'pointer',
-                                            transition: 'all 150ms ease',
-                                            boxShadow: filter === f.id ? '0 2px 8px rgba(98,33,40,0.25)' : 'none',
-                                        }}
-                                    >
-                                        {f.icon} {f.label}
-                                    </button>
-                                ))}
-                            </div>
+                        {/* Mac Photo Booth Style Effect Slides in Preview */}
+                        <div style={{ textAlign: 'left', marginBottom: 18 }}>
+                            {renderEffectSlides(false)}
+                            {isReapplying && (
+                                <p style={{ fontSize: 12, color: MAROON, fontWeight: 600, textAlign: 'center', margin: '-8px 0 12px' }}>
+                                    Sedang menerapkan efek ke strip... ⏳
+                                </p>
+                            )}
                         </div>
 
                         {/* Frame selector */}
@@ -722,7 +972,7 @@ export default function PhotoboothPage() {
                                 border: 'none', borderRadius: RADIUS_FULL, fontWeight: 700, fontSize: 14, cursor: 'pointer',
                                 boxShadow: '0 8px 24px rgba(98,33,40,0.3)',
                             }}>
-                                ⬇ Download
+                                ⬇ Download Strip
                             </button>
                             <button onClick={retake} style={{
                                 padding: '12px 22px', background: SURFACE, color: TEXT_SUB,
@@ -742,8 +992,7 @@ export default function PhotoboothPage() {
                     </div>
                 )}
 
-                {/* Hidden canvases */}
-                <canvas ref={canvasRef} style={{ display: 'none' }} />
+                {/* Hidden canvas for strip generation */}
                 <canvas ref={stripRef} style={{ display: 'none' }} />
             </div>
 
